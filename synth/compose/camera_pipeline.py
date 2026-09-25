@@ -19,6 +19,19 @@ TONE_MAP_DOWNSCALE = 8
 TONE_MAP_BASE_SIGMA_FRACTION = 0.03    # of the photo's long side
 LOG_EPSILON = 1e-3
 SHEEN_ON_SHEET_SHARE = 0.25            # fabric reflects much less specular than paper
+AUTO_EXPOSURE_PERCENTILE = 98
+LUMA_DENOISE_SIGMA = 0.9
+CHROMA_EDGE_THRESHOLD = 0.04           # luma gradient above which chroma is left alone (ink strokes keep their colour)
+
+
+def auto_expose(linear: np.ndarray, highlight_target: float) -> tuple[np.ndarray, float]:
+    """Scale so the 98th-percentile luminance lands on `highlight_target` (linear); returns (image, gain).
+
+    Phones meter so white paper stays below clipping; this is what keeps scenes from looking washed out.
+    """
+    luminance = linear[::4, ::4] @ LUMINANCE_WEIGHTS.astype(np.float32)
+    gain = highlight_target / max(1e-4, float(np.percentile(luminance, AUTO_EXPOSURE_PERCENTILE)))
+    return linear * np.float32(gain), gain
 
 
 def lens_vignette(linear: np.ndarray, strength: float) -> np.ndarray:
@@ -52,24 +65,35 @@ def defocus_blur(image: np.ndarray, sigma: float, rng: np.random.Generator) -> n
     return image * (1 - weight) + blurred * weight
 
 
-def motion_blur(image: np.ndarray, length_px: int, angle_degrees: float) -> np.ndarray:
-    """Short linear hand-shake blur."""
-    kernel = np.zeros((length_px, length_px), np.float32)
-    kernel[length_px // 2, :] = 1.0
-    rotation = cv2.getRotationMatrix2D((length_px / 2 - 0.5, length_px / 2 - 0.5), angle_degrees, 1.0)
-    kernel = cv2.warpAffine(kernel, rotation, (length_px, length_px))
-    return cv2.filter2D(image, -1, kernel / max(1e-6, float(kernel.sum())))
+def motion_blur(image: np.ndarray, half_length_px: int, angle_degrees: float) -> np.ndarray:
+    """Linear hand-shake blur over 2 * half_length_px + 1 pixels, centred, so nothing shifts (labels stay exact).
+
+    The kernel side is odd and the line is rotated about the centre pixel (k, k), which is
+    exactly where filter2D anchors it; an even side would shift the image by half a pixel or more.
+    """
+    size = 2 * half_length_px + 1
+    kernel = np.zeros((size, size), np.float32)
+    kernel[half_length_px, :] = 1.0
+    rotation = cv2.getRotationMatrix2D((float(half_length_px), float(half_length_px)), angle_degrees, 1.0)
+    kernel = cv2.warpAffine(kernel, rotation, (size, size), flags=cv2.INTER_LINEAR)
+    return cv2.filter2D(image, -1, kernel / max(1e-6, float(kernel.sum())), anchor=(half_length_px, half_length_px),
+                        borderType=cv2.BORDER_REFLECT)
 
 
 def sensor_noise(linear: np.ndarray, shot_scale: float, read_sigma: float, chroma_sigma: float,
                  rng: np.random.Generator) -> np.ndarray:
-    """Photon shot noise (variance ~ signal), read noise, and blotchy low-frequency chroma noise, in linear light."""
+    """Photon shot noise (variance ~ signal) plus read noise as one luminance grain, and blotchy low-frequency chroma noise.
+
+    Per-channel fine noise is left out on purpose: the phone's chroma denoise removes it anyway,
+    and one shared channel costs a third of the random draws.
+    """
     linear = np.clip(linear, 0, None)
-    noise = rng.standard_normal(linear.shape, dtype=np.float32) * np.sqrt(linear * shot_scale + read_sigma**2)
+    luminance = linear @ LUMINANCE_WEIGHTS.astype(np.float32)
+    grain = rng.standard_normal(luminance.shape, dtype=np.float32) * np.sqrt(luminance * shot_scale + read_sigma**2)
     height, width = linear.shape[:2]
     chroma = rng.standard_normal((height // 3 + 1, width // 3 + 1, 3), dtype=np.float32) * chroma_sigma
     chroma = cv2.resize(chroma - chroma.mean(axis=2, keepdims=True), (width, height), interpolation=cv2.INTER_LINEAR)
-    return linear + noise + chroma * np.sqrt(linear + read_sigma)
+    return linear + grain[..., None] + chroma * np.sqrt(luminance + read_sigma)[..., None]
 
 
 def local_tone_map(linear: np.ndarray, base_compression: float, detail_boost: float) -> np.ndarray:
@@ -93,15 +117,30 @@ def contrast_curve(srgb: np.ndarray, strength: float) -> np.ndarray:
     return srgb + strength * (srgb * srgb * (3 - 2 * srgb) - srgb)
 
 
-def chroma_denoise_and_sharpen(srgb: np.ndarray, chroma_sigma: float, sharpen_sigma: float, sharpen_amount: float) -> np.ndarray:
-    """Phone ISP finish: smooth colour noise away, unsharp-mask the luminance only (with its light halos)."""
+def flat_region_weight(luma: np.ndarray) -> np.ndarray:
+    """1 where luminance is locally flat, 0 at edges (ink, paper borders), from a dilated gradient."""
+    smooth_luma = cv2.GaussianBlur(luma, (0, 0), sigmaX=0.8)
+    gradient = np.abs(cv2.Sobel(smooth_luma, cv2.CV_32F, 1, 0, ksize=3)) + np.abs(cv2.Sobel(smooth_luma, cv2.CV_32F, 0, 1, ksize=3))
+    return np.clip(1 - cv2.dilate(gradient, np.ones((3, 3), np.uint8)) / (8 * CHROMA_EDGE_THRESHOLD), 0, 1)
+
+
+def denoise_and_sharpen(srgb: np.ndarray, chroma_sigma: float, luma_denoise: float, sharpen_sigma: float,
+                        sharpen_amount: float) -> np.ndarray:
+    """Phone ISP finish: edge-aware chroma and luma smoothing, then an unsharp mask on luminance (with its light halos).
+
+    Smoothing is guided by luma edges, as phone noise reduction is: colour blotches and grain on
+    paper and fabric fade, thin ink strokes keep their hue and edges.
+    """
     ycrcb = cv2.cvtColor(np.clip(srgb, 0, 1).astype(np.float32), cv2.COLOR_RGB2YCrCb)
-    if chroma_sigma > 0:
-        ycrcb[..., 1] = cv2.GaussianBlur(ycrcb[..., 1], (0, 0), sigmaX=chroma_sigma)
-        ycrcb[..., 2] = cv2.GaussianBlur(ycrcb[..., 2], (0, 0), sigmaX=chroma_sigma)
+    flatness = flat_region_weight(ycrcb[..., 0])
+    for channel in (1, 2):
+        smoothed = cv2.GaussianBlur(ycrcb[..., channel], (0, 0), sigmaX=chroma_sigma)
+        ycrcb[..., channel] = smoothed * flatness + ycrcb[..., channel] * (1 - flatness)
+    luma_weight = luma_denoise * flatness
+    luma = cv2.GaussianBlur(ycrcb[..., 0], (0, 0), sigmaX=LUMA_DENOISE_SIGMA) * luma_weight + ycrcb[..., 0] * (1 - luma_weight)
     if sharpen_amount > 0:
-        luma = ycrcb[..., 0]
-        ycrcb[..., 0] = luma + sharpen_amount * (luma - cv2.GaussianBlur(luma, (0, 0), sigmaX=sharpen_sigma))
+        luma = luma + sharpen_amount * (luma - cv2.GaussianBlur(luma, (0, 0), sigmaX=sharpen_sigma))
+    ycrcb[..., 0] = luma
     return np.clip(cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2RGB), 0, 1)
 
 

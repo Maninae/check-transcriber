@@ -22,12 +22,12 @@ from synth.compose.scene_light import SceneLight
 
 SHADOW_GRID_DOWNSCALE = 8
 PHONE_SHARE = 0.65                       # of scenes with a cast shadow, how many show the phone (vs a bare hand)
-HAND_HEIGHT_INCHES_RANGE = (5.0, 14.0)
+HAND_HEIGHT_INCHES_RANGE = (2.5, 7.0)
 SHADOW_OPACITY_RANGE = (0.8, 1.0)
 PENUMBRA_SIGMA_PER_SPREAD = 0.8          # Gaussian sigma per (height * angular radius)
 FRAME_SHARE_RANGE = (0.02, 0.3)
 MAX_UMBRA_SHARE_OF_A_CHECK = 0.5
-UMBRA_LEVEL = 0.6
+UMBRA_LEVEL = 0.45
 EDGE_DEPTH_RANGE = (0.04, 0.28)          # how far inside the frame edge the grip sits, as a share of frame size
 PLACEMENT_ATTEMPTS = 10
 OUTWARD_STEP_INCHES = 1.5

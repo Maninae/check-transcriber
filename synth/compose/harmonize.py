@@ -9,7 +9,10 @@ weights are MPL-2.0. (Harmonizer, Ke et al. 2022, was the first choice but is CC
 - The upstream repo is cloned on the data drive (`PCTNET_CODE_DIR`), not vendored, and is
   imported from there on first use. That in-body import is the optional-backend exception:
   `--no-harmonize` is the genuine fallback path.
-- Runs per check on a context crop in the flat sheet plane, before the camera warp.
+- Runs per check on a context crop in the flat sheet plane, on albedo, before the scene light
+  and the camera warp.
+- The network's output is applied through harmonize_color_transfer.py: its chroma shift is
+  kept (capped), its luminance shift is clamped, so white paper never darkens toward the sheet.
 """
 
 import functools
@@ -21,10 +24,12 @@ import cv2
 import numpy as np
 import torch
 
+from synth.compose.harmonize_color_transfer import luminance_preserving_transfer
+
 PCTNET_CODE_DIR = Path(os.environ.get("CHECK_SYNTH_PCTNET_DIR", "/Volumes/vega/ai-models/harmonizer/pctnet"))
 PCTNET_WEIGHTS_PATH = PCTNET_CODE_DIR / "pretrained_models" / "PCTNet_CNN.pth"
 PCTNET_LOW_RES = 256
-DEFAULT_HARMONIZE_BLEND = 0.5  # full PCT-Net output tints white paper as deeply as the fabric; half reads true
+DEFAULT_HARMONIZE_BLEND = 0.5  # share of the network's (capped) chroma shift taken
 CONTEXT_EXPANSION = 0.5  # crop margin around each check, as a fraction of its box size
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
 IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).reshape(1, 3, 1, 1)
@@ -83,7 +88,7 @@ def harmonize_pasted_checks(canvas: np.ndarray, check_masks: list[tuple[int, int
         canvas: sheet-plane composite, float32 RGB [0, 1].
         check_masks: per check, (x0, y0, mask) where mask is the check's visible alpha in
             the canvas region starting at (x0, y0).
-        blend: 0 keeps the input, 1 takes PCT-Net's output as is.
+        blend: share of PCT-Net's chroma shift applied (luminance is clamped regardless).
     Returns:
         A new canvas; only pixels under the masks change (PCT-Net blends by its attention map).
     """
@@ -99,7 +104,7 @@ def harmonize_pasted_checks(canvas: np.ndarray, check_masks: list[tuple[int, int
         if crop_mask.sum() < 1:
             continue
         crop = harmonized[crop_y0:crop_y1, crop_x0:crop_x1]
-        result = crop + blend * (harmonize_region(crop, crop_mask) - crop)
+        result = luminance_preserving_transfer(crop, harmonize_region(crop, crop_mask), blend)
         # Keep the change strictly inside the check so the sheet itself is untouched.
         harmonized[crop_y0:crop_y1, crop_x0:crop_x1] = crop * (1 - crop_mask[..., None]) + result * crop_mask[..., None]
     return harmonized

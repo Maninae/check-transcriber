@@ -29,7 +29,7 @@ HIGHLIGHT_KNEE = 0.8   # linear level above which highlights roll off instead of
 
 @dataclass
 class LightBuffers:
-    """Per-pixel light factors over the canvas (float16 to keep memory low; smooth values)."""
+    """Per-pixel light factors over the canvas (float32: numpy float16 arithmetic is slow)."""
 
     key_factor: np.ndarray
     fill_factor: np.ndarray
@@ -38,14 +38,15 @@ class LightBuffers:
     @classmethod
     def open_sheet(cls, height: int, width: int) -> "LightBuffers":
         """All ones: flat, unshadowed sheet everywhere."""
-        return cls(*(np.ones((height, width), np.float16) for _ in range(3)))
+        return cls(*(np.ones((height, width), np.float32) for _ in range(3)))
 
 
 def highlight_shoulder(linear: np.ndarray) -> np.ndarray:
-    """Identity below the knee, then an exponential roll-off toward 1 (phones rarely clip white paper hard)."""
+    """Identity below the knee, then an exponential roll-off toward 1 (phones rarely clip white paper hard). In place."""
     headroom = 1 - HIGHLIGHT_KNEE
-    return np.where(linear < HIGHLIGHT_KNEE, linear,
-                    HIGHLIGHT_KNEE + headroom * (1 - np.exp(-(linear - HIGHLIGHT_KNEE) / headroom))).astype(np.float32)
+    above = linear > HIGHLIGHT_KNEE
+    linear[above] = HIGHLIGHT_KNEE + headroom * (1 - np.exp(-(linear[above] - HIGHLIGHT_KNEE) / headroom))
+    return linear
 
 
 def frame_coordinates(shape: tuple[int, int], visible_quad_plane: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -91,7 +92,7 @@ def apply_scene_light(canvas: np.ndarray, buffers: LightBuffers, light: SceneLig
         rows = slice(row0, min(height, row0 + APPLY_CHUNK_ROWS))
         key_term = (key_full[rows] * buffers.key_factor[rows])[..., None] * key_rgb
         fill_term = (fill_full[rows] * buffers.fill_factor[rows])[..., None] * fill_rgb
-        ambient_term = buffers.ambient_factor[rows].astype(np.float32)[..., None] * ambient_rgb
+        ambient_term = buffers.ambient_factor[rows][..., None] * ambient_rgb
         irradiance = key_term + fill_term + ambient_term
         lit[rows] = linear_to_srgb(highlight_shoulder(srgb_to_linear(canvas[rows]) * irradiance))
     return lit

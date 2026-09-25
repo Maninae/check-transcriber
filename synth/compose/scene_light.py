@@ -40,12 +40,14 @@ LUMINANCE_WEIGHTS = np.array([0.2126, 0.7152, 0.0722])
 KEY_KELVIN_CHOICES = ((2700, 3300), (3800, 4800), (5000, 6500))   # tungsten lamp, LED/fluorescent, daylight
 KEY_KELVIN_WEIGHTS = (0.35, 0.35, 0.30)
 KEY_ELEVATION_DEGREES = (32.0, 78.0)
-KEY_ANGULAR_RADIUS_RANGE = (0.03, 0.22)      # radians: bare bulb or sun .. big diffuser
-AMBIENT_FRACTION_RANGE = (0.28, 0.7)          # ambient irradiance / key irradiance on flat sheet
+KEY_ANGULAR_RADIUS_RANGE = (0.01, 0.06)      # radians: bare LED bulb or sun .. lamp shade
+AMBIENT_FRACTION_RANGE = (0.18, 0.5)          # ambient irradiance / key irradiance on flat sheet
 KEY_FALLOFF_RANGE = (0.04, 0.28)              # brightness change across one frame width, toward the key
 MIXED_LIGHT_PROBABILITY = 0.45
-FILL_INTENSITY_RANGE = (0.2, 0.65)
-FILL_KELVIN_OFFSET_RANGE = (1500, 3500)       # the fill differs from the key by this much, either way
+FILL_INTENSITY_RANGE = (0.15, 0.5)
+FILL_KELVIN_OFFSET_RANGE = (1000, 2600)       # the fill differs from the key by this much, either way
+FILL_KELVIN_LIMITS = (2700, 7500)
+AMBIENT_TOWARD_FILL = 0.35                    # room bounce light sits between key and fill, nearer the key
 FILL_ELEVATION_DEGREES = (15.0, 45.0)
 FILL_FALLOFF_RANGE = (0.3, 0.9)               # a window's light fades across the frame
 BACKGROUND_SLOPE_THRESHOLD = 0.06             # luminance change across the canvas that counts as a direction
@@ -62,16 +64,43 @@ def kelvin_to_linear_rgb(kelvin: float) -> np.ndarray:
     return linear / float(linear @ LUMINANCE_WEIGHTS)
 
 
-def srgb_to_linear(image: np.ndarray) -> np.ndarray:
-    """sRGB transfer curve, decoded."""
+def srgb_to_linear_exact(image: np.ndarray) -> np.ndarray:
+    """sRGB transfer curve, decoded (exact; used to build the lookup tables and for small arrays)."""
     image = np.clip(image, 0, 1)
     return np.where(image <= 0.04045, image / 12.92, ((image + 0.055) / 1.055) ** 2.4)
 
 
-def linear_to_srgb(image: np.ndarray) -> np.ndarray:
-    """sRGB transfer curve, encoded."""
+def linear_to_srgb_exact(image: np.ndarray) -> np.ndarray:
+    """sRGB transfer curve, encoded (exact)."""
     image = np.clip(image, 0, 1)
     return np.where(image <= 0.0031308, image * 12.92, 1.055 * image ** (1 / 2.4) - 0.055)
+
+
+# Full-image conversions go through 16-bit lookup tables (several times faster than pow); the
+# encode table is indexed by sqrt(linear) so dark tones keep fine steps.
+TRANSFER_TABLE_SIZE = 65536
+TRANSFER_TABLE_INDEX = np.linspace(0, 1, TRANSFER_TABLE_SIZE)
+SRGB_DECODE_TABLE = srgb_to_linear_exact(TRANSFER_TABLE_INDEX).astype(np.float32)
+SRGB_ENCODE_TABLE_BY_SQRT = linear_to_srgb_exact(TRANSFER_TABLE_INDEX ** 2).astype(np.float32)
+SMALL_ARRAY_SIZE = 4096
+
+
+def srgb_to_linear(image: np.ndarray) -> np.ndarray:
+    """sRGB transfer curve, decoded; float32 for images."""
+    image = np.asarray(image)
+    if image.size <= SMALL_ARRAY_SIZE:
+        return srgb_to_linear_exact(image)
+    index = (np.clip(image, 0, 1) * (TRANSFER_TABLE_SIZE - 1) + 0.5).astype(np.uint16)
+    return SRGB_DECODE_TABLE[index]
+
+
+def linear_to_srgb(image: np.ndarray) -> np.ndarray:
+    """sRGB transfer curve, encoded; float32 for images."""
+    image = np.asarray(image)
+    if image.size <= SMALL_ARRAY_SIZE:
+        return linear_to_srgb_exact(image)
+    index = (np.sqrt(np.clip(image, 0, 1)) * (TRANSFER_TABLE_SIZE - 1) + 0.5).astype(np.uint16)
+    return SRGB_ENCODE_TABLE_BY_SQRT[index]
 
 
 def direction_from_angles(azimuth_radians: float, elevation_radians: float) -> np.ndarray:
@@ -181,9 +210,9 @@ def sample_scene_light(light_field: np.ndarray, rng: np.random.Generator) -> Sce
         offset = rng.uniform(*FILL_KELVIN_OFFSET_RANGE)
         fill_kelvin = key_kelvin + offset if key_kelvin < 4500 else key_kelvin - offset
         fill = FillLight(key_azimuth + rng.uniform(0.6, 1.0) * np.pi * rng.choice([-1, 1]),
-                         np.deg2rad(rng.uniform(*FILL_ELEVATION_DEGREES)), float(np.clip(fill_kelvin, 2200, 9500)),
+                         np.deg2rad(rng.uniform(*FILL_ELEVATION_DEGREES)), float(np.clip(fill_kelvin, *FILL_KELVIN_LIMITS)),
                          rng.uniform(*FILL_INTENSITY_RANGE), rng.uniform(*FILL_FALLOFF_RANGE))
-    ambient_kelvin = (key_kelvin + (fill.kelvin if fill else key_kelvin)) / 2 + rng.uniform(-400, 400)
+    ambient_kelvin = key_kelvin + AMBIENT_TOWARD_FILL * ((fill.kelvin if fill else key_kelvin) - key_kelvin) + rng.uniform(-300, 300)
     ambient_fraction = rng.uniform(*AMBIENT_FRACTION_RANGE)
     key_rgb, ambient_rgb = kelvin_to_linear_rgb(key_kelvin), kelvin_to_linear_rgb(ambient_kelvin) * ambient_fraction
     mean_illuminant = key_rgb + ambient_rgb
