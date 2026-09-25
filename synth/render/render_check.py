@@ -11,6 +11,7 @@
 """
 
 import functools
+import zlib
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -91,7 +92,7 @@ def guilloche_band_mask(width: int, height: int, dpi: int) -> np.ndarray:
 def render_blank_template(template: TemplateDesign, dpi: int = RENDER_DPI) -> tuple[np.ndarray, tuple[FieldLabel, ...]]:
     """Blank check stock for `template` as an RGB uint8 array, plus the pre-printed label boxes."""
     width, height = check_size_pixels(template.size_kind, dpi)
-    rng = np.random.default_rng(abs(hash(template.template_id)) % (2**32))
+    rng = np.random.default_rng(zlib.crc32(template.template_id.encode()))  # str hash() is salted per process
     coverage = make_security_pattern(template.pattern_kind, width, height, rng) * template.pattern_strength
     if template.border_kind == BorderKind.GUILLOCHE_BAND:
         coverage = np.maximum(coverage, guilloche_band_mask(width, height, dpi) * 0.8)
