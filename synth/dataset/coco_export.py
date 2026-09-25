@@ -8,6 +8,10 @@ One `annotations_coco.json` per split (image `file_name` is relative to the spli
 - Categories 2+ (one per field name, supercategory `field`): segmentation = the field quad
   clipped to the photo, `attributes.text` = ground truth, `attributes.handwritten`,
   `attributes.check_annotation_id` = the parent check. Fields fully out of frame are omitted.
+- Coordinates: scene labels put pixel i's centre at i; COCO and YOLO put it at i + 0.5 (pixel i
+  spans [i, i + 1]). `to_pixel_edge_coordinates` shifts every exported point by half a pixel.
+- Amodal: a check covered by another keeps its full outline, and its in-frame corners are v=2
+  even when hidden under a neighbour (v means in frame, not unoccluded).
 """
 
 import json
@@ -23,6 +27,12 @@ FIELD_CATEGORY_IDS = {field_name.value: index for index, field_name in enumerate
 CORNER_KEYPOINT_NAMES = ["top_left", "top_right", "bottom_right", "bottom_left"]
 MIN_CLIPPED_AREA_PX = 16.0
 COORDINATE_DECIMALS = 2
+PIXEL_CENTRE_TO_EDGE_OFFSET = 0.5
+
+
+def to_pixel_edge_coordinates(points: list[list[float]] | np.ndarray) -> np.ndarray:
+    """Scene-label points (pixel centre at i) -> COCO/YOLO points (pixel i spans [i, i + 1])."""
+    return np.asarray(points, np.float64) + PIXEL_CENTRE_TO_EDGE_OFFSET
 
 
 def check_outline(check: dict) -> list[list[float]]:
@@ -31,8 +41,8 @@ def check_outline(check: dict) -> list[list[float]]:
 
 
 def polygon_instance(points: list[list[float]], width: int, height: int) -> dict | None:
-    """COCO segmentation/area/bbox for a polygon clipped to the photo; None if (almost) nothing is inside."""
-    polygon = clip_polygon_to_rect(np.asarray(points, np.float64), width, height)
+    """COCO segmentation/area/bbox for a scene-label polygon clipped to the photo; None if (almost) nothing is inside."""
+    polygon = clip_polygon_to_rect(to_pixel_edge_coordinates(points), width, height)
     area = polygon_area(polygon) if len(polygon) >= 3 else 0.0
     if area < MIN_CLIPPED_AREA_PX:
         return None
@@ -44,9 +54,9 @@ def polygon_instance(points: list[list[float]], width: int, height: int) -> dict
 
 
 def corner_keypoints(corners: list[list[float]], width: int, height: int) -> list[float]:
-    """Flat COCO keypoint list for the 4 corners."""
+    """Flat COCO keypoint list for the 4 corners (v=2 in frame, even if covered; v=0 and (0, 0) outside)."""
     keypoints = []
-    for x, y in corners:
+    for x, y in to_pixel_edge_coordinates(corners).tolist():
         inside = 0 <= x <= width and 0 <= y <= height
         keypoints += [round(x, COORDINATE_DECIMALS), round(y, COORDINATE_DECIMALS), 2] if inside else [0, 0, 0]
     return keypoints

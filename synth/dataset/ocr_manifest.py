@@ -13,7 +13,12 @@ Row `status` (only `ok` rows have `usable: true`):
 - ok: fully in frame and not covered by another check.
 - partially_out_of_frame / occluded: crop written, but some of the text may be missing.
 - not_in_frame: no crop.
+- too_small: in frame and uncovered, but its ink is under `MIN_LEGIBLE_TEXT_HEIGHT_PHOTO_PX` tall
+  in the photo, so the 1600 px crop is an upscale of too few pixels to read.
 - micr_blurred_in_app: the MICR band; the app blurs it and never reads it, kept for completeness.
+
+`text_height_in_photo_px` is the field quad's mean left/right edge length in the photo: the
+ink's full height (cap or ascender to baseline or descender), not its x-height.
 """
 
 import json
@@ -31,10 +36,22 @@ FIELD_UNOCCLUDED_MIN_VISIBLE_FRACTION = 0.99   # untouched fields measure 0.996-
 MICR_FIELD_NAME = "micr"
 SIGNATURE_FIELD_NAME = "signature"
 CHECK_CROP_JPEG_QUALITY = 95
+# Ink-box height floor. Tesseract's FAQ (tessdoc tess3/FAQ-Old): below a 10 px x-height there is
+# "very little chance of accurate results". An ink box spans ~1.4x x-height on digit fields
+# (amount, date) and ~2x on mixed text, so 14 px is ~10 px x-height on digits, ~7 px on words.
+MIN_LEGIBLE_TEXT_HEIGHT_PHOTO_PX = 14.0
+
+
+def field_text_height_in_photo_px(quad: list[list[float]]) -> float:
+    """Mean of the field quad's left (TL->BL) and right (TR->BR) edges in the photo, in pixels."""
+    quad_array = np.asarray(quad, np.float64)
+    left = np.linalg.norm(quad_array[3] - quad_array[0])
+    right = np.linalg.norm(quad_array[2] - quad_array[1])
+    return round(float((left + right) / 2), 1)
 
 
 def field_status(field: dict, photo_width: int, photo_height: int) -> str:
-    """Classify one scene field label (see module docstring)."""
+    """Classify one scene field label (see module docstring); occlusion and framing outrank size."""
     if field["field_name"] == MICR_FIELD_NAME:
         return "micr_blurred_in_app"
     if field["bbox_clipped"] is None:
@@ -46,6 +63,8 @@ def field_status(field: dict, photo_width: int, photo_height: int) -> str:
         return "partially_out_of_frame"
     if field["visible_fraction"] < FIELD_UNOCCLUDED_MIN_VISIBLE_FRACTION:
         return "occluded"
+    if field_text_height_in_photo_px(field["quad"]) < MIN_LEGIBLE_TEXT_HEIGHT_PHOTO_PX:
+        return "too_small"
     return "ok"
 
 
@@ -94,6 +113,7 @@ def ocr_rows_for_scene(dataset_root: Path, split_name: str, scene_label: dict, p
                 "status": status, "usable": status == "ok", "visible_fraction": field["visible_fraction"],
                 "check_visible_fraction": check["visible_fraction"],
                 "check_width_in_photo_px": check_width_in_photo_px(check["corners"]),
+                "text_height_in_photo_px": field_text_height_in_photo_px(field["quad"]),
                 "check_crop": str(check_crop_path.relative_to(dataset_root)),
                 "field_crop": str(field_crop_path.relative_to(dataset_root)) if field_crop_path else None,
                 "box_in_check_crop": box, "field_crop_window": crop_window, "check_crop_size": list(crop_size),

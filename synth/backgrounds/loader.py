@@ -1,4 +1,9 @@
-"""List and load background images from a directory tree."""
+"""List and load background images from a background root.
+
+Only the accepted subfolders (`synth.paths.ACCEPTED_BACKGROUND_SUBDIRECTORIES`: `flux/`,
+`photos/`) are scanned, recursively; `rejected/` and anything else beside them never reach a
+build. Ids are paths relative to the root (`flux/kitchen_0012.jpg`).
+"""
 
 import logging
 from dataclasses import dataclass
@@ -6,6 +11,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
+from synth.paths import ACCEPTED_BACKGROUND_SUBDIRECTORIES
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +27,21 @@ class BackgroundSource:
     file_path: Path
 
 
-def list_background_sources(root_directory: Path) -> list[BackgroundSource]:
-    """Every JPEG/PNG under `root_directory` (recursive), sorted by id for determinism."""
+def list_background_sources(root_directory: Path,
+                            subdirectories: tuple[str, ...] = ACCEPTED_BACKGROUND_SUBDIRECTORIES) -> list[BackgroundSource]:
+    """Every JPEG/PNG under the accepted `subdirectories` of `root_directory` (recursive), sorted by id."""
     if not root_directory.exists():
         raise FileNotFoundError(f"background directory missing: {root_directory}")
+    scanned_directories = [root_directory / name for name in subdirectories if (root_directory / name).is_dir()]
+    if not scanned_directories:
+        raise FileNotFoundError(f"no accepted background subfolder ({', '.join(subdirectories)}) under {root_directory}")
     sources = [
         BackgroundSource(file_path.relative_to(root_directory).as_posix(), file_path)
-        for file_path in root_directory.rglob("*")
+        for directory in scanned_directories for file_path in directory.rglob("*")
         if file_path.is_file() and file_path.suffix.lower() in BACKGROUND_SUFFIXES and not file_path.name.startswith(".")
     ]
-    logger.info("found %d backgrounds under %s", len(sources), root_directory)
+    logger.info("found %d backgrounds under %s (%s)", len(sources), root_directory,
+                ", ".join(directory.name for directory in scanned_directories))
     return sorted(sources, key=lambda source: source.background_id)
 
 

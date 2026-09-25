@@ -64,7 +64,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKER_COUNT)
     parser.add_argument("--templates", type=int, default=DEFAULT_TEMPLATE_COUNT, help="size of the template catalog")
-    parser.add_argument("--backgrounds", type=Path, default=BACKGROUND_DIR, help="root scanned recursively for JPEG/PNG")
+    parser.add_argument("--backgrounds", type=Path, default=BACKGROUND_DIR, help="background root; only its accepted subfolders (flux/, photos/) are scanned")
     parser.add_argument("--procedural-backgrounds", type=int, default=0,
                         help="use N procedural fabrics instead of --backgrounds (for tests or before real backgrounds exist)")
     parser.add_argument("--ocr-splits", default=DEFAULT_OCR_SPLITS,
@@ -112,7 +112,8 @@ def scene_tasks_for_plan(plan: BuildPlan, output_directory: Path) -> list[SceneT
         for scene_index in range(plan.scene_counts[split_name]):
             tasks.append(SceneTask(plan.seed, split_name, scene_index, tuple(pools["template_ids"]), backgrounds,
                                    str(output_directory / split_name), plan.template_count, scene_config,
-                                   tuple(pools["handwriting_font_ids"]), tuple(pools["signature_font_ids"])))
+                                   tuple(pools["handwriting_font_ids"]), tuple(pools["signature_font_ids"]),
+                                   tuple(pools["payee_names"]), tuple(pools["bank_names"])))
     return tasks
 
 

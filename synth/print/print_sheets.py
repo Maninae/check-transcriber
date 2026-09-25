@@ -9,8 +9,8 @@ without hand transcription. `print_sheet__page=NN.png` is each page as rendered,
   without simulated print texture (`render_check(..., simulate_print_texture=False)`) by default.
 - Coverage: each page alternates slots between handwritten and printed fill-ins, and cycles
   layout families, so every sheet has both kinds of fill-in and several designs.
-- `held_out_split="eval"` restricts templates and fonts to that seed's eval pools, so a model
-  trained on the same seed's train split has never seen the printed designs or hands.
+- `held_out_split="eval"` restricts templates, fonts, payees and banks to that seed's eval pools,
+  so a model trained on the same seed's train split has never seen the designs, hands or names.
 """
 
 import csv
@@ -22,20 +22,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-from synth.dataset.splits import (
-    DEFAULT_SPLIT_FRACTIONS,
-    HANDWRITING_FONT_SALT,
-    SIGNATURE_FONT_SALT,
-    assign_ids_to_splits,
-    plan_template_pools,
-)
+from synth.dataset.splits import plan_registry_pools, plan_template_pools
 from synth.dataset.build_plan import template_family_by_id
 from synth.print.print_page_layout import LETTER_SIZE_PX, arrange_checks_on_page, draw_cut_guides
 from synth.render.check_fields import FieldName
 from synth.render.check_layout import RENDER_DPI, CheckSizeKind, check_size_pixels
 from synth.render.check_templates import TemplateDesign, build_template_catalog
 from synth.render.fake_data import sample_check_content
-from synth.render.fonts import FontRole, font_ids_with_role, load_font
+from synth.render.fake_payees_and_banks import BANK_NAMES, PAYEE_NAMES
+from synth.render.fonts import load_font
 from synth.render.render_check import render_check
 
 logger = logging.getLogger(__name__)
@@ -54,11 +49,11 @@ CSV_COLUMNS = ["serial", "page", "slot", "template_id", "layout_family", "size_k
                "payee_canonical", "clean_stock", *FIELD_TEXT_COLUMNS]
 
 
-def render_check_for_print(template: TemplateDesign, content, rng: np.random.Generator, font_pools: dict,
+def render_check_for_print(template: TemplateDesign, content, rng: np.random.Generator, held_out_pools: dict,
                            clean_stock: bool) -> tuple[Image.Image, object]:
     """Render one check as RGB (clean stock has full alpha, so dropping it loses nothing)."""
-    image, label = render_check(template, content, rng, handwriting_font_ids=font_pools.get("handwriting"),
-                                signature_font_ids=font_pools.get("signature"), simulate_print_texture=not clean_stock)
+    image, label = render_check(template, content, rng, handwriting_font_ids=held_out_pools.get("handwriting"),
+                                signature_font_ids=held_out_pools.get("signature"), simulate_print_texture=not clean_stock)
     return image.convert("RGB"), label
 
 
@@ -67,11 +62,13 @@ def layout_family_of(template: TemplateDesign) -> str:
     return template.layout_family.value
 
 
-def sample_content_with_style(template: TemplateDesign, rng: np.random.Generator, serial: str, want_handwritten: bool):
+def sample_content_with_style(template: TemplateDesign, rng: np.random.Generator, serial: str, want_handwritten: bool,
+                              held_out_pools: dict):
     """Draw fake content until its fill-in style matches the request (kept deterministic by the rng)."""
     content = None
     for _ in range(MAX_CONTENT_DRAWS):
-        content = sample_check_content(template, rng, serial=serial)
+        content = sample_check_content(template, rng, serial=serial, payee_names=held_out_pools.get("payee", PAYEE_NAMES),
+                                       bank_names=held_out_pools.get("bank", BANK_NAMES))
         if (fill_in_style(content) == "handwritten") == want_handwritten:
             return content
     logger.warning("%s: could not draw %s fill-ins on %s", serial, "handwritten" if want_handwritten else "printed",
@@ -85,18 +82,19 @@ def fill_in_style(content) -> str:
 
 
 def print_pools(template_count: int, seed: int, held_out_split: str | None) -> tuple[list[TemplateDesign], dict]:
-    """Templates and font pools to print from: everything, or one split's held-out pools."""
+    """Templates and name pools (fonts, payees, banks) to print from: everything, or one split's held-out pools."""
     catalog = build_template_catalog(template_count)
     if held_out_split is None:
         return catalog, {}
     template_ids = set(plan_template_pools(template_family_by_id(catalog), seed)[held_out_split])
-    font_pools = {
-        "handwriting": assign_ids_to_splits(font_ids_with_role(FontRole.HANDWRITING), DEFAULT_SPLIT_FRACTIONS, seed,
-                                            HANDWRITING_FONT_SALT)[held_out_split],
-        "signature": assign_ids_to_splits(font_ids_with_role(FontRole.SIGNATURE), DEFAULT_SPLIT_FRACTIONS, seed,
-                                          SIGNATURE_FONT_SALT)[held_out_split],
+    registry_pools = plan_registry_pools(seed)
+    held_out_pools = {
+        "handwriting": registry_pools["handwriting_font_ids"][held_out_split],
+        "signature": registry_pools["signature_font_ids"][held_out_split],
+        "payee": registry_pools["payee_names"][held_out_split],
+        "bank": registry_pools["bank_names"][held_out_split],
     }
-    return [template for template in catalog if template.template_id in template_ids], font_pools
+    return [template for template in catalog if template.template_id in template_ids], held_out_pools
 
 
 def label_record(serial: str, page: int, slot: int, template: TemplateDesign, rotated: bool,
@@ -121,7 +119,7 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
     """Write the PDF, one PNG per page, `print_labels.csv` and `print_labels.json`; returns the PDF path."""
     output_directory.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng([seed, PRINT_RNG_SALT])
-    templates, font_pools = print_pools(template_count, seed, held_out_split)
+    templates, held_out_pools = print_pools(template_count, seed, held_out_split)
     families_by_size = defaultdict(lambda: defaultdict(list))
     for template in templates:
         families_by_size[template.size_kind.value][layout_family_of(template)].append(template)
@@ -143,8 +141,8 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
             want_handwritten = slot % 2 == 0
             serial = f"S-{serial_number:04d}"
             serial_number += 1
-            content = sample_content_with_style(template, rng, serial, want_handwritten)
-            image, label = render_check_for_print(template, content, rng, font_pools, clean_stock)
+            content = sample_content_with_style(template, rng, serial, want_handwritten, held_out_pools)
+            image, label = render_check_for_print(template, content, rng, held_out_pools, clean_stock)
             if arrangement.rotated:
                 image = image.transpose(Image.Transpose.ROTATE_270)
             page.paste(image, (x, y))

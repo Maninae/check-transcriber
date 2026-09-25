@@ -18,7 +18,8 @@ from PIL import Image
 from synth.render.check_fields import CheckContent, CheckLabel, FieldLabel, FieldName
 from synth.render.check_layout import MICR_DIGIT_HEIGHT_INCHES, PRINTED_FILL_EM_INCHES, RENDER_DPI, inches_to_px
 from synth.render.check_templates import TemplateDesign
-from synth.render.fake_data import PAYEE_MAILING_ADDRESSES, PRINTED_INK_RGB
+from synth.render.fake_data import PRINTED_INK_RGB
+from synth.render.fake_payees_and_banks import PAYEE_BY_NAME
 from synth.render.families import PERFORATED_FAMILIES
 from synth.render.field_slots import FieldSlots, TextSlot
 from synth.render.fonts import load_font
@@ -132,7 +133,7 @@ class CheckFiller:
         content = self.content
         self.personalize(slots)
         if slots.payee_address is not None:
-            address = PAYEE_MAILING_ADDRESSES[content.payee_canonical]
+            address = list(PAYEE_BY_NAME[content.payee_canonical].mailing_address_lines)
             self.record_printed("payee_address", "\n".join(address),
                                 self.print_lines(address, self.template.printed_fill_font_id, slots.payee_address, PRINTED_INK_RGB))
         self.fill(FieldName.DATE, content.date_text, slots.date)
