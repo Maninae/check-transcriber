@@ -33,3 +33,5 @@ Backgrounds run all day in the background: FLUX schnell 4-bit, one process, ~100
 
 - U0 (Sep 25): crc32 template seed (per-process `hash()` made stock nondeterministic); FLUX scripts moved to `synth/backgrounds/`, prompts rewritten after "lamp light" painted a lamp; C1 Writer stub wired into `render_check`.
 - Carry (Sep 25): U2 adds a temporary `image.convert("RGB")` shim in `dataset/scene_worker.py` ("remove when compose reads alpha (C2)"). At U3 merge: compose reads the RGBA alpha, then delete the shim.
+- U3 geometry merged (Sep 25): frame-filling gapped-grid / loose-overlap / fan layouts, curl, folds, 48-point outline labels; 90 tests. Leftover: lonely check in partial last row; field quads enclose (not hug) folded fields.
+- U1 handwriting merged (Sep 25): centreline + ballpoint re-ink, per-glyph warp, 34 handwriting / 13 signature OFL+Apache fonts, ~0.1 s per check. Leftover: square stroke ends, legible-name signatures only, alpha-over not multiply.
