@@ -42,7 +42,7 @@ python -m synth.dataset.build_dataset --output DIR --scenes 200 --ocr-splits tra
 python -m synth.dataset.build_dataset --output DIR --scenes 200 --procedural-backgrounds 12
 
 # network harmonization of each pasted check (slower, ~1 s extra per scene)
-python -m synth.dataset.build_dataset --output DIR --scenes 200 --harmonize --harmonize-blend 0.5
+python -m synth.dataset.build_dataset --output DIR --scenes 200 --harmonize --harmonize-blend 0.5   # blend = share of the network's (capped) colour shift; paper luminance is kept
 
 # print-ready Letter PDF (clean stock) + one PNG per page + labels CSV/JSON keyed by printed serial
 python -m synth.dataset.build_dataset --output DIR --print-sheets 4
@@ -91,7 +91,7 @@ Split rule (contract C4): template ids (stratified by layout family), background
 | einops | MIT | optional: imported by PCT-Net's model code |
 | kornia | Apache-2.0 | optional: imported by PCT-Net's color functions |
 
-Not used: `augraphy` (MIT, but last release Dec 2023 and it hard-requires full `opencv-python`, numba, scikit-learn and matplotlib). Its camera/paper effects are implemented directly in `compose/lighting.py`.
+Not used: `augraphy` (MIT, but last release Dec 2023 and it hard-requires full `opencv-python`, numba, scikit-learn and matplotlib). Its camera/paper effects are implemented directly in `compose/` (`scene_light.py`, `paper_shading.py`, `cast_shadows.py`, `camera_pipeline.py`).
 
 Harmonization model: PCT-Net CNN (Guerreiro et al., WACV 2023), MPL-2.0 code and bundled weights, used unmodified from its own clone. Harmonizer (Ke et al., ECCV 2022) was rejected because it is CC BY-NC-SA 4.0 and these outputs train a model that ships in a public tool. PCT-Net's weights were trained on iHarmony4, whose images come from COCO, Flickr, MIT-Adobe FiveK and day2night.
 

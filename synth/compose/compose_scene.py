@@ -4,14 +4,18 @@ Pipeline for one scene (every geometric step has a matching point transform for 
 1. Layout: lay the checks out on the sheet in inches (placement.py).
 2. Framing: choose the photo, the camera, and the sheet scale so the group fills the frame;
    maybe push one check partly out (scene_framing.py).
-3. Background: cover-crop onto the sheet-plane canvas; read its light field and color cast.
+3. Background: cover-crop onto the sheet-plane canvas; read its baked light field and colour
+   cast; sample the one scene light (scene_light.py), aimed from the background's bright side.
 4. Paper: sample each check's deformation (paper_deformation.py) and build its exact
    check -> plane map (check_plane_map.py).
-5. Paste each check: inverse-warped, coverage alpha, geometric shading, height-aware drop
-   shadow (check_paste.py). An id map records which check owns each pixel (occlusion).
-6. Optional network harmonization (harmonize.py) of each visible check.
-7. Camera warp (homography), lens distortion, then photometric effects and JPEG.
-8. Labels: corners, outline, orientation, field quads, visibility (scene_check_labels.py).
+5. Paste each check's albedo: inverse-warped, coverage alpha; its Lambert factors, drop
+   shadow and contact occlusion go into the light buffers (check_paste.py, paper_shading.py).
+   An id map records which check owns each pixel (occlusion).
+6. Optional network harmonization (harmonize.py) of each visible check, on albedo.
+7. Maybe a phone/hand shadow (cast_shadows.py), then light the whole canvas at once
+   (scene_irradiance.py): sheet, paper and every shadow share the same light.
+8. Camera warp (homography), lens distortion, then the phone camera pass and JPEG.
+9. Labels: corners, outline, orientation, field quads, visibility (scene_check_labels.py).
 
 Determinism: the scene depends only on `rng` (and its inputs).
 """
@@ -22,16 +26,21 @@ from PIL import Image
 
 from synth.backgrounds.loader import cover_crop
 from synth.compose import lighting
-from synth.compose.camera_effects import apply_camera_effects_in_place
-from synth.compose.check_paste import paste_deformed_check, sample_paper_light
+from synth.compose.camera_effects import apply_camera_effects
+from synth.compose.camera_pipeline import jpeg_roundtrip
+from synth.compose.cast_shadows import apply_cast_shadow, cast_occluder_shadow
+from synth.compose.check_paste import paste_deformed_check
 from synth.compose.check_plane_map import CheckPlaneMap
 from synth.compose.paper_deformation import sample_paper_deformation
+from synth.compose.paper_shading import sample_paper_surface
 from synth.compose.perspective import radial_distortion_maps
 from synth.compose.placement import plan_layout
 from synth.compose.scene_check_labels import build_check_labels
 from synth.compose.scene_config import SceneConfig
 from synth.compose.scene_framing import frame_scene
+from synth.compose.scene_irradiance import LightBuffers, apply_scene_light
 from synth.compose.scene_label import SceneLabel
+from synth.compose.scene_light import sample_scene_light
 from synth.render.check_fields import CheckLabel
 
 __all__ = ["SceneConfig", "compose_scene", "sample_check_count", "check_image_as_float"]
@@ -73,9 +82,11 @@ def compose_scene(
     light_gamma = rng.uniform(0.5, 1.0)
     color_gains = lighting.background_color_gains(canvas, rng.uniform(0.25, 0.6))
     paper_exposure = rng.uniform(0.86, 1.0)
-    paper_light = sample_paper_light(rng)
+    scene_light = sample_scene_light(light_field, rng)
+    paper_surface = sample_paper_surface(rng)
 
     id_map = np.zeros(canvas.shape[:2], np.uint8)
+    light_buffers = LightBuffers.open_sheet(*canvas.shape[:2])
     plane_maps, check_masks = [], []
     for index, ((image, label), placement, size) in enumerate(zip(rendered_checks, placements, sizes_inches)):
         deformation = sample_paper_deformation(*size, rng, config.deformation_strength)
@@ -84,11 +95,11 @@ def compose_scene(
                                   placement.rotation_degrees, framing.plane_pixels_per_inch, deformation,
                                   framing.nadir_plane, framing.camera_height_plane_px)
         plane_maps.append(plane_map)
-        # Scene light: the sheet's own low-frequency shading and color cast fall on the paper too.
+        # The background's baked light and colour cast fall on the paper too (the scene light comes later).
         center_x = int(np.clip(center_plane[0], 0, canvas.shape[1] - 1)); center_y = int(np.clip(center_plane[1], 0, canvas.shape[0] - 1))
         color_multiplier = color_gains * paper_exposure * light_field[center_y, center_x] ** light_gamma
-        pasted = paste_deformed_check(canvas, id_map, check_image_as_float(image), plane_map, paper_light,
-                                      color_multiplier.astype(np.float32), index + 1)
+        pasted = paste_deformed_check(canvas, id_map, light_buffers, check_image_as_float(image), plane_map, scene_light,
+                                      paper_surface, color_multiplier.astype(np.float32), index + 1)
         if pasted is not None:
             check_masks.append((index + 1, *pasted))
 
@@ -97,6 +108,17 @@ def compose_scene(
         visible_masks = [(x0, y0, alpha * (id_map[y0:y0 + alpha.shape[0], x0:x0 + alpha.shape[1]] == owner_id))
                          for owner_id, x0, y0, alpha in check_masks]
         canvas = harmonize_pasted_checks(canvas, visible_masks, config.harmonize_blend)
+
+    cast_shadow_record = {}
+    if rng.random() < config.cast_shadow_probability:
+        camera_height_inches = framing.camera_height_plane_px / framing.plane_pixels_per_inch
+        coarse_shadow, cast_shadow_record = cast_occluder_shadow(canvas.shape[:2], view.visible_quad_plane, framing.nadir_plane,
+                                                                 camera_height_inches, framing.plane_pixels_per_inch, id_map,
+                                                                 scene_light, rng)
+        if coarse_shadow is not None:
+            apply_cast_shadow(light_buffers.key_factor, light_buffers.ambient_factor, coarse_shadow)
+    canvas = apply_scene_light(canvas, light_buffers, scene_light, view.visible_quad_plane)
+    del light_buffers
 
     photo_width, photo_height = view.photo_width, view.photo_height
     photo = cv2.warpPerspective(canvas, view.plane_to_photo, (photo_width, photo_height), flags=cv2.INTER_LINEAR,
@@ -109,14 +131,14 @@ def compose_scene(
         photo_ids = cv2.remap(photo_ids, map_x, map_y, cv2.INTER_NEAREST)
 
     scene_check_labels = build_check_labels(check_labels, plane_maps, view, photo_ids)
-    effects = apply_camera_effects_in_place(photo, scene_check_labels, config, rng)
-    photo = np.clip(photo, 0, 1)
+    photo, effects = apply_camera_effects(photo, photo_ids, scene_check_labels, scene_light, config, rng)
     jpeg_quality = int(rng.integers(*config.jpeg_quality_range))
-    photo_uint8 = lighting.jpeg_roundtrip(photo, jpeg_quality)
+    photo_uint8 = jpeg_roundtrip(photo, jpeg_quality)
     effects.update({"camera_tilt_quad_plane": view.visible_quad_plane.round(1).tolist(), "radial_k1": round(view.radial_k1, 4),
                     "light_gamma": round(float(light_gamma), 3), "paper_exposure": round(float(paper_exposure), 3),
                     "pushed_out_check_index": framing.pushed_out_check_index, "framing": framing.to_dict(),
-                    "paper_light": paper_light.to_dict()})
+                    "scene_light": scene_light.to_dict(), "paper_surface": paper_surface.to_dict(),
+                    "cast_shadow": cast_shadow_record})
     label = SceneLabel(scene_id=scene_id, image_file=f"{scene_id}.jpg", image_width=photo_width, image_height=photo_height,
                        background_id=background_id, layout_mode=layout_mode, harmonized=config.harmonize,
                        jpeg_quality=jpeg_quality, effects=effects, checks=scene_check_labels)
