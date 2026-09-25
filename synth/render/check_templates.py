@@ -1,9 +1,13 @@
 """The catalog of check template designs, derived deterministically from a template index.
 
-A template fixes everything a check-printing company would fix: size, paper tint,
-security pattern, border, fonts, label wording, and a small layout shift. Fill-ins
-(names, amounts, handwriting) vary per check. Dataset splits are made by template id,
-so templates must be stable across runs: design `i` depends only on `i`.
+A template fixes everything a check-printing company would fix: the layout family, size,
+paper tint, security pattern, border, inks, fonts, label wording and small layout shifts.
+Fill-ins (names, amounts, handwriting) vary per check. Dataset splits are made by template
+id, so templates must be stable across runs: design `i` depends only on `i` (numpy seeded
+from `i`, never Python's salted `hash()`).
+
+- Family of design `i` is `LAYOUT_FAMILY_ORDER[i % 6]`, so families stay balanced at any count.
+- Geometry inside a family is jittered by the family module from the same template seed.
 """
 
 from dataclasses import dataclass
@@ -11,21 +15,25 @@ from enum import Enum
 
 import numpy as np
 
-from synth.render.check_layout import CheckLayout, CheckSizeKind
+from synth.render.check_layout import FAMILY_SIZE_KIND, CheckSizeKind, LayoutFamily
 from synth.render.fonts import FontRole, font_ids_with_role
 
-DEFAULT_TEMPLATE_COUNT = 24
+DEFAULT_TEMPLATE_COUNT = 66
 TEMPLATE_CATALOG_SEED = 1_000_003
-LAYOUT_JITTER_FRACTION = 0.006
-MIN_DOLLAR_SIGN_GAP = 0.022
-BUSINESS_TEMPLATE_PROBABILITY = 0.3
+MAX_PLATE_MISREGISTRATION_PX = 2.0
+PATTERN_INK_FLOOR = 70
+NEAR_WHITE_PATTERN_INK_RGB = (150, 158, 170)
+
+LAYOUT_FAMILY_ORDER: list[LayoutFamily] = list(LayoutFamily)
 
 
 class SecurityPatternKind(str, Enum):
-    """Background texture printed on the check paper."""
+    """Background texture printed on the check paper by the colour plate."""
 
     DIAGONAL_LINES = "diagonal_lines"
     GUILLOCHE_WAVES = "guilloche_waves"
+    FAN_GUILLOCHE = "fan_guilloche"
+    ROSETTE = "rosette"
     DOT_SCREEN = "dot_screen"
     MICROPRINT = "microprint"
     CROSSHATCH = "crosshatch"
@@ -40,6 +48,17 @@ class BorderKind(str, Enum):
     DOUBLE = "double"
     GUILLOCHE_BAND = "guilloche_band"
     DASHED = "dashed"
+    MICROPRINT = "microprint"
+
+
+class ScenicKind(str, Enum):
+    """Faded illustrated background used by some personal stock (PERSONAL_NAME_ONLY)."""
+
+    NONE = "none"
+    MOUNTAINS = "mountains"
+    WAVES = "waves"
+    WATERCOLOR = "watercolor"
+    SUNBURST = "sunburst"
 
 
 # Common check-stock paper tints (light, low saturation).
@@ -54,30 +73,50 @@ PAPER_TINTS_RGB: list[tuple[int, int, int]] = [
     (246, 245, 240),  # near white
 ]
 
+# Dark (offset "key") plate inks: labels, lines, borders.
+DARK_PLATE_INKS_RGB: list[tuple[int, int, int]] = [
+    (34, 34, 38),     # black
+    (28, 40, 78),     # navy
+    (30, 58, 46),     # bottle green
+    (70, 32, 36),     # maroon
+    (48, 54, 66),     # slate
+]
+
 PRINTED_BODY_FONT_IDS = ["libre_baskerville", "eb_garamond", "source_sans_3", "pt_sans", "courier_prime"]
 PRINTED_HEADER_FONT_IDS = ["libre_baskerville", "eb_garamond", "pt_sans_bold", "oswald", "courier_prime_bold", "source_sans_3"]
+PRINTED_FILL_FONT_IDS = ["courier_prime", "source_sans_3", "pt_sans", "libre_baskerville"]
+LABEL_FONT_IDS = ["pt_sans", "source_sans_3", "libre_baskerville", "eb_garamond", "pt_sans_bold"]
+BANK_LOGO_SHAPES = ["circle", "square", "diamond", "building", "none"]
 
 
 @dataclass(frozen=True)
 class TemplateDesign:
-    """Everything fixed by the check stock; see module docstring."""
+    """Everything fixed by the check stock; see module docstring. Hashable (used as a cache key)."""
 
     template_id: str
+    template_index: int
+    layout_family: LayoutFamily
     size_kind: CheckSizeKind
     paper_tint_rgb: tuple[int, int, int]
     pattern_kind: SecurityPatternKind
-    pattern_rgb: tuple[int, int, int]
+    pattern_rgb: tuple[int, int, int]    # colour-plate ink (multiplies the paper)
     pattern_strength: float
     border_kind: BorderKind
+    dark_ink_rgb: tuple[int, int, int]
     header_font_id: str
     body_font_id: str
     label_font_id: str
     labels_uppercase: bool
     amount_box_outlined: bool
     printed_fill_font_id: str
-    layout: CheckLayout
     bank_logo_shape: str
-    micr_layout: str  # "personal" (routing, account, number) or "business" (number first)
+    micr_layout: str                     # "personal" (routing, account, number) or "business" (number first)
+    scenic_kind: ScenicKind
+    has_pantograph: bool                 # hidden "VOID" in the dot screen
+    has_security_fibres: bool            # short coloured fibres in the paper
+    microprint_signature_line: bool      # signature line made of tiny repeated text
+    plate_misregistration_px: tuple[float, float]  # colour plate offset against the dark plate
+    variant: int                         # small wording/arrangement choice inside the family (0..2)
 
 
 def darker_shade(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
@@ -85,45 +124,68 @@ def darker_shade(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, in
     return tuple(int(channel * factor) for channel in rgb)
 
 
-def jitter_layout(rng: np.random.Generator) -> CheckLayout:
-    """Shift each anchor group by a small random amount, keeping the standard arrangement."""
-    base = CheckLayout()
-    shifted_values = {}
-    for name, value in base.__dict__.items():
-        shifted_values[name] = value + float(rng.uniform(-LAYOUT_JITTER_FRACTION, LAYOUT_JITTER_FRACTION))
-    # Keep the "$" clear of the amount box it labels.
-    shifted_values["dollar_sign_x"] = min(shifted_values["dollar_sign_x"], shifted_values["amount_box_x0"] - MIN_DOLLAR_SIGN_GAP)
-    return CheckLayout(**shifted_values)
+def saturated_ink_for_tint(tint_rgb: tuple[int, int, int], saturation: float) -> tuple[int, int, int]:
+    """A printing ink of the tint's hue: each channel's distance from white scaled up by `saturation`.
+
+    Inks multiply the paper, so a blue security pattern on blue paper needs a genuinely blue ink,
+    not a darker copy of the paper colour (that would apply the tint twice).
+    """
+    return tuple(int(max(PATTERN_INK_FLOOR, 255 - (255 - channel) * saturation)) for channel in tint_rgb)
+
+
+def pick(rng: np.random.Generator, options: list):
+    """One element of `options`, uniformly."""
+    return options[int(rng.integers(len(options)))]
 
 
 def build_template_design(template_index: int) -> TemplateDesign:
     """Deterministically build design number `template_index`."""
     rng = np.random.default_rng(TEMPLATE_CATALOG_SEED + template_index)
-    size_kind = CheckSizeKind.BUSINESS if rng.random() < BUSINESS_TEMPLATE_PROBABILITY else CheckSizeKind.PERSONAL
-    tint = PAPER_TINTS_RGB[int(rng.integers(len(PAPER_TINTS_RGB)))]
-    pattern_kind = list(SecurityPatternKind)[int(rng.integers(len(SecurityPatternKind)))]
-    printed_fill_candidates = ["courier_prime", "source_sans_3", "pt_sans", "libre_baskerville"]
+    family = LAYOUT_FAMILY_ORDER[template_index % len(LAYOUT_FAMILY_ORDER)]
+    size_kind = FAMILY_SIZE_KIND[family]
+    tint = pick(rng, PAPER_TINTS_RGB)
+    is_business = size_kind == CheckSizeKind.BUSINESS
+    scenic_kind = pick(rng, [kind for kind in ScenicKind if kind != ScenicKind.NONE]) \
+        if family == LayoutFamily.PERSONAL_NAME_ONLY and rng.random() < 0.8 else ScenicKind.NONE
+    pattern_kind = pick(rng, list(SecurityPatternKind))
+    if family == LayoutFamily.MONEY_ORDER:
+        pattern_kind = pick(rng, [SecurityPatternKind.FAN_GUILLOCHE, SecurityPatternKind.ROSETTE, SecurityPatternKind.GUILLOCHE_WAVES])
+    pattern_ink = saturated_ink_for_tint(tint, float(rng.uniform(3.0, 5.0)))
+    if min(pattern_ink) > 200:  # near-white stock: use a neutral blue-gray security ink instead
+        pattern_ink = NEAR_WHITE_PATTERN_INK_RGB
+    misregistration_angle = rng.uniform(0, 2 * np.pi)
+    misregistration_length = rng.uniform(0, MAX_PLATE_MISREGISTRATION_PX)
     return TemplateDesign(
         template_id=f"tpl_{template_index:03d}",
+        template_index=template_index,
+        layout_family=family,
         size_kind=size_kind,
         paper_tint_rgb=tint,
         pattern_kind=pattern_kind,
-        pattern_rgb=darker_shade(tint, float(rng.uniform(0.55, 0.8))),
-        pattern_strength=float(rng.uniform(0.25, 0.6)),
-        border_kind=list(BorderKind)[int(rng.integers(len(BorderKind)))],
-        header_font_id=PRINTED_HEADER_FONT_IDS[int(rng.integers(len(PRINTED_HEADER_FONT_IDS)))],
-        body_font_id=PRINTED_BODY_FONT_IDS[int(rng.integers(len(PRINTED_BODY_FONT_IDS)))],
-        label_font_id=PRINTED_BODY_FONT_IDS[int(rng.integers(len(PRINTED_BODY_FONT_IDS)))],
-        labels_uppercase=bool(rng.random() < 0.6),
+        pattern_rgb=pattern_ink,
+        pattern_strength=float(rng.uniform(0.18, 0.42) if scenic_kind != ScenicKind.NONE else rng.uniform(0.25, 0.6)),
+        border_kind=pick(rng, list(BorderKind)),
+        dark_ink_rgb=pick(rng, DARK_PLATE_INKS_RGB),
+        header_font_id=pick(rng, PRINTED_HEADER_FONT_IDS),
+        body_font_id=pick(rng, PRINTED_BODY_FONT_IDS),
+        label_font_id=pick(rng, LABEL_FONT_IDS),
+        labels_uppercase=bool(rng.random() < (0.85 if is_business else 0.6)),
         amount_box_outlined=bool(rng.random() < 0.75),
-        printed_fill_font_id=printed_fill_candidates[int(rng.integers(len(printed_fill_candidates)))],
-        layout=jitter_layout(rng),
-        bank_logo_shape=["circle", "square", "diamond", "none"][int(rng.integers(4))],
-        micr_layout="business" if size_kind == CheckSizeKind.BUSINESS else "personal",
+        printed_fill_font_id=pick(rng, PRINTED_FILL_FONT_IDS),
+        bank_logo_shape=pick(rng, BANK_LOGO_SHAPES),
+        micr_layout="business" if is_business else "personal",
+        scenic_kind=scenic_kind,
+        has_pantograph=bool(rng.random() < 0.35),
+        has_security_fibres=bool(rng.random() < 0.4),
+        microprint_signature_line=bool(rng.random() < 0.5),
+        plate_misregistration_px=(float(misregistration_length * np.cos(misregistration_angle)),
+                                  float(misregistration_length * np.sin(misregistration_angle))),
+        variant=int(rng.integers(3)),
     )
 
 
 def build_template_catalog(template_count: int = DEFAULT_TEMPLATE_COUNT) -> list[TemplateDesign]:
     """All template designs, ids tpl_000 .. tpl_{n-1}."""
-    assert set(PRINTED_BODY_FONT_IDS) <= set(font_ids_with_role(FontRole.PRINTED))
+    printed_fonts = set(font_ids_with_role(FontRole.PRINTED))
+    assert set(PRINTED_BODY_FONT_IDS + PRINTED_HEADER_FONT_IDS + LABEL_FONT_IDS) <= printed_fonts
     return [build_template_design(index) for index in range(template_count)]

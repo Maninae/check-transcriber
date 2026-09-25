@@ -2,7 +2,9 @@
 
 - Names and addresses come from Faker (made-up combinations).
 - Payees are a fixed list of invented land-trust / co-op names.
-- Banks are invented names.
+- Banks and payee mailing addresses are invented.
+- Money orders follow issuer rules: the issuer prints number, date and amount (capped at $1,000);
+  the purchaser writes payee, memo and their own name and address.
 - Routing numbers are 9 digits that deliberately FAIL the ABA checksum, so no generated
   check can ever carry a real bank's routing number.
 """
@@ -15,6 +17,7 @@ from faker import Faker
 
 from synth.render.amount_words import spell_whole_dollars
 from synth.render.check_fields import HANDWRITABLE_FIELDS, CheckContent
+from synth.render.check_layout import LayoutFamily
 from synth.render.check_templates import TemplateDesign
 from synth.render.fonts import MICR_ON_US_SYMBOL, MICR_TRANSIT_SYMBOL
 
@@ -34,10 +37,23 @@ FAKE_BANK_NAMES = [
     "Redwood Crossing Bank", "Copper Canyon Savings", "Bayshore Mutual Bank", "Northgate Trust Bank",
 ]
 
+# Invented mailing addresses printed under the payee on business stock (window-envelope block).
+PAYEE_MAILING_ADDRESSES: dict[str, list[str]] = {
+    "Quailbrook Community Land Trust": ["PO Box 4418", "Quailbrook, OR 97999"],
+    "Fennimore Street Housing Cooperative": ["212 Fennimore St, Office 2", "Larchmont Falls, WI 53999"],
+    "Driftwood Commons Land Trust": ["88 Driftwood Commons Way", "Seacliff Harbor, ME 04999"],
+    "Marrowstone Co-op Homes": ["1400 Marrowstone Loop", "Tidewater Bend, WA 98999"],
+    "Saltgrass Community Land Trust": ["PO Box 2207", "Saltgrass Flats, NM 87999"],
+    "Hollis Yard Housing Co-op": ["9 Hollis Yard, Suite B", "Brickmill, PA 19999"],
+}
+
 MEMO_TEMPLATES = [
     "", "", "", "{month} rent", "Unit {unit}", "Rent - {month}", "Apt {unit} rent",
     "#{unit} {month}", "rent", "{month} rent Unit {unit}", "{month} {year} rent", "Unit {unit} - {month}",
+    "{month} rent #{unit}", "rent {month_number}/{short_year}", "{month}. rent", "Rent {month} {year} - Apt {unit}",
+    "{unit}", "Unit {unit} {month} rent", "rent + parking", "{full_month}", "{month} {year}", "Apt. {unit}",
 ]
+MONEY_ORDER_MAX_DOLLARS = 1000
 MONTH_ABBREVIATIONS = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"]
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
                "September", "October", "November", "December"]
@@ -67,21 +83,29 @@ def fake_routing_number(rng: np.random.Generator) -> str:
     return digits
 
 
-def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritten: bool) -> str:
-    """Courtesy-box amount in one of the styles people and printers use."""
+def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritten: bool, money_order: bool = False) -> str:
+    """Courtesy-box amount in one of the styles people, check printers and money-order machines use."""
     dollars, cents = divmod(amount_cents, 100)
-    styles = [f"{dollars:,}.{cents:02d}", f"{dollars}.{cents:02d}"]
-    if handwritten:
-        styles += [f"{dollars:,} {cents:02d}/100", f"{dollars:,}.{cents:02d}", f"{dollars:,}.-" if cents == 0 else f"{dollars:,}.{cents:02d}"]
+    if money_order:
+        styles = [f"${dollars:,}.{cents:02d}", f"**{dollars:,}.{cents:02d}**", f"$***{dollars:,}.{cents:02d}"]
+    elif handwritten:
+        styles = [f"{dollars:,}.{cents:02d}", f"{dollars:,}.{cents:02d}", f"{dollars}.{cents:02d}", f"{dollars:,} {cents:02d}/100",
+                  f"{dollars} {cents:02d}/100"]
+        if cents == 0:  # whole-dollar habits: "1,250.-", "1250 =", "1,250 xx/100", "1,250.xx"
+            styles += [f"{dollars:,}.-", f"{dollars} =", f"{dollars:,} xx/100", f"{dollars:,}.xx", f"{dollars:,}"]
     else:
-        styles += [f"**{dollars:,}.{cents:02d}", f"***{dollars:,}.{cents:02d}"]
+        styles = [f"{dollars:,}.{cents:02d}", f"{dollars}.{cents:02d}", f"**{dollars:,}.{cents:02d}", f"***{dollars:,}.{cents:02d}",
+                  f"$*****{dollars:,}.{cents:02d}"]
     return styles[int(rng.integers(len(styles)))]
 
 
-def format_amount_words(amount_cents: int, rng: np.random.Generator, handwritten: bool) -> str:
+def format_amount_words(amount_cents: int, rng: np.random.Generator, handwritten: bool, money_order: bool = False) -> str:
     """Legal-line amount, e.g. 'One thousand two hundred fifty and 00/100'."""
     dollars, cents = divmod(amount_cents, 100)
     words = spell_whole_dollars(dollars)
+    if money_order:
+        return [f"{words.upper()} DOLLARS AND {cents:02d} CENTS", f"***{words.upper()} AND {cents:02d}/100***",
+                f"{words.title()} Dollars {cents:02d} Cents"][int(rng.integers(3))]
     if handwritten:
         words = words.capitalize() if rng.random() < 0.7 else words
         cents_part = ["and {c:02d}/100", "& {c:02d}/100", "and {c:02d}/100 ---", "and no/100" if cents == 0 else "and {c:02d}/100"][int(rng.integers(4))]
@@ -93,12 +117,21 @@ def format_amount_words(amount_cents: int, rng: np.random.Generator, handwritten
 def format_check_date(date_value: datetime.date, rng: np.random.Generator, handwritten: bool) -> str:
     """Date in one of the formats seen on US checks."""
     month, day, year = date_value.month, date_value.day, date_value.year
+    short_month, full_month = MONTH_ABBREVIATIONS[month - 1], MONTH_NAMES[month - 1]
     styles = [f"{month}/{day}/{year}", f"{month:02d}/{day:02d}/{year}", f"{month}-{day}-{year % 100:02d}",
-              f"{MONTH_ABBREVIATIONS[month - 1]} {day}, {year}", f"{MONTH_NAMES[month - 1]} {day}, {year}",
-              f"{month}/{day}/{year % 100:02d}"]
-    if not handwritten:
-        styles += [date_value.isoformat(), f"{MONTH_ABBREVIATIONS[month - 1][:3].upper()} {day:02d} {year}"]
+              f"{short_month} {day}, {year}", f"{full_month} {day}, {year}", f"{month}/{day}/{year % 100:02d}"]
+    if handwritten:
+        styles += [f"{month:02d}-{day:02d}-{year}", f"{short_month} {ordinal(day)} {year}", f"{short_month}. {day}, {year}",
+                   f"{full_month} {ordinal(day)}, {year}", f"{month}.{day}.{year % 100:02d}", f"{month}/{day}/{year % 100:02d}"]
+    else:
+        styles += [date_value.isoformat(), f"{short_month[:3].upper()} {day:02d} {year}", f"{month:02d}/{day:02d}/{year % 100:02d}"]
     return styles[int(rng.integers(len(styles)))]
+
+
+def ordinal(day: int) -> str:
+    """1 -> '1st', 2 -> '2nd', 11 -> '11th', 23 -> '23rd'."""
+    suffix = "th" if 10 <= day % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
 
 
 def sample_rent_amount_cents(rng: np.random.Generator) -> int:
@@ -133,13 +166,16 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
     faker = shared_faker()
     faker.seed_instance(int(rng.integers(2**31)))
     is_business = template.micr_layout == "business"
-    if is_business and rng.random() < 0.7:
+    is_money_order = template.layout_family == LayoutFamily.MONEY_ORDER
+    if is_money_order:
+        payer_name = faker.name()  # written by hand by the purchaser, so natural case
+    elif is_business and rng.random() < 0.7:
         payer_name = faker.company().upper() if rng.random() < 0.5 else faker.company()
     elif rng.random() < 0.25:
         payer_name = f"{faker.first_name()} & {faker.first_name()} {faker.last_name()}"
     else:
         payer_name = faker.name()
-    if rng.random() < 0.35:
+    if not is_money_order and rng.random() < 0.35:
         payer_name = payer_name.upper()
     payer_address_lines = [faker.street_address(), f"{faker.city()}, {faker.state_abbr(include_territories=False, include_freely_associated_states=False)} {faker.zipcode()}"]
 
@@ -151,17 +187,25 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
         per_field_probability = handwritten_probability if handwriting_mode_roll < 0.8 else 0.5
         if rng.random() < per_field_probability:
             handwritten_fields.append(field_name.value)
+    if is_money_order:  # the issuer printed date and amount; the purchaser writes payee and memo
+        handwritten_fields = ["payee", "memo"]
 
     amount_cents = sample_rent_amount_cents(rng)
+    if is_money_order and amount_cents > MONEY_ORDER_MAX_DOLLARS * 100:  # issuers cap one money order at $1,000
+        amount_cents = int(rng.integers(RENT_MIN_DOLLARS, MONEY_ORDER_MAX_DOLLARS + 1)) * 100
     date_value = DATE_RANGE_START + datetime.timedelta(days=int(rng.integers(DATE_RANGE_DAYS)))
     payee_canonical = list(PAYEE_SPELLINGS)[int(rng.integers(len(PAYEE_SPELLINGS)))]
     spellings = PAYEE_SPELLINGS[payee_canonical]
     payee_text = spellings[int(rng.integers(len(spellings)))]
     unit = f"{int(rng.integers(1, 30))}{'ABCD'[int(rng.integers(4))] if rng.random() < 0.6 else ''}"
     memo_text = MEMO_TEMPLATES[int(rng.integers(len(MEMO_TEMPLATES)))].format(
-        month=MONTH_ABBREVIATIONS[date_value.month - 1], unit=unit, year=date_value.year)
+        month=MONTH_ABBREVIATIONS[date_value.month - 1], unit=unit, year=date_value.year, month_number=date_value.month,
+        short_year=f"{date_value.year % 100:02d}", full_month=MONTH_NAMES[date_value.month - 1])
 
-    check_number = str(int(rng.integers(1001, 99999)) if is_business else int(rng.integers(101, 9999)))
+    if is_money_order:
+        check_number = "".join(str(int(d)) for d in rng.integers(0, 10, 11)).lstrip("0") or "1"
+    else:
+        check_number = str(int(rng.integers(1001, 99999)) if is_business else int(rng.integers(101, 9999)))
     routing_number = fake_routing_number(rng)
     account_number = "".join(str(int(d)) for d in rng.integers(0, 10, int(rng.integers(8, 13))))
     micr_font_text, micr_readable_text = build_micr_lines(routing_number, account_number, check_number, template.micr_layout)
@@ -175,12 +219,12 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
         payee_text=payee_text,
         payee_canonical=payee_canonical,
         amount_cents=amount_cents,
-        amount_numeric_text=format_amount_numeric(amount_cents, rng, "amount_numeric" in handwritten_fields),
-        amount_words_text=format_amount_words(amount_cents, rng, "amount_words" in handwritten_fields),
+        amount_numeric_text=format_amount_numeric(amount_cents, rng, "amount_numeric" in handwritten_fields, is_money_order),
+        amount_words_text=format_amount_words(amount_cents, rng, "amount_words" in handwritten_fields, is_money_order),
         bank_name=FAKE_BANK_NAMES[int(rng.integers(len(FAKE_BANK_NAMES)))],
         bank_city_line=f"{faker.city()}, {faker.state_abbr(include_territories=False, include_freely_associated_states=False)}",
         memo_text=memo_text,
-        signature_text=payer_name.title() if not is_business else faker.name(),
+        signature_text=payer_name.title() if not is_business or is_money_order else faker.name(),
         routing_number=routing_number,
         account_number=account_number,
         micr_font_text=micr_font_text,

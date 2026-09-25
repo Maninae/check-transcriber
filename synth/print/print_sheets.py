@@ -72,7 +72,7 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
             template = templates[int(rng.integers(len(templates)))]
             content = sample_check_content(template, rng, serial=f"S-{serial_number:04d}")
             serial_number += 1
-            image, label = render_check(template, content, rng)
+            image, label = render_check(template, content, rng, simulate_print_texture=False)  # real printer + paper add texture
             rendered.append((template, content, image.rotate(90, expand=True) if size_kind == CheckSizeKind.BUSINESS else image, label))
         for slot, ((template, content, image, label), origin) in enumerate(zip(rendered, slot_origins(size_kind, rendered[0][2].size))):
             page.paste(image, origin)
