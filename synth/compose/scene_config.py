@@ -11,10 +11,11 @@ class SceneConfig:
     photo_aspect: float = 4 / 3
     loose_probability: float = 0.3        # loose overlap or fanned row instead of a gapped grid
     deformation_strength: float = 1.0     # scales curl / fold / wave frequencies; 0 keeps paper flat
-    glare_probability: float = 0.5
-    motion_blur_probability: float = 0.25
-    lens_blur_probability: float = 0.7
-    sharpen_probability: float = 0.7
+    cast_shadow_probability: float = 0.35  # a phone or hand shadow falls across the scene
+    glare_probability: float = 0.2        # a broad specular sheen on the paper
+    lens_blur_probability: float = 0.15   # defocus; exclusive with motion blur
+    motion_blur_probability: float = 0.07
+    sharpen_probability: float = 0.9
     jpeg_quality_range: tuple[int, int] = (68, 92)
     harmonize: bool = False
     harmonize_blend: float = 0.5
