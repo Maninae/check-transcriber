@@ -36,7 +36,8 @@ class FontSpec:
 
     - `is_cursive`: letters join, so the handwriting engine renders whole words (joins survive)
       instead of placing glyphs one by one.
-    - `is_variable`: a variable font, pinned to its Regular instance on load.
+    - `is_variable`: a variable font, pinned to its `instance_name` instance on load.
+    - `instance_name`: named instance of a variable font ("Regular", "Bold", ...); ignored for static files.
     """
 
     font_id: str
@@ -46,6 +47,7 @@ class FontSpec:
     source_url: str
     is_cursive: bool = False
     is_variable: bool = False
+    instance_name: str = "Regular"
 
 
 GOOGLE_FONTS_REPO_RAW = "https://raw.githubusercontent.com/google/fonts/main"
@@ -56,19 +58,21 @@ LICENSE_DIRECTORY_BY_NAME = {OFL_LICENSE: "ofl", APACHE_LICENSE: "apache"}
 
 
 def google_font(font_id: str, directory: str, filename: str, role: FontRole, license_name: str = OFL_LICENSE,
-                is_cursive: bool = False) -> FontSpec:
+                is_cursive: bool = False, instance_name: str = "Regular") -> FontSpec:
     """Registry entry for a file in the google/fonts repo, stored as `<directory>/<filename>` on the data drive.
 
     - `license_name` picks the upstream folder: `ofl/` (SIL OFL 1.1) or `apache/` (Apache 2.0).
     - Upstream variable-font names contain `[wght]`, which is URL-escaped here.
+    - Two ids may share one variable file with different `instance_name`s (e.g. Regular and Bold).
     """
     license_directory = LICENSE_DIRECTORY_BY_NAME[license_name]
     escaped_filename = filename.replace("[", "%5B").replace("]", "%5D")
     return FontSpec(font_id, f"{directory}/{filename}", role, license_name,
                     f"{GOOGLE_FONTS_REPO_RAW}/{license_directory}/{directory}/{escaped_filename}",
-                    is_cursive=is_cursive, is_variable="[" in filename)
+                    is_cursive=is_cursive, is_variable="[" in filename, instance_name=instance_name)
 
 
+PRINTED = FontRole.PRINTED
 HANDWRITING = FontRole.HANDWRITING
 SIGNATURE = FontRole.SIGNATURE
 
@@ -81,6 +85,48 @@ FONT_SPECS: list[FontSpec] = [
     FontSpec("oswald", "oswald/Oswald-Variable.ttf", FontRole.PRINTED, OFL_LICENSE, f"{GOOGLE_FONTS_RAW}/oswald/Oswald%5Bwght%5D.ttf", is_variable=True),
     FontSpec("courier_prime", "courierprime/CourierPrime-Regular.ttf", FontRole.PRINTED, OFL_LICENSE, f"{GOOGLE_FONTS_RAW}/courierprime/CourierPrime-Regular.ttf"),
     FontSpec("courier_prime_bold", "courierprime/CourierPrime-Bold.ttf", FontRole.PRINTED, OFL_LICENSE, f"{GOOGLE_FONTS_RAW}/courierprime/CourierPrime-Bold.ttf"),
+    # Printed, added for typeface variety (style and role pools live in printed_font_pools.py).
+    # Office/laser-check workhorses: Tinos, Arimo, Cousine and Carlito are metric twins of Times
+    # New Roman, Arial, Courier New and Calibri.
+    google_font("tinos", "tinos", "Tinos-Regular.ttf", PRINTED),
+    google_font("tinos_bold", "tinos", "Tinos-Bold.ttf", PRINTED),
+    google_font("arimo", "arimo", "Arimo[wght].ttf", PRINTED),
+    google_font("arimo_bold", "arimo", "Arimo[wght].ttf", PRINTED, instance_name="Bold"),
+    google_font("cousine", "cousine", "Cousine-Regular.ttf", PRINTED),
+    google_font("carlito", "carlito", "Carlito-Regular.ttf", PRINTED),
+    google_font("carlito_bold", "carlito", "Carlito-Bold.ttf", PRINTED),
+    # Classic book serifs (Caslon, Garamond-like, Century-like, transitional).
+    google_font("libre_caslon_text", "librecaslontext", "LibreCaslonText[wght].ttf", PRINTED),
+    google_font("crimson_text", "crimsontext", "CrimsonText-Regular.ttf", PRINTED),
+    google_font("crimson_text_bold", "crimsontext", "CrimsonText-Bold.ttf", PRINTED),
+    google_font("old_standard", "oldstandardtt", "OldStandard-Regular.ttf", PRINTED),
+    google_font("pt_serif", "ptserif", "PT_Serif-Web-Regular.ttf", PRINTED),
+    google_font("pt_serif_bold", "ptserif", "PT_Serif-Web-Bold.ttf", PRINTED),
+    google_font("merriweather", "merriweather", "Merriweather[opsz,wdth,wght].ttf", PRINTED),
+    google_font("arvo", "arvo", "Arvo-Regular.ttf", PRINTED),
+    # Humanist and grotesque sans (Verdana-like Istok, Franklin Gothic-like Libre Franklin).
+    google_font("open_sans", "opensans", "OpenSans[wdth,wght].ttf", PRINTED),
+    google_font("libre_franklin", "librefranklin", "LibreFranklin[wght].ttf", PRINTED),
+    google_font("libre_franklin_bold", "librefranklin", "LibreFranklin[wght].ttf", PRINTED, instance_name="Bold"),
+    google_font("lato", "lato", "Lato-Regular.ttf", PRINTED),
+    google_font("lato_bold", "lato", "Lato-Bold.ttf", PRINTED),
+    google_font("istok_web", "istokweb", "IstokWeb-Regular.ttf", PRINTED),
+    # Condensed sans (business checks, narrow fields).
+    google_font("roboto_condensed", "robotocondensed", "RobotoCondensed[wght].ttf", PRINTED),
+    google_font("archivo_narrow", "archivonarrow", "ArchivoNarrow[wght].ttf", PRINTED),
+    google_font("pt_sans_narrow", "ptsansnarrow", "PT_Sans-Narrow-Web-Regular.ttf", PRINTED),
+    google_font("pt_sans_narrow_bold", "ptsansnarrow", "PT_Sans-Narrow-Web-Bold.ttf", PRINTED),
+    google_font("barlow_condensed_semibold", "barlowcondensed", "BarlowCondensed-SemiBold.ttf", PRINTED),
+    # Monospace (accounting-software fills). No OFL OCR-A/OCR-B exists in google/fonts;
+    # Share Tech Mono is the closest machine-read look.
+    google_font("ibm_plex_mono", "ibmplexmono", "IBMPlexMono-Regular.ttf", PRINTED),
+    google_font("share_tech_mono", "sharetechmono", "ShareTechMono-Regular.ttf", PRINTED),
+    google_font("anonymous_pro", "anonymouspro", "AnonymousPro-Regular.ttf", PRINTED),
+    # Display faces for payer names and bank names (engraved caps, heavy grotesque, flared).
+    google_font("cinzel", "cinzel", "Cinzel[wght].ttf", PRINTED),
+    google_font("archivo_black", "archivoblack", "ArchivoBlack-Regular.ttf", PRINTED),
+    google_font("playfair_display_bold", "playfairdisplay", "PlayfairDisplay[wght].ttf", PRINTED, instance_name="Bold"),
+    google_font("marcellus", "marcellus", "Marcellus-Regular.ttf", PRINTED),
     # Handwriting: print hands first, then joined (cursive) hands. Rejected by eye at a real pen
     # width (letters clog): Just Another Hand, Loved by the King, Homemade Apple, Waiting for
     # the Sunrise, Cedarville Cursive, Over the Rainbow.
@@ -162,9 +208,11 @@ def font_file_path(font_id: str, font_dir: Path = FONT_DIR) -> Path:
 def load_font(font_id: str, pixel_size: int) -> ImageFont.FreeTypeFont:
     """Load (and cache per process) a font at a pixel size.
 
-    Variable fonts default to their first instance (often ExtraLight), so pin them to Regular.
+    Variable fonts default to their first instance (often ExtraLight), so pin them to the spec's
+    named instance (Regular unless the id asks for Bold, SemiBold, ...).
     """
+    spec = FONT_SPECS_BY_ID[font_id]
     font = ImageFont.truetype(str(font_file_path(font_id)), max(4, int(pixel_size)))
-    if FONT_SPECS_BY_ID[font_id].is_variable:
-        font.set_variation_by_name("Regular")
+    if spec.is_variable:
+        font.set_variation_by_name(spec.instance_name)
     return font

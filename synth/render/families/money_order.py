@@ -24,7 +24,7 @@ def draw_money_order(canvas: StockCanvas, rng: np.random.Generator) -> FieldSlot
     logo_x = canvas.bank_logo(canvas.fx(0.04), canvas.fy(0.07), int(issuer_em * 1.4), "color")
     bank_name = TextSlot(logo_x, canvas.fy(0.07) + issuer_em * 1.05, canvas.fx(0.4), issuer_em)
     canvas.label("label_title", TITLES[variant], canvas.fx(0.5 + jitter(rng)), canvas.fy(0.2), anchor="ms",
-                 em_px=canvas.px(0.17), font_id="oswald", apply_case=False)
+                 em_px=canvas.px(0.17), font_id=canvas.template.header_font_id, apply_case=False)
     small_em = canvas.px(SMALL_LABEL_EM_INCHES)
     canvas.label("label_serial_number", "SERIAL NUMBER", canvas.fx(0.955), canvas.fy(0.07), anchor="rs", em_px=small_em)
     number = TextSlot(canvas.fx(0.955), canvas.fy(0.15), canvas.fx(0.3), canvas.px(0.13), "rs")

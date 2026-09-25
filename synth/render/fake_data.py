@@ -85,8 +85,20 @@ def fake_routing_number(rng: np.random.Generator) -> str:
     return digits
 
 
-def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritten: bool, money_order: bool = False) -> str:
-    """Courtesy-box amount in one of the styles people, check printers and money-order machines use."""
+# Families whose stock preprints "$" beside the amount box; their fill must not add a second one.
+FAMILIES_WITH_PREPRINTED_DOLLAR_SIGN = frozenset({
+    LayoutFamily.PERSONAL_CLASSIC,
+    LayoutFamily.PERSONAL_DATE_BOX,
+    LayoutFamily.PERSONAL_NAME_ONLY,
+})
+
+
+def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritten: bool, money_order: bool = False,
+                          preprinted_dollar_sign: bool = False) -> str:
+    """Courtesy-box amount in one of the styles people, check printers and money-order machines use.
+
+    With `preprinted_dollar_sign` the stock already prints "$", so the fill never starts with another.
+    """
     dollars, cents = divmod(amount_cents, 100)
     if money_order:
         styles = [f"${dollars:,}.{cents:02d}", f"**{dollars:,}.{cents:02d}**", f"$***{dollars:,}.{cents:02d}"]
@@ -98,6 +110,8 @@ def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritt
     else:
         styles = [f"{dollars:,}.{cents:02d}", f"{dollars}.{cents:02d}", f"**{dollars:,}.{cents:02d}", f"***{dollars:,}.{cents:02d}",
                   f"$*****{dollars:,}.{cents:02d}"]
+    if preprinted_dollar_sign:
+        styles = [style.removeprefix("$") for style in styles]
     return styles[int(rng.integers(len(styles)))]
 
 
@@ -220,7 +234,8 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
         payee_text=payee_text,
         payee_canonical=payee_canonical,
         amount_cents=amount_cents,
-        amount_numeric_text=format_amount_numeric(amount_cents, rng, "amount_numeric" in handwritten_fields, is_money_order),
+        amount_numeric_text=format_amount_numeric(amount_cents, rng, "amount_numeric" in handwritten_fields, is_money_order,
+                                                  template.layout_family in FAMILIES_WITH_PREPRINTED_DOLLAR_SIGN),
         amount_words_text=format_amount_words(amount_cents, rng, "amount_words" in handwritten_fields, is_money_order),
         bank_name=FAKE_BANK_NAMES[int(rng.integers(len(FAKE_BANK_NAMES)))],
         bank_city_line=f"{faker.city()}, {faker.state_abbr(include_territories=False, include_freely_associated_states=False)}",

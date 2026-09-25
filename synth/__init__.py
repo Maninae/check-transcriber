@@ -5,4 +5,4 @@ several checks into a phone-photo-like scene (`compose_scene`), and build split 
 (`build_dataset`, the CLI). See CLAUDE.md for the module map.
 """
 
-GENERATOR_VERSION = "0.2.0"
+GENERATOR_VERSION = "0.3.0"
