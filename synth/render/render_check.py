@@ -37,9 +37,10 @@ from synth.render.check_layout import (
 )
 from synth.render.check_templates import BorderKind, TemplateDesign, darker_shade
 from synth.render.fake_data import PRINTED_INK_RGB
-from synth.render.fonts import FontRole, font_ids_with_role, load_font
+from synth.render.fonts import load_font
 from synth.render.security_pattern import make_security_pattern
-from synth.render.text_drawing import draw_handwritten_text, draw_printed_text
+from synth.render.handwriting_writer import draw_handwritten_field, sample_writer
+from synth.render.text_drawing import draw_printed_text
 
 PAPER_GRAIN_STD = 2.5
 MICR_INK_RGB = (18, 18, 20)
@@ -186,8 +187,14 @@ def render_check(
     content: CheckContent,
     rng: np.random.Generator,
     dpi: int = RENDER_DPI,
+    handwriting_font_ids: list[str] | None = None,
+    signature_font_ids: list[str] | None = None,
 ) -> tuple[Image.Image, CheckLabel]:
-    """Render `content` onto `template`. Returns (RGB image, label with tight field boxes)."""
+    """Render `content` onto `template`. Returns (RGB image, label with tight field boxes).
+
+    Font pools restrict which handwriting and signature fonts the writer may use (split holdout);
+    None means every registered font of that role.
+    """
     blank_pixels, preprinted = render_blank_template(template, dpi)
     height, width = blank_pixels.shape[:2]
     canvas = Image.fromarray(blank_pixels, "RGB").convert("RGBA")
@@ -195,11 +202,9 @@ def render_check(
     layout = template.layout
     printed_ink = PRINTED_INK_RGB
     label_ink = preprinted_ink_rgb(template)
-    handwriting_font_id = rng.choice(font_ids_with_role(FontRole.HANDWRITING))
-    signature_font_id = rng.choice(font_ids_with_role(FontRole.SIGNATURE))
+    writer = sample_writer(rng, content.ink_rgb, handwriting_font_ids, signature_font_ids)
     handwriting_em = inches_to_px(HANDWRITING_EM_INCHES, dpi)
     printed_fill_em = inches_to_px(PRINTED_FILL_EM_INCHES, dpi)
-    pen_width_px = int(rng.choice([1, 3, 3, 5]))  # one pen per writer
     fields: list[FieldLabel] = []
 
     def add_field(field_name: FieldName, text: str, box, handwritten: bool) -> None:
@@ -243,8 +248,7 @@ def render_check(
         if not text:
             return
         if field_name.value in content.handwritten_fields:
-            box = draw_handwritten_text(canvas, text, handwriting_font_id, handwriting_em, (x0, baseline_y),
-                                        x1 - x0, content.ink_rgb, rng, pen_width_px=pen_width_px)
+            box = draw_handwritten_field(canvas, text, writer, handwriting_em, (x0, baseline_y), x1 - x0, rng)
             add_field(field_name, text, box, True)
         else:
             box = draw_printed_text(draw, text, template.printed_fill_font_id, printed_fill_em, (x0, baseline_y),
@@ -264,10 +268,10 @@ def render_check(
     fill_in(FieldName.MEMO, content.memo_text, (layout.memo_line_x0 + 0.01) * width, layout.memo_line_x1 * width,
             layout.memo_baseline_y * height + lift * 0.5)
 
-    signature_box = draw_handwritten_text(canvas, content.signature_text, signature_font_id, inches_to_px(SIGNATURE_EM_INCHES, dpi),
-                                          ((layout.signature_line_x0 + 0.03) * width, layout.signature_baseline_y * height + lift),
-                                          (layout.signature_line_x1 - layout.signature_line_x0 - 0.05) * width,
-                                          content.ink_rgb, rng, max_slant_degrees=6, pen_width_px=pen_width_px)
+    signature_box = draw_handwritten_field(canvas, content.signature_text, writer, inches_to_px(SIGNATURE_EM_INCHES, dpi),
+                                           ((layout.signature_line_x0 + 0.03) * width, layout.signature_baseline_y * height + lift),
+                                           (layout.signature_line_x1 - layout.signature_line_x0 - 0.05) * width, rng,
+                                           is_signature=True)
     add_field(FieldName.SIGNATURE, content.signature_text, signature_box, True)
 
     micr_em = micr_em_px_for_digit_height(inches_to_px(MICR_DIGIT_HEIGHT_INCHES, dpi))
@@ -297,9 +301,9 @@ def render_check(
             "check_number": content.check_number,
             "routing_number_fake_invalid_checksum": content.routing_number,
             "account_number_fake": content.account_number,
-            "handwriting_font_id": str(handwriting_font_id),
-            "signature_font_id": str(signature_font_id),
-            "pen_width_px": pen_width_px,
+            "handwriting_font_id": writer.font_id,
+            "signature_font_id": writer.signature_font_id,
+            "pen_width_px": writer.pen_width_px,
             "serial": content.serial,
         },
     )
