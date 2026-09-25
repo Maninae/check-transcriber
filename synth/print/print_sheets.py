@@ -1,6 +1,6 @@
 """Print-ready PDF pages of fake checks at true size, for the real-photo gold eval set.
 
-Print these on Letter paper at 100% scale, cuts along the marks, lays the checks on a
+Print these on Letter paper at 100% scale, cut along the marks, lay the checks on a
 bedsheet, and photograph them. Each check carries a small serial (e.g. S-0007) under
 its memo line; `print_labels.csv` maps every serial to its ground truth so photos can be
 matched back without hand transcription.
