@@ -27,13 +27,44 @@ def solid_green_check() -> tuple[Image.Image, CheckLabel]:
 def test_corner_polygon_covers_pasted_pixels(seed):
     photo, label = compose_scene("t", [solid_green_check()], GRAY_BACKGROUND, "gray", np.random.default_rng(seed), NO_GLARE)
     height, width = photo.shape[:2]
-    rgb = photo.astype(int)
-    green_mask = (rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])) > 60
+    green_mask = green_mask_of(photo)
     polygon_mask = np.zeros((height, width), np.uint8)
     cv2.fillPoly(polygon_mask, [np.round(np.array(label.checks[0].corners)).astype(np.int32)], 1)
     intersection = np.count_nonzero(green_mask & (polygon_mask > 0))
     union = np.count_nonzero(green_mask | (polygon_mask > 0))
     assert intersection / union > 0.95, f"IoU {intersection / union:.3f}"
+
+
+STRONGLY_DEFORMED = SceneConfig(glare_probability=0.0, photo_long_side_range=(1400, 1800), deformation_strength=4.0,
+                                lens_blur_probability=0.0, motion_blur_probability=0.0, sharpen_probability=0.0)
+
+
+def green_mask_of(photo: np.ndarray) -> np.ndarray:
+    """Pixels that are clearly the green test paper."""
+    rgb = photo.astype(int)
+    return (rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])) > 60
+
+
+def filled_polygon_mask(polygon: list[list[float]], height: int, width: int) -> np.ndarray:
+    """Binary mask of a polygon in photo pixels."""
+    mask = np.zeros((height, width), np.uint8)
+    cv2.fillPoly(mask, [np.round(np.array(polygon)).astype(np.int32)], 1)
+    return mask > 0
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_outline_covers_and_hugs_deformed_paper(seed):
+    photo, label = compose_scene("t", [solid_green_check()], GRAY_BACKGROUND, "gray", np.random.default_rng(seed), STRONGLY_DEFORMED)
+    check = label.checks[0]
+    assert check.deformation, "strength 4 should always deform the paper"
+    assert len(check.outline) >= 4 and np.allclose(check.outline[0], check.corners[0])
+    height, width = photo.shape[:2]
+    green = green_mask_of(photo)
+    outline_mask = filled_polygon_mask(check.outline, height, width)
+    covered = cv2.dilate(outline_mask.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    assert np.count_nonzero(green & ~covered) / np.count_nonzero(green) < 0.002, "paper outside the outline"
+    iou = np.count_nonzero(green & outline_mask) / np.count_nonzero(green | outline_mask)
+    assert iou > 0.96, f"outline IoU {iou:.3f}"
 
 
 @pytest.mark.parametrize("seed", range(6))

@@ -2,7 +2,8 @@
 
 Coordinate frames, in the order a pixel travels:
 1. check frame: pixels of the flat rendered check.
-2. sheet plane: a top-down canvas of the bedsheet; each check lands here by an affine map.
+2. sheet plane: a top-down canvas of the bedsheet; each check lands here by its CheckPlaneMap
+   (a rigid placement plus paper deformation, check_plane_map.py).
 3. photo frame: the plane seen by a tilted camera (homography), then mild lens distortion.
 
 Every image warp here has a matching point transform, so labels follow pixels exactly.
@@ -79,14 +80,6 @@ def sample_camera_view(photo_width: int, photo_height: int, rng: np.random.Gener
     plane_to_photo = cv2.getPerspectiveTransform(quad.astype(np.float32), rect.astype(np.float32)).astype(np.float64)
     return CameraView(int(canvas_width), int(canvas_height), quad, plane_to_photo, photo_width, photo_height,
                       radial_k1=float(rng.uniform(-0.035, 0.015)))
-
-
-def inscribed_rect_of_quad(quad: np.ndarray, shrink_fraction: float = 0.03) -> tuple[float, float, float, float]:
-    """A conservative axis-aligned rectangle inside a roughly rectangular quad (TL, TR, BR, BL)."""
-    x0 = max(quad[0, 0], quad[3, 0]); x1 = min(quad[1, 0], quad[2, 0])
-    y0 = max(quad[0, 1], quad[1, 1]); y1 = min(quad[2, 1], quad[3, 1])
-    shrink_x, shrink_y = (x1 - x0) * shrink_fraction, (y1 - y0) * shrink_fraction
-    return x0 + shrink_x, y0 + shrink_y, x1 - shrink_x, y1 - shrink_y
 
 
 def normalized_radius_squared(points: np.ndarray, width: int, height: int) -> np.ndarray:

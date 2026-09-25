@@ -2,7 +2,8 @@
 
 Usage: python -m synth.dataset.contact_sheet DATASET_DIR --out /tmp/sheet.png [--count 12] [--split train]
 
-- Green outline: check polygon. Filled dot: the check's own top-left corner (orientation).
+- Green: the paper outline (deformed edge). Small yellow dots: the 4 physical corners.
+  Large green dot: the check's own top-left corner (orientation).
 - Thin magenta: field quads, so misaligned field labels are visible at a glance.
 """
 
@@ -21,9 +22,12 @@ def draw_scene_labels(image: np.ndarray, scene_label: dict, scale: float) -> np.
     """Overlay polygons, top-left dots and field quads on a downscaled scene (BGR)."""
     for check in scene_label["checks"]:
         corners = np.round(np.array(check["corners"]) * scale).astype(np.int32)
+        outline = np.round(np.array(check.get("outline") or check["corners"]) * scale).astype(np.int32)
         for field in check["fields"]:
             cv2.polylines(image, [np.round(np.array(field["quad"]) * scale).astype(np.int32)], True, (200, 0, 200), 1)
-        cv2.polylines(image, [corners], True, (0, 220, 0), 3)
+        cv2.polylines(image, [outline], True, (0, 220, 0), 2)
+        for corner in corners:
+            cv2.circle(image, tuple(int(v) for v in corner), 4, (0, 230, 255), -1)
         cv2.circle(image, tuple(int(v) for v in corners[0]), 8, (0, 220, 0), -1)
     return image
 
