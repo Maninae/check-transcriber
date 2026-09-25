@@ -1,0 +1,79 @@
+/**
+ * The drop zone: the single large element the page wants the eye to land on, in
+ * both of its two states (empty prompt, and photo loaded).
+ */
+
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--spacing-unit) * 4);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.drop-zone--drag-active {
+  border-color: var(--color-accent);
+  border-style: solid;
+  background: var(--color-accent-soft);
+}
+
+.drop-zone-prompt {
+  text-align: center;
+  cursor: pointer;
+  max-width: 40ch;
+}
+
+.drop-zone-instruction {
+  margin: 0 0 calc(var(--spacing-unit) * 1);
+  font-size: 1.15rem;
+  color: var(--color-text);
+}
+
+.drop-zone-subtext {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.photo-preview-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 1.5);
+}
+
+.photo-preview-canvas {
+  max-width: 100%;
+  max-height: 60vh;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.photo-received-line {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.start-over-button {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+  cursor: pointer;
+}
+
+.start-over-button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

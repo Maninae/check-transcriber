@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Check Transcriber</title>
+<meta name="description" content="Reads printed check fields from a photo, entirely in your browser." />
+<!--
+  Content-Security-Policy: default-deny, then allow exactly what this app needs.
+  The point of locking this down is the trust sentence below ("nothing is
+  uploaded") — this makes that a technical guarantee, not just a claim, since any
+  future edit that tries to call a new origin fails closed with a console error
+  instead of silently phoning home.
+
+  - default-src 'none': deny everything; every allowance below is deliberate.
+  - script-src 'self' <CDN> 'unsafe-eval': our own ES modules, the two pinned
+    CDN library files (js/cdn_config.js), and 'unsafe-eval' for OpenCV.js's
+    Emscripten embind bindings, which use `new Function` to build dynamic-call
+    trampolines at load time — confirmed by testing the exact pinned build
+    under this CSP; 'wasm-unsafe-eval' alone is not enough for this build.
+  - connect-src 'self' <CDN> data:: fetches our own app shell, the CDN files
+    Tesseract's worker loads at runtime (core WASM, language data), and the
+    data: URI OpenCV.js's loader fetches for its own inlined WASM binary.
+  - worker-src 'self' blob:: 'self' for this app's own future Web Worker (the
+    processing pipeline in spec section 5 runs off the main thread); blob: is
+    how Tesseract.js instantiates its worker (fetched, then run from a blob
+    URL, since a classic Worker can't be constructed directly from a
+    cross-origin script URL).
+  - style-src 'self': every style lives in styles/*.css, no inline styles.
+  - img-src 'self' data:: the favicon below is a data: URI; every photo is
+    drawn to <canvas>, never <img>, so no other image source is needed.
+  - font-src 'self': no webfont network dependency (system font stack only).
+  - base-uri 'none', form-action 'none', object-src 'none',
+    frame-ancestors 'none': no injected <base>, no form ever submits anywhere
+    (there is no <form> at all), no plugin embeds, page is never framed.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' https://cdn.jsdelivr.net 'unsafe-eval';
+  connect-src 'self' https://cdn.jsdelivr.net data:;
+  worker-src 'self' blob:;
+  style-src 'self';
+  img-src 'self' data:;
+  font-src 'self';
+  base-uri 'none';
+  form-action 'none';
+  object-src 'none';
+  frame-ancestors 'none';
+" />
+<!-- Empty data-URI favicon: suppresses the browser's automatic /favicon.ico request (which img-src would otherwise have to allow) rather than shipping an icon file this milestone doesn't need. -->
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="./styles/base.css" />
+<link rel="stylesheet" href="./styles/drop-zone.css" />
+<link rel="stylesheet" href="./styles/status-line.css" />
+</head>
+<body>
+<div class="page">
+  <header class="page-header">
+    <h1 class="app-title">Check Transcriber</h1>
+  </header>
+
+  <main class="page-main">
+    <div id="drop-zone" class="drop-zone">
+      <div id="drop-zone-prompt" class="drop-zone-prompt">
+        <p class="drop-zone-instruction">Paste a photo of the checks (Ctrl+V), drag it here, or click to browse.</p>
+        <p class="drop-zone-subtext">JPEG, PNG, or WebP.</p>
+      </div>
+
+      <div id="photo-preview-container" class="photo-preview-container" hidden>
+        <canvas id="photo-preview-canvas" class="photo-preview-canvas"></canvas>
+        <p id="photo-received-line" class="photo-received-line"></p>
+        <button id="start-over-button" type="button" class="start-over-button">Start over</button>
+      </div>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*" hidden />
+
+    <p id="input-hint-line" class="input-hint-line" hidden></p>
+
+    <p class="trust-sentence">Photos stay on this computer. Nothing is uploaded.</p>
+
+    <div id="engine-status" class="engine-status" role="status" aria-live="polite">
+      <p id="engine-status-text" class="engine-status-text"></p>
+      <button id="engine-status-retry" type="button" class="engine-status-retry" hidden>Retry</button>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+/**
+ * Color palette, type system, and page-level layout. The drop zone (styled in
+ * drop-zone.css) is the one thing this page wants the eye to land on, so everything
+ * here is deliberately quiet: a calm warm-paper background, one accent color used
+ * sparingly, and a type system that pairs a serif display face (for the one heading)
+ * with a plain system sans for every working piece of text.
+ */
+
+:root {
+  /* Warm, calm, paper-like — the opposite of a stark white "app" background. */
+  --color-background: #f6f2ea;
+  --color-surface: #ffffff;
+  --color-text: #2b2723;
+  --color-text-muted: #6f675d;
+  --color-border: #ddd3bf;
+
+  /* One accent, used only for the drop zone's active/ready states. A muted
+     forest green: calm and a little bank-note, without being literal about it. */
+  --color-accent: #3f6f5b;
+  --color-accent-soft: #e8efe9;
+
+  --color-error: #96402b;
+  --color-error-soft: #f6e7e1;
+
+  /* A serif display face for the one heading on the page, so it reads as
+     deliberately chosen rather than left at the browser default (which would be
+     Times New Roman at default weight/size). Falls back gracefully across
+     platforms; every browser in scope (current Chrome/Edge on Windows) has at
+     least one of these installed. */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+
+  /* A plain system sans for every working piece of UI text — legible at small
+     sizes, and it matches what the rest of Angie's Windows desktop looks like. */
+  --font-body: "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, ui-sans-serif, system-ui, sans-serif;
+
+  --spacing-unit: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The HTML `hidden` attribute is how every module in js/ shows/hides state (see
+   status_line.js, main.js). The browser's own default stylesheet already maps
+   `[hidden]` to `display: none`, but that default loses to any author rule that
+   sets `display` on the same element (e.g. `.engine-status { display: flex }`) —
+   without this, toggling `hidden` on a flex/grid container would visually do
+   nothing. This rule keeps `hidden` authoritative everywhere in this app. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: calc(var(--spacing-unit) * 6) calc(var(--spacing-unit) * 3) calc(var(--spacing-unit) * 8);
+}
+
+.page-header {
+  margin-bottom: calc(var(--spacing-unit) * 4);
+}
+
+/* Small and quiet on purpose — the drop zone below is the thing that should
+   dominate the page, not the app's own name. */
+.app-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.page-main {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.input-hint-line {
+  margin: 0;
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
+  background: var(--color-error-soft);
+  color: var(--color-error);
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.trust-sentence {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
