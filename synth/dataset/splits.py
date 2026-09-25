@@ -9,6 +9,8 @@ eval checks are printed on stock, laid on surfaces and written by hands train ne
 - Assignment is a seeded shuffle per kind (seed + a per-kind salt), stable for a given seed and id set.
 - Templates are stratified by layout family: each family is partitioned on its own, so every
   family appears in val and eval (11 templates per family -> 7 / 2 / 2).
+- Templates that carry eval-reserved printed fonts (`is_holdout_template_index`) are dealt to
+  eval and val before any other template of their family, so those fonts never reach train.
 - Val and eval sizes are rounded, not floored, so small pools (13 signature fonts) still give
   val and eval two ids each instead of one.
 """
@@ -20,6 +22,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from synth.render.fonts import FontRole, font_ids_with_role
+from synth.render.printed_font_pools import is_holdout_template_index
 
 SPLIT_NAMES = ("train", "val", "eval")
 DEFAULT_SPLIT_FRACTIONS = {"train": 0.7, "val": 0.15, "eval": 0.15}
@@ -49,14 +52,16 @@ def held_out_count(total: int, fraction: float) -> int:
 
 
 def assign_ids_to_splits(ids: list[str], fractions: dict[str, float], seed: int, salt: int,
-                         stream: int = 0) -> dict[str, list[str]]:
+                         stream: int = 0, held_out_first: frozenset[str] = frozenset()) -> dict[str, list[str]]:
     """Partition `ids` across splits in proportion to `fractions`; every split gets at least one id.
 
-    `stream` separates independent shuffles under the same salt (one per stratum).
+    `stream` separates independent shuffles under the same salt (one per stratum). Ids in
+    `held_out_first` are dealt to eval, then val, before any other id.
     """
     if len(ids) < len(SPLIT_NAMES):
         raise ValueError(f"need at least {len(SPLIT_NAMES)} ids to fill every split, got {len(ids)}")
     shuffled = [ids[i] for i in np.random.default_rng([seed, salt, stream]).permutation(len(ids))]
+    shuffled = [i for i in shuffled if i in held_out_first] + [i for i in shuffled if i not in held_out_first]
     eval_count = held_out_count(len(ids), fractions["eval"])
     val_count = held_out_count(len(ids), fractions["val"])
     if eval_count + val_count >= len(ids):  # tiny pools: leave train at least one id
@@ -69,7 +74,7 @@ def assign_ids_to_splits(ids: list[str], fractions: dict[str, float], seed: int,
 
 
 def assign_ids_to_splits_stratified(group_by_id: dict[str, str], fractions: dict[str, float], seed: int,
-                                    salt: int) -> dict[str, list[str]]:
+                                    salt: int, held_out_first: frozenset[str] = frozenset()) -> dict[str, list[str]]:
     """Partition each group (stratum) separately and merge; groups too small to split are pooled together."""
     ids_by_group = defaultdict(list)
     for item_id, group in sorted(group_by_id.items()):
@@ -83,15 +88,17 @@ def assign_ids_to_splits_stratified(group_by_id: dict[str, str], fractions: dict
         if len(ids) < len(SPLIT_NAMES):  # only when the pooled leftovers are still too few: they train
             merged["train"] += ids
             continue
-        for split_name, split_ids in assign_ids_to_splits(ids, fractions, seed, salt, zlib.crc32(group.encode())).items():
+        for split_name, split_ids in assign_ids_to_splits(ids, fractions, seed, salt, zlib.crc32(group.encode()),
+                                                         held_out_first).items():
             merged[split_name] += split_ids
     return {split_name: sorted(ids) for split_name, ids in merged.items()}
 
 
 def plan_template_pools(template_family_by_id: dict[str, str], seed: int,
                         fractions: dict[str, float] = DEFAULT_SPLIT_FRACTIONS) -> dict[str, list[str]]:
-    """Template ids per split, stratified by layout family."""
-    return assign_ids_to_splits_stratified(template_family_by_id, fractions, seed, TEMPLATE_SALT)
+    """Template ids per split, stratified by layout family; eval-reserved-font templates go to eval/val first."""
+    font_holdout_ids = frozenset(t for t in template_family_by_id if is_holdout_template_index(int(t.removeprefix("tpl_"))))
+    return assign_ids_to_splits_stratified(template_family_by_id, fractions, seed, TEMPLATE_SALT, font_holdout_ids)
 
 
 def plan_split_pools(template_family_by_id: dict[str, str], background_ids: list[str], seed: int,
