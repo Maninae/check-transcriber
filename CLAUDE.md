@@ -8,7 +8,8 @@ Synthetic data for Check Transcriber: fake US checks rendered, composited into p
 - `synth/render/`: stage 1, one flat check.
   - `check_layout.py` sizes, DPI, normalized field anchors. `check_templates.py` 24 deterministic template designs (design i depends only on i).
   - `check_fields.py` content + label dataclasses. `fake_data.py` invented values (invalid-checksum routing numbers).
-  - `render_check.py` blank stock (cached per template) + fill-ins. `text_drawing.py` printed and handwriting-style text with tight ink boxes.
+  - `render_check.py` blank stock (cached per template) + fill-ins. `text_drawing.py` printed text with tight boxes, plus the ink-compositing helper.
+  - Handwriting (a ballpoint pen model, not a font): `handwriting_writer.py` is the C1 contract (`Writer`, `sample_writer`, `draw_handwritten_field`). `handwriting_field_renderer.py` runs the pipeline: `handwriting_line_layout.py` places glyph coverage (glyph by glyph for print hands, word by word for cursive so joins survive), `handwriting_line_warp.py` shears for slant and wanders the baseline and elastically warps at glyph scale, `pen_centreline.py` thins to a 1 px centreline (vectorized Zhang-Suen) and prunes spurs, `pen_ballpoint.py` re-inks it with pressure-varying width and density, blobs and skips. `handwriting_quirks.py` retrace, overrun, signature flourish. `handwriting_font_metrics.py` glyph coverage + x-height / ascender calibration. `handwriting_habits.py`, `handwriting_noise.py` shared leaf helpers.
   - `security_pattern.py` paper textures. `fonts.py` registry with licenses. `fetch_fonts.py` downloader.
 - `synth/compose/`: stage 2, one scene.
   - `compose_scene.py` coordinator. `placement.py` grid/pile layouts. `perspective.py` camera homography, lens distortion, point transforms, polygon clipping.
@@ -23,7 +24,8 @@ Synthetic data for Check Transcriber: fake US checks rendered, composited into p
 - Every geometric image op has a matching point transform; labels are computed by transforming points, never by re-detecting pixels. Change a warp, change its point transform in the same edit (`perspective.py`), and keep `test_corner_polygon_covers_pasted_pixels` green.
 - Corner order is the check's own TL, TR, BR, BL, so the polygon encodes orientation.
 - Splits partition template ids and background ids, never scenes. Scene randomness is `default_rng([seed, split_index, scene_index])`.
-- Field boxes in check space are measured from drawn ink (handwriting boxes come from the alpha layer after rotation).
+- Field boxes in check space are measured from drawn ink (handwriting boxes come from the final alpha actually composited onto the canvas, after every warp and quirk; `test_returned_box_is_exactly_the_laid_down_ink`).
+- Every handwriting/signature font must be SIL OFL or Apache 2.0 from google/fonts and draw every character we write (`test_pen_font_covers_every_character_we_write`). Adding a font: one `google_font(...)` line in `fonts.py`, run `python -m synth.render.fetch_fonts`, look at it in the pen engine before keeping it.
 - All data is fake. Routing numbers must fail the ABA checksum (`test_routing_numbers_always_fail_aba_checksum`).
 - Absolute imports from `synth.`; no leading underscores; imports at top except the documented optional torch/PCT-Net paths.
 

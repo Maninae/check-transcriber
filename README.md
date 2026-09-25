@@ -80,8 +80,12 @@ Harmonization model: PCT-Net CNN (Guerreiro et al., WACV 2023), MPL-2.0 code and
 | Font | Role | License |
 |---|---|---|
 | Libre Baskerville, EB Garamond, Source Sans 3, PT Sans, Oswald, Courier Prime | printed | SIL OFL 1.1 |
-| Caveat, Kalam, Nothing You Could Do, Reenie Beanie, Shadows Into Light, Indie Flower | handwriting | SIL OFL 1.1 |
-| Dancing Script, Mr Dafoe, Allura | signature | SIL OFL 1.1 |
+| Caveat, Kalam, Nothing You Could Do, Reenie Beanie, Shadows Into Light, Indie Flower, Patrick Hand, Gochi Hand, Covered By Your Grace, Nanum Pen Script, Gaegu, Architects Daughter, Handlee, Neucha, Sue Ellen Francisco, Annie Use Your Telescope, Just Me Again Down Here, Mynerve, Edu SA Beginner, Edu NSWACT Foundation, Edu VICWANT Beginner, Edu QLD Beginner, The Girl Next Door, Give You Glory, Grape Nuts, Short Stack, Beth Ellen, La Belle Aurore, Dawning of a New Day, Zeyada, Edu TAS Beginner, Marck Script | handwriting | SIL OFL 1.1 |
+| Schoolbell, Coming Soon | handwriting | Apache 2.0 |
+| Dancing Script, Mr Dafoe, Allura, Mrs Saint Delafield, Kristi, Sacramento, Ruthie, Qwigley, Meddon, Arizonia, Whisper, Ephesis | signature | SIL OFL 1.1 |
+| Yellowtail | signature | Apache 2.0 |
 | GnuMICR (E-13B) | MICR line | GPL-2.0; only rendered pixels leave the machine |
+
+Every handwriting and signature font comes from the google/fonts repo (`ofl/` or `apache/` folder; the exact URL and license are in `synth/render/fonts.py`), and `synth/tests/test_handwriting.py` checks each one draws every character we write. Six handwriting and two signature candidates were rejected by eye because their letters clog at a real ballpoint width (listed in `fonts.py`).
 
 GnuMICR's TTF is a third-party conversion of the hand-coded Type 1 font; its glyph shapes are E-13B-like but not certified. The MICR line is visual texture for detection and orientation, not a readable bank code line.
