@@ -19,9 +19,9 @@ MIN_GAP_PX = int(0.25 * RENDER_DPI)          # room for cut marks between checks
 CUT_MARK_LENGTH_PX = int(0.2 * RENDER_DPI)
 CUT_MARK_GAP_PX = int(0.05 * RENDER_DPI)
 CUT_MARK_WIDTH_PX = 2
-CUT_MARK_GRAY = 0
+CUT_MARK_RGB = (0, 0, 0)
 DASH_LENGTH_PX = int(0.06 * RENDER_DPI)
-DASH_GRAY = 170
+DASH_RGB = (170, 170, 170)
 
 
 @dataclass(frozen=True)
@@ -40,9 +40,9 @@ def arrange_checks_on_page(check_width_px: int, check_height_px: int) -> PageArr
     placed_width, placed_height = (check_height_px, check_width_px) if rotated else (check_width_px, check_height_px)
     if rotated:
         count = max(1, (usable_width + MIN_GAP_PX) // (placed_width + MIN_GAP_PX))
-        gap = (usable_width - count * placed_width) // (count + 1)
+        gap = (LETTER_SIZE_PX[0] - count * placed_width) // (count + 1)   # spread over the whole width: wider inner gap
         top = PAGE_MARGIN_PX + (usable_height - placed_height) // 2
-        origins = tuple((PAGE_MARGIN_PX + gap + slot * (placed_width + gap), top) for slot in range(count))
+        origins = tuple((gap + slot * (placed_width + gap), top) for slot in range(count))
     else:
         count = max(1, (usable_height + MIN_GAP_PX) // (placed_height + MIN_GAP_PX))
         gap = (usable_height - count * placed_height) // (count + 1)
@@ -55,12 +55,12 @@ def draw_dashed_rectangle(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, 
     """Light dashed lines exactly on the check's edges."""
     for start in range(x0, x1, 2 * DASH_LENGTH_PX):
         end = min(start + DASH_LENGTH_PX, x1)
-        draw.line((start, y0, end, y0), fill=DASH_GRAY, width=1)
-        draw.line((start, y1, end, y1), fill=DASH_GRAY, width=1)
+        draw.line((start, y0, end, y0), fill=DASH_RGB, width=1)
+        draw.line((start, y1, end, y1), fill=DASH_RGB, width=1)
     for start in range(y0, y1, 2 * DASH_LENGTH_PX):
         end = min(start + DASH_LENGTH_PX, y1)
-        draw.line((x0, start, x0, end), fill=DASH_GRAY, width=1)
-        draw.line((x1, start, x1, end), fill=DASH_GRAY, width=1)
+        draw.line((x0, start, x0, end), fill=DASH_RGB, width=1)
+        draw.line((x1, start, x1, end), fill=DASH_RGB, width=1)
 
 
 def draw_cut_guides(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int) -> None:
@@ -69,6 +69,6 @@ def draw_cut_guides(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: in
     gap, length = CUT_MARK_GAP_PX, CUT_MARK_LENGTH_PX
     for corner_x, corner_y, direction_x, direction_y in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
         draw.line((corner_x + direction_x * gap, corner_y, corner_x + direction_x * (gap + length), corner_y),
-                  fill=CUT_MARK_GRAY, width=CUT_MARK_WIDTH_PX)
+                  fill=CUT_MARK_RGB, width=CUT_MARK_WIDTH_PX)
         draw.line((corner_x, corner_y + direction_y * gap, corner_x, corner_y + direction_y * (gap + length)),
-                  fill=CUT_MARK_GRAY, width=CUT_MARK_WIDTH_PX)
+                  fill=CUT_MARK_RGB, width=CUT_MARK_WIDTH_PX)

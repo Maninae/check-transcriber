@@ -47,7 +47,7 @@ MAX_CONTENT_DRAWS = 200
 PDF_JPEG_QUALITY = 95
 FOOTER_FONT_ID = "pt_sans"
 FOOTER_FONT_PX = 28
-FOOTER_GRAY = 90
+FOOTER_RGB = (90, 90, 90)
 FIELD_TEXT_COLUMNS = [f"text__{field_name.value}" for field_name in FieldName]
 CSV_COLUMNS = ["serial", "page", "slot", "template_id", "layout_family", "size_kind", "rotated_on_page", "fill_in_style",
                "handwritten_fields", "handwriting_font_id", "signature_font_id", "amount_cents", "date_iso",
@@ -72,12 +72,16 @@ def sample_content_with_style(template: TemplateDesign, rng: np.random.Generator
     content = None
     for _ in range(MAX_CONTENT_DRAWS):
         content = sample_check_content(template, rng, serial=serial)
-        handwritten_count = len(content.handwritten_fields)
-        if (handwritten_count >= MIN_HANDWRITTEN_FIELDS_FOR_HANDWRITTEN_STYLE) == want_handwritten:
+        if (fill_in_style(content) == "handwritten") == want_handwritten:
             return content
     logger.warning("%s: could not draw %s fill-ins on %s", serial, "handwritten" if want_handwritten else "printed",
                    template.template_id)
     return content
+
+
+def fill_in_style(content) -> str:
+    """What was actually drawn: money orders are always hand-filled, so a printed request can fall back."""
+    return "handwritten" if len(content.handwritten_fields) >= MIN_HANDWRITTEN_FIELDS_FOR_HANDWRITTEN_STYLE else "printed"
 
 
 def print_pools(template_count: int, seed: int, held_out_split: str | None) -> tuple[list[TemplateDesign], dict]:
@@ -95,14 +99,14 @@ def print_pools(template_count: int, seed: int, held_out_split: str | None) -> t
     return [template for template in catalog if template.template_id in template_ids], font_pools
 
 
-def label_record(serial: str, page: int, slot: int, template: TemplateDesign, rotated: bool, want_handwritten: bool,
+def label_record(serial: str, page: int, slot: int, template: TemplateDesign, rotated: bool,
                  content, label, clean_stock: bool) -> dict:
     """One CSV row: identity, style, fonts and the text of every field on the check."""
     texts = {field.field_name: field.text for field in label.fields}
     return {
         "serial": serial, "page": page, "slot": slot, "template_id": template.template_id,
         "layout_family": layout_family_of(template), "size_kind": template.size_kind.value, "rotated_on_page": rotated,
-        "fill_in_style": "handwritten" if want_handwritten else "printed",
+        "fill_in_style": fill_in_style(content),
         "handwritten_fields": ";".join(content.handwritten_fields),
         "handwriting_font_id": label.canonical.get("handwriting_font_id"),
         "signature_font_id": label.canonical.get("signature_font_id"),
@@ -146,10 +150,10 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
             page.paste(image, (x, y))
             draw_cut_guides(draw, x, y, x + image.width, y + image.height)
             csv_rows.append(label_record(serial, page_index + 1, slot + 1, template, arrangement.rotated,
-                                         want_handwritten, content, label, clean_stock))
+                                         content, label, clean_stock))
             json_records.append({**csv_rows[-1], "check_label": label.to_dict()})
         footer = f"Check Transcriber mock checks, page {page_index + 1} of {page_count}. Fictional data; print at 100% scale."
-        draw.text((LETTER_SIZE_PX[0] // 2, LETTER_SIZE_PX[1] - 40), footer, fill=FOOTER_GRAY,
+        draw.text((LETTER_SIZE_PX[0] // 2, LETTER_SIZE_PX[1] - 40), footer, fill=FOOTER_RGB,
                   font=load_font(FOOTER_FONT_ID, FOOTER_FONT_PX), anchor="ms")
         page.save(output_directory / f"print_sheet__page={page_index + 1:02d}.png")
         pages.append(page)

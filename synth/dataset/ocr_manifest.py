@@ -27,7 +27,7 @@ from synth.dataset.ocr_rectify import field_box_in_crop, field_crop_box, rectify
 
 OCR_DIRECTORY_NAME = "ocr"
 FIELD_IN_FRAME_MIN_FRACTION = 0.999
-FIELD_UNOCCLUDED_MIN_VISIBLE_FRACTION = 0.97   # visible_fraction is pixel-rasterized, so ~0.99 when untouched
+FIELD_UNOCCLUDED_MIN_VISIBLE_FRACTION = 0.99   # untouched fields measure 0.996-1.0; 0.975 already hid a leading '***'
 MICR_FIELD_NAME = "micr"
 SIGNATURE_FIELD_NAME = "signature"
 CHECK_CROP_JPEG_QUALITY = 95
@@ -47,6 +47,14 @@ def field_status(field: dict, photo_width: int, photo_height: int) -> str:
     if field["visible_fraction"] < FIELD_UNOCCLUDED_MIN_VISIBLE_FRACTION:
         return "occluded"
     return "ok"
+
+
+def check_width_in_photo_px(corners: list[list[float]]) -> float:
+    """Mean length of the check's top and bottom edges in the photo: the real resolution behind the 1600 px crop."""
+    corner_array = np.asarray(corners, np.float64)
+    top = np.linalg.norm(corner_array[1] - corner_array[0])
+    bottom = np.linalg.norm(corner_array[2] - corner_array[3])
+    return round(float((top + bottom) / 2), 1)
 
 
 def pen_font_id(field: dict, canonical: dict) -> str | None:
@@ -85,6 +93,7 @@ def ocr_rows_for_scene(dataset_root: Path, split_name: str, scene_label: dict, p
                 "field_name": field["field_name"], "text": field["text"], "handwritten": field["handwritten"],
                 "status": status, "usable": status == "ok", "visible_fraction": field["visible_fraction"],
                 "check_visible_fraction": check["visible_fraction"],
+                "check_width_in_photo_px": check_width_in_photo_px(check["corners"]),
                 "check_crop": str(check_crop_path.relative_to(dataset_root)),
                 "field_crop": str(field_crop_path.relative_to(dataset_root)) if field_crop_path else None,
                 "box_in_check_crop": box, "field_crop_window": crop_window, "check_crop_size": list(crop_size),
