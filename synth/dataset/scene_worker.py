@@ -2,6 +2,10 @@
 
 Each scene's randomness comes from `np.random.default_rng([seed, split_index, scene_index])`,
 so any single scene can be regenerated without rebuilding the others.
+
+- Checks draw templates, fonts and the background only from the task's split pools (contract C4).
+- The scene annotation is written last, via rename, so its existence means the scene is complete
+  (resume in `scene_task_runner.py` relies on this).
 """
 
 import functools
@@ -36,6 +40,13 @@ class SceneTask:
     split_directory: str
     template_count: int
     scene_config: SceneConfig
+    handwriting_font_ids: tuple[str, ...]
+    signature_font_ids: tuple[str, ...]
+
+
+def scene_id_for_task(task: SceneTask) -> str:
+    """Stable scene id, e.g. `val_000012`; also the stem of every per-scene file."""
+    return f"{task.split_name}_{task.scene_index:06d}"
 
 
 @functools.lru_cache(maxsize=4)
@@ -67,16 +78,21 @@ def generate_scene(task: SceneTask) -> dict:
     rendered_checks = []
     for _ in range(check_count):
         template = catalog[task.template_ids[int(rng.integers(len(task.template_ids)))]]
-        rendered_checks.append(render_check(template, sample_check_content(template, rng), rng))
+        rendered_checks.append(render_check(template, sample_check_content(template, rng), rng,
+                                            handwriting_font_ids=list(task.handwriting_font_ids),
+                                            signature_font_ids=list(task.signature_font_ids)))
     background_id, background_path = task.backgrounds[int(rng.integers(len(task.backgrounds)))]
-    scene_id = f"{task.split_name}_{task.scene_index:06d}"
+    scene_id = scene_id_for_task(task)
     photo, label = compose_scene(scene_id, rendered_checks, cached_background(background_path), background_id, rng, task.scene_config)
 
     split_directory = Path(task.split_directory)
     cv2.imwrite(str(split_directory / "images" / label.image_file), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR),
                 [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_JPEG_QUALITY])
     label_dict = label.to_dict()
-    (split_directory / "annotations" / f"{scene_id}.json").write_text(json.dumps(label_dict))
     write_yolo_labels(label_dict, split_directory)
+    annotation_path = split_directory / "annotations" / f"{scene_id}.json"
+    partial_path = annotation_path.with_suffix(".json.partial")
+    partial_path.write_text(json.dumps(label_dict))
+    partial_path.replace(annotation_path)
     return {"split": task.split_name, "scene_id": scene_id, "check_count": check_count,
             "template_ids": sorted({check.template_id for check in label.checks}), "background_id": background_id}

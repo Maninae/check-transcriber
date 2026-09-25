@@ -1,103 +1,171 @@
-"""Print-ready PDF pages of fake checks at true size, for the real-photo gold eval set.
+"""Print-ready Letter pages of fake checks at true size, for Owen's real-photo gold eval set.
 
-Print these on Letter paper at 100% scale, cut along the marks, lay the checks on a
-bedsheet, and photograph them. Each check carries a small serial (e.g. S-0007) under
-its memo line; `print_labels.csv` maps every serial to its ground truth so photos can be
-matched back without hand transcription.
+Print `print_sheets.pdf` at 100% scale, cut along the guides, lay the checks on a bedsheet,
+photograph them. Each check carries a small printed serial (S-0007) under its memo line;
+`print_labels.csv` / `.json` map every serial to every field's text, so photos can be scored
+without hand transcription. `print_sheet__page=NN.png` is each page as rendered, for viewing.
 
-- Personal checks (6 x 2.75 in): 3 per page, stacked.
-- Business checks (8.5 x 3.5 in): too wide for Letter with margins, so 2 per page, rotated.
+- Clean stock: a real printer and paper add their own toner and fibre, so checks are rendered
+  without simulated print texture (`render_check(..., simulate_print_texture=False)`) by default.
+- Coverage: each page alternates slots between handwritten and printed fill-ins, and cycles
+  layout families, so every sheet has both kinds of fill-in and several designs.
+- `held_out_split="eval"` restricts templates and fonts to that seed's eval pools, so a model
+  trained on the same seed's train split has never seen the printed designs or hands.
 """
 
 import csv
 import json
 import logging
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from synth.render.check_layout import RENDER_DPI, CheckSizeKind
-from synth.render.check_templates import build_template_catalog
+from synth.dataset.splits import (
+    DEFAULT_SPLIT_FRACTIONS,
+    HANDWRITING_FONT_SALT,
+    SIGNATURE_FONT_SALT,
+    assign_ids_to_splits,
+    plan_template_pools,
+)
+from synth.dataset.build_plan import template_family_by_id
+from synth.print.print_page_layout import LETTER_SIZE_PX, arrange_checks_on_page, draw_cut_guides
+from synth.render.check_fields import FieldName
+from synth.render.check_layout import RENDER_DPI, CheckSizeKind, check_size_pixels
+from synth.render.check_templates import TemplateDesign, build_template_catalog
 from synth.render.fake_data import sample_check_content
-from synth.render.fonts import load_font
+from synth.render.fonts import FontRole, font_ids_with_role, load_font
 from synth.render.render_check import render_check
 
 logger = logging.getLogger(__name__)
 
-LETTER_SIZE_PX = (int(8.5 * RENDER_DPI), int(11 * RENDER_DPI))
-CUT_MARK_LENGTH_PX = int(0.2 * RENDER_DPI)
-CUT_MARK_GAP_PX = int(0.05 * RENDER_DPI)
-CHECKS_PER_PAGE = {CheckSizeKind.PERSONAL: 3, CheckSizeKind.BUSINESS: 2}
+PRINT_RNG_SALT = 9091
+PAGE_SIZE_KIND_CYCLE = ("personal", "business", "personal", "money_order")
+MIN_HANDWRITTEN_FIELDS_FOR_HANDWRITTEN_STYLE = 2
+MAX_CONTENT_DRAWS = 200
 PDF_JPEG_QUALITY = 95
-CSV_COLUMNS = ["serial", "page", "slot", "template_id", "size_kind", "payer_name", "check_number", "date_text", "date_iso",
-               "payee_text", "payee_canonical", "amount_cents", "amount_numeric_text", "amount_words_text", "memo_text",
-               "bank_name", "handwritten_fields"]
+FOOTER_FONT_ID = "pt_sans"
+FOOTER_FONT_PX = 28
+FOOTER_RGB = (90, 90, 90)
+FIELD_TEXT_COLUMNS = [f"text__{field_name.value}" for field_name in FieldName]
+CSV_COLUMNS = ["serial", "page", "slot", "template_id", "layout_family", "size_kind", "rotated_on_page", "fill_in_style",
+               "handwritten_fields", "handwriting_font_id", "signature_font_id", "amount_cents", "date_iso",
+               "payee_canonical", "clean_stock", *FIELD_TEXT_COLUMNS]
 
 
-def draw_cut_marks(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int) -> None:
-    """Short hairlines just outside each corner, along both edges."""
-    gap, length = CUT_MARK_GAP_PX, CUT_MARK_LENGTH_PX
-    for corner_x, corner_y, direction_x, direction_y in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
-        draw.line((corner_x + direction_x * gap, corner_y, corner_x + direction_x * (gap + length), corner_y), fill=0, width=2)
-        draw.line((corner_x, corner_y + direction_y * gap, corner_x, corner_y + direction_y * (gap + length)), fill=0, width=2)
+def render_check_for_print(template: TemplateDesign, content, rng: np.random.Generator, font_pools: dict,
+                           clean_stock: bool) -> tuple[Image.Image, object]:
+    """Render one check as RGB (clean stock has full alpha, so dropping it loses nothing)."""
+    image, label = render_check(template, content, rng, handwriting_font_ids=font_pools.get("handwriting"),
+                                signature_font_ids=font_pools.get("signature"), simulate_print_texture=not clean_stock)
+    return image.convert("RGB"), label
 
 
-def slot_origins(size_kind: CheckSizeKind, check_size: tuple[int, int]) -> list[tuple[int, int]]:
-    """Top-left positions for each slot on a page (after any rotation of the check)."""
-    page_width, page_height = LETTER_SIZE_PX
-    check_width, check_height = check_size
-    count = CHECKS_PER_PAGE[size_kind]
-    if size_kind == CheckSizeKind.PERSONAL:
-        gap = (page_height - count * check_height) // (count + 1)
-        return [((page_width - check_width) // 2, gap + slot * (check_height + gap)) for slot in range(count)]
-    gap = (page_width - count * check_width) // (count + 1)
-    return [(gap + slot * (check_width + gap), (page_height - check_height) // 2) for slot in range(count)]
+def layout_family_of(template: TemplateDesign) -> str:
+    """The template's layout family name."""
+    return template.layout_family.value
 
 
-def write_print_sheets(output_directory: Path, page_count: int, seed: int, template_count: int) -> Path:
-    """Write `print_sheets.pdf`, `print_labels.csv` and `print_labels.json` into `output_directory`."""
-    output_directory.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng([seed, 9091])
+def sample_content_with_style(template: TemplateDesign, rng: np.random.Generator, serial: str, want_handwritten: bool):
+    """Draw fake content until its fill-in style matches the request (kept deterministic by the rng)."""
+    content = None
+    for _ in range(MAX_CONTENT_DRAWS):
+        content = sample_check_content(template, rng, serial=serial)
+        if (fill_in_style(content) == "handwritten") == want_handwritten:
+            return content
+    logger.warning("%s: could not draw %s fill-ins on %s", serial, "handwritten" if want_handwritten else "printed",
+                   template.template_id)
+    return content
+
+
+def fill_in_style(content) -> str:
+    """What was actually drawn: money orders are always hand-filled, so a printed request can fall back."""
+    return "handwritten" if len(content.handwritten_fields) >= MIN_HANDWRITTEN_FIELDS_FOR_HANDWRITTEN_STYLE else "printed"
+
+
+def print_pools(template_count: int, seed: int, held_out_split: str | None) -> tuple[list[TemplateDesign], dict]:
+    """Templates and font pools to print from: everything, or one split's held-out pools."""
     catalog = build_template_catalog(template_count)
+    if held_out_split is None:
+        return catalog, {}
+    template_ids = set(plan_template_pools(template_family_by_id(catalog), seed)[held_out_split])
+    font_pools = {
+        "handwriting": assign_ids_to_splits(font_ids_with_role(FontRole.HANDWRITING), DEFAULT_SPLIT_FRACTIONS, seed,
+                                            HANDWRITING_FONT_SALT)[held_out_split],
+        "signature": assign_ids_to_splits(font_ids_with_role(FontRole.SIGNATURE), DEFAULT_SPLIT_FRACTIONS, seed,
+                                          SIGNATURE_FONT_SALT)[held_out_split],
+    }
+    return [template for template in catalog if template.template_id in template_ids], font_pools
+
+
+def label_record(serial: str, page: int, slot: int, template: TemplateDesign, rotated: bool,
+                 content, label, clean_stock: bool) -> dict:
+    """One CSV row: identity, style, fonts and the text of every field on the check."""
+    texts = {field.field_name: field.text for field in label.fields}
+    return {
+        "serial": serial, "page": page, "slot": slot, "template_id": template.template_id,
+        "layout_family": layout_family_of(template), "size_kind": template.size_kind.value, "rotated_on_page": rotated,
+        "fill_in_style": fill_in_style(content),
+        "handwritten_fields": ";".join(content.handwritten_fields),
+        "handwriting_font_id": label.canonical.get("handwriting_font_id"),
+        "signature_font_id": label.canonical.get("signature_font_id"),
+        "amount_cents": content.amount_cents, "date_iso": content.date_iso, "payee_canonical": content.payee_canonical,
+        "clean_stock": clean_stock,
+        **{f"text__{field_name.value}": texts.get(field_name.value, "") for field_name in FieldName},
+    }
+
+
+def write_print_sheets(output_directory: Path, page_count: int, seed: int, template_count: int,
+                       held_out_split: str | None = None, clean_stock: bool = True) -> Path:
+    """Write the PDF, one PNG per page, `print_labels.csv` and `print_labels.json`; returns the PDF path."""
+    output_directory.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng([seed, PRINT_RNG_SALT])
+    templates, font_pools = print_pools(template_count, seed, held_out_split)
+    families_by_size = defaultdict(lambda: defaultdict(list))
+    for template in templates:
+        families_by_size[template.size_kind.value][layout_family_of(template)].append(template)
+    size_cycle = [kind for kind in PAGE_SIZE_KIND_CYCLE if kind in families_by_size] or sorted(families_by_size)
+    family_turn = defaultdict(int)
     pages, csv_rows, json_records = [], [], []
     serial_number = 1
     for page_index in range(page_count):
-        size_kind = CheckSizeKind.BUSINESS if page_index % 4 == 3 else CheckSizeKind.PERSONAL
-        templates = [template for template in catalog if template.size_kind == size_kind]
+        size_kind = size_cycle[page_index % len(size_cycle)]
+        families = sorted(families_by_size[size_kind])
+        arrangement = arrange_checks_on_page(*check_size_pixels(CheckSizeKind(size_kind)))
         page = Image.new("RGB", LETTER_SIZE_PX, "white")
         draw = ImageDraw.Draw(page)
-        rendered = []
-        for _ in range(CHECKS_PER_PAGE[size_kind]):
-            template = templates[int(rng.integers(len(templates)))]
-            content = sample_check_content(template, rng, serial=f"S-{serial_number:04d}")
+        for slot, (x, y) in enumerate(arrangement.origins):
+            family = families[family_turn[size_kind] % len(families)]
+            family_turn[size_kind] += 1
+            candidates = families_by_size[size_kind][family]
+            template = candidates[int(rng.integers(len(candidates)))]
+            want_handwritten = slot % 2 == 0
+            serial = f"S-{serial_number:04d}"
             serial_number += 1
-            image, label = render_check(template, content, rng, simulate_print_texture=False)  # real printer + paper add texture
-            rendered.append((template, content, image.rotate(90, expand=True) if size_kind == CheckSizeKind.BUSINESS else image, label))
-        for slot, ((template, content, image, label), origin) in enumerate(zip(rendered, slot_origins(size_kind, rendered[0][2].size))):
-            page.paste(image, origin)
-            draw_cut_marks(draw, origin[0], origin[1], origin[0] + image.width, origin[1] + image.height)
-            csv_rows.append({
-                "serial": content.serial, "page": page_index + 1, "slot": slot + 1, "template_id": template.template_id,
-                "size_kind": size_kind.value, "payer_name": content.payer_name, "check_number": content.check_number,
-                "date_text": content.date_text, "date_iso": content.date_iso, "payee_text": content.payee_text,
-                "payee_canonical": content.payee_canonical, "amount_cents": content.amount_cents,
-                "amount_numeric_text": content.amount_numeric_text, "amount_words_text": content.amount_words_text,
-                "memo_text": content.memo_text, "bank_name": content.bank_name,
-                "handwritten_fields": ";".join(content.handwritten_fields),
-            })
-            json_records.append({"serial": content.serial, "page": page_index + 1, "slot": slot + 1,
-                                 "rotated_on_page": size_kind == CheckSizeKind.BUSINESS, "check_label": label.to_dict()})
+            content = sample_content_with_style(template, rng, serial, want_handwritten)
+            image, label = render_check_for_print(template, content, rng, font_pools, clean_stock)
+            if arrangement.rotated:
+                image = image.transpose(Image.Transpose.ROTATE_270)
+            page.paste(image, (x, y))
+            draw_cut_guides(draw, x, y, x + image.width, y + image.height)
+            csv_rows.append(label_record(serial, page_index + 1, slot + 1, template, arrangement.rotated,
+                                         content, label, clean_stock))
+            json_records.append({**csv_rows[-1], "check_label": label.to_dict()})
         footer = f"Check Transcriber mock checks, page {page_index + 1} of {page_count}. Fictional data; print at 100% scale."
-        draw.text((LETTER_SIZE_PX[0] // 2, LETTER_SIZE_PX[1] - 40), footer, fill=90, font=load_font("pt_sans", 28), anchor="ms")
+        draw.text((LETTER_SIZE_PX[0] // 2, LETTER_SIZE_PX[1] - 40), footer, fill=FOOTER_RGB,
+                  font=load_font(FOOTER_FONT_ID, FOOTER_FONT_PX), anchor="ms")
+        page.save(output_directory / f"print_sheet__page={page_index + 1:02d}.png")
         pages.append(page)
 
     pdf_path = output_directory / "print_sheets.pdf"
-    pages[0].save(pdf_path, save_all=True, append_images=pages[1:], resolution=RENDER_DPI, quality=PDF_JPEG_QUALITY, subsampling=0)
+    pages[0].save(pdf_path, save_all=True, append_images=pages[1:], resolution=RENDER_DPI, quality=PDF_JPEG_QUALITY,
+                  subsampling=0)
     with open(output_directory / "print_labels.csv", "w", newline="") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=CSV_COLUMNS)
         writer.writeheader()
         writer.writerows(csv_rows)
     (output_directory / "print_labels.json").write_text(json.dumps(json_records, indent=1))
-    logger.info("wrote %d pages, %d checks to %s", page_count, len(csv_rows), output_directory)
+    logger.info("wrote %d pages, %d checks to %s (clean stock: %s)", page_count, len(csv_rows), output_directory,
+                clean_stock)
     return pdf_path

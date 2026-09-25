@@ -18,8 +18,8 @@ Synthetic data for Check Transcriber: fake US checks rendered, composited into p
   - `perspective.py` camera homography, lens distortion, point transforms, polygon clipping. `scene_check_labels.py` corners, outline, enclosing field quads.
   - `lighting.py` classical photometric effects. `camera_effects.py` the photo-side effect pass. `harmonize.py` optional PCT-Net pass. `scene_label.py` label dataclasses.
 - `synth/backgrounds/`: `loader.py` (recursive JPEG/PNG, id = relative path), `procedural.py` (fabric fallback for tests). A FLUX generation script will be dropped in here.
-- `synth/dataset/`: stage 3. `build_dataset.py` CLI, `scene_worker.py` per-scene job, `splits.py`, `manifest.py`, `annotation_exports.py` (COCO, YOLO), `contact_sheet.py` visual QA.
-- `synth/print/print_sheets.py`: Letter PDFs of true-size checks + labels CSV keyed by printed serial.
+- `synth/dataset/`: stage 3. `build_dataset.py` CLI coordinator (scene stage, OCR stage, exports). `build_plan.py` pools + counts, `--plan-only`, `build_plan.json` resume guard. `splits.py` C4 partitions. `scene_worker.py` one scene (annotation written last, by rename); `scene_task_runner.py` resume skip + per-scene failure capture; `build_progress.py` ETA + `failures.jsonl`. `ocr_rectify.py` corners -> 1600 px upright crop + point mapping; `ocr_manifest.py` field crops + JSONL rows. `coco_export.py`, `annotation_exports.py` (YOLO seg/OBB, data yamls). `manifest.py`. QA: `contact_sheet.py`, `ocr_crop_grid.py`.
+- `synth/print/`: `print_sheets.py` Letter PDF + page PNGs of true-size clean-stock checks + labels keyed by printed serial; `print_page_layout.py` slot geometry and cut guides.
 - `synth/tests/`: pytest; run `python -m pytest -q` from the root (`pytest.ini` sets the path).
 
 ## Invariants
@@ -28,7 +28,8 @@ Synthetic data for Check Transcriber: fake US checks rendered, composited into p
 - Paper is warped by the inverse of `CheckPlaneMap.check_to_plane`; labels use the forward map. Never warp paper any other way.
 - Scene labels (contract C3): `corners` = 4 physical corners (OBB, keypoints); `outline` = deformed paper edge from TL clockwise (YOLO-seg, COCO); `deformation` = parameters. Render images may be RGBA, alpha = paper coverage (C2).
 - Corner order is the check's own TL, TR, BR, BL, so the polygon encodes orientation.
-- Splits partition template ids and background ids, never scenes. Scene randomness is `default_rng([seed, split_index, scene_index])`.
+- Splits partition template ids (per layout family), background ids, handwriting font ids and signature font ids, never scenes; `test_scenes_only_use_their_own_split_pools` reads fonts back from annotations. Scene randomness is `default_rng([seed, split_index, scene_index])`.
+- OCR field boxes are the photo field quad mapped through the same homography that rectifies the pixels, never re-detected.
 - Ink multiplies paper (subtractive), never alpha-over. Pre-printed labels live on the dark plate, so plate misregistration never moves a box; laser boxes are measured from the toner that landed.
 - A check is filled by hand or by software, never mixed (money orders excepted: issuer prints date and amount).
 - Field boxes in check space are measured from drawn ink (handwriting boxes come from the final alpha actually composited onto the canvas, after every warp and quirk; `test_returned_box_is_exactly_the_laid_down_ink`).
