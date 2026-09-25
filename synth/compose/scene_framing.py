@@ -5,7 +5,7 @@ Order of decisions (the camera is fitted to the checks, never the checks to the 
 2. A hand-held view is sampled (perspective.sample_camera_view): tilt, roll, lens distortion.
 3. The sheet's scale (plane pixels per inch) and offset are solved so the group's projected
    bounding box spans FILL_RANGE of the frame along its tighter dimension, centered with a
-   small hand-held offset. About 10% of scenes are wider shots.
+   small hand-held offset. About 8% of scenes are wider shots.
 4. Optionally one edge check is slid outward until only part of it stays in frame.
 """
 
@@ -17,8 +17,8 @@ from synth.compose.perspective import CameraView, apply_homography, clip_polygon
 from synth.compose.placement import CheckPlacement, placement_corners_inches
 
 FILL_RANGE = (0.7, 0.95)
-WIDE_SHOT_PROBABILITY = 0.1
-WIDE_FILL_RANGE = (0.4, 0.65)
+WIDE_SHOT_PROBABILITY = 0.08
+WIDE_FILL_RANGE = (0.55, 0.7)   # below ~0.55 a 12-check group shrinks to unreadable
 ORIENTATION_MISMATCH_PROBABILITY = 0.1
 MISMATCH_ASPECT_RANGE = (0.6, 1.7)   # only near-square groups get shot the 'wrong' way round
 MIN_CHECKS_FOR_OUT_OF_FRAME = 3

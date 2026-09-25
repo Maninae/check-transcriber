@@ -21,7 +21,7 @@ from synth.compose.occluder_silhouettes import OccluderPose, draw_occluder
 from synth.compose.scene_light import SceneLight
 
 SHADOW_GRID_DOWNSCALE = 8
-PHONE_SHARE = 0.65                       # of scenes with a cast shadow, how many show the phone (vs a bare hand)
+PHONE_SHARE = 0.3                        # of shadowed scenes, how many show the phone; its soft blob reads worse than a bare hand
 HAND_HEIGHT_INCHES_RANGE = (2.5, 7.0)
 SHADOW_OPACITY_RANGE = (0.8, 1.0)
 PENUMBRA_SIGMA_PER_SPREAD = 0.8          # Gaussian sigma per (height * angular radius)
