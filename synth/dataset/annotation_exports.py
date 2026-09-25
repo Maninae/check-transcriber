@@ -1,10 +1,10 @@
 """Export check polygons for off-the-shelf detectors: COCO (with corner keypoints) and YOLO.
 
-- COCO: one `annotations_coco.json` per split. Each check is a polygon clipped to the
-  photo, plus 4 keypoints (the check's own TL, TR, BR, BL) so corner/orientation models
+- COCO: one `annotations_coco.json` per split. Each check is its outline (the deformed paper
+  edge, contract C3) clipped to the photo, plus 4 keypoints (the check's own TL, TR, BR, BL) so corner/orientation models
   can train directly. Keypoints outside the photo get v=0 and (0, 0).
 - YOLO segmentation (Ultralytics layout): `<split>/labels/<scene>.txt`, class 0, the clipped
-  polygon normalized to [0, 1].
+  outline normalized to [0, 1].
 - YOLO OBB: `<split>/labels_obb/<scene>.txt`, class 0, the 4 corners normalized and clamped to [0, 1].
 """
 
@@ -20,9 +20,14 @@ CORNER_KEYPOINT_NAMES = ["top_left", "top_right", "bottom_right", "bottom_left"]
 MIN_CLIPPED_AREA_PX = 16.0
 
 
-def clipped_check_polygon(corners: list[list[float]], width: int, height: int) -> np.ndarray:
-    """The check polygon clipped to the photo."""
-    return clip_polygon_to_rect(np.asarray(corners, np.float64), width, height)
+def clipped_check_polygon(points: list[list[float]], width: int, height: int) -> np.ndarray:
+    """A check polygon (outline or corners) clipped to the photo."""
+    return clip_polygon_to_rect(np.asarray(points, np.float64), width, height)
+
+
+def check_outline(check: dict) -> list[list[float]]:
+    """The paper outline; labels written before contract C3 only have the 4 corners."""
+    return check.get("outline") or check["corners"]
 
 
 def yolo_segmentation_lines(scene_label: dict) -> list[str]:
@@ -30,7 +35,7 @@ def yolo_segmentation_lines(scene_label: dict) -> list[str]:
     width, height = scene_label["image_width"], scene_label["image_height"]
     lines = []
     for check in scene_label["checks"]:
-        polygon = clipped_check_polygon(check["corners"], width, height)
+        polygon = clipped_check_polygon(check_outline(check), width, height)
         if len(polygon) < 3 or polygon_area(polygon) < MIN_CLIPPED_AREA_PX:
             continue
         normalized = (polygon / [width, height]).clip(0, 1)
@@ -43,7 +48,7 @@ def yolo_obb_lines(scene_label: dict) -> list[str]:
     width, height = scene_label["image_width"], scene_label["image_height"]
     lines = []
     for check in scene_label["checks"]:
-        polygon = clipped_check_polygon(check["corners"], width, height)
+        polygon = clipped_check_polygon(check_outline(check), width, height)
         if len(polygon) < 3 or polygon_area(polygon) < MIN_CLIPPED_AREA_PX:
             continue
         normalized = (np.asarray(check["corners"]) / [width, height]).clip(0, 1)
@@ -65,7 +70,7 @@ def build_coco_document(scene_labels: list[dict]) -> dict:
         width, height = scene["image_width"], scene["image_height"]
         images.append({"id": image_id, "file_name": f"images/{scene['image_file']}", "width": width, "height": height})
         for check in scene["checks"]:
-            polygon = clipped_check_polygon(check["corners"], width, height)
+            polygon = clipped_check_polygon(check_outline(check), width, height)
             area = polygon_area(polygon)
             if len(polygon) < 3 or area < MIN_CLIPPED_AREA_PX:
                 continue
