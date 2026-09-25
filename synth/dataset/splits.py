@@ -7,10 +7,14 @@ eval checks are printed on stock, laid on surfaces and written by hands train ne
 
 - Four independent partitions: template ids, background ids, handwriting font ids, signature font ids.
 - Assignment is a seeded shuffle per kind (seed + a per-kind salt), stable for a given seed and id set.
+- Templates are stratified by layout family: each family is partitioned on its own, so every
+  family appears in val and eval (11 templates per family -> 7 / 2 / 2).
 - Val and eval sizes are rounded, not floored, so small pools (13 signature fonts) still give
   val and eval two ids each instead of one.
 """
 
+import zlib
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -44,11 +48,15 @@ def held_out_count(total: int, fraction: float) -> int:
     return max(1, round(total * fraction))
 
 
-def assign_ids_to_splits(ids: list[str], fractions: dict[str, float], seed: int, salt: int) -> dict[str, list[str]]:
-    """Partition `ids` across splits in proportion to `fractions`; every split gets at least one id."""
+def assign_ids_to_splits(ids: list[str], fractions: dict[str, float], seed: int, salt: int,
+                         stream: int = 0) -> dict[str, list[str]]:
+    """Partition `ids` across splits in proportion to `fractions`; every split gets at least one id.
+
+    `stream` separates independent shuffles under the same salt (one per stratum).
+    """
     if len(ids) < len(SPLIT_NAMES):
         raise ValueError(f"need at least {len(SPLIT_NAMES)} ids to fill every split, got {len(ids)}")
-    shuffled = [ids[i] for i in np.random.default_rng([seed, salt]).permutation(len(ids))]
+    shuffled = [ids[i] for i in np.random.default_rng([seed, salt, stream]).permutation(len(ids))]
     eval_count = held_out_count(len(ids), fractions["eval"])
     val_count = held_out_count(len(ids), fractions["val"])
     if eval_count + val_count >= len(ids):  # tiny pools: leave train at least one id
@@ -60,11 +68,37 @@ def assign_ids_to_splits(ids: list[str], fractions: dict[str, float], seed: int,
     }
 
 
-def plan_split_pools(template_ids: list[str], background_ids: list[str], seed: int,
+def assign_ids_to_splits_stratified(group_by_id: dict[str, str], fractions: dict[str, float], seed: int,
+                                    salt: int) -> dict[str, list[str]]:
+    """Partition each group (stratum) separately and merge; groups too small to split are pooled together."""
+    ids_by_group = defaultdict(list)
+    for item_id, group in sorted(group_by_id.items()):
+        ids_by_group[group].append(item_id)
+    small_group_ids = [item_id for ids in ids_by_group.values() if len(ids) < len(SPLIT_NAMES) for item_id in ids]
+    strata = [(group, ids) for group, ids in sorted(ids_by_group.items()) if len(ids) >= len(SPLIT_NAMES)]
+    if small_group_ids:
+        strata.append(("pooled_small_groups", small_group_ids))
+    merged = {split_name: [] for split_name in SPLIT_NAMES}
+    for group, ids in strata:
+        if len(ids) < len(SPLIT_NAMES):  # only when the pooled leftovers are still too few: they train
+            merged["train"] += ids
+            continue
+        for split_name, split_ids in assign_ids_to_splits(ids, fractions, seed, salt, zlib.crc32(group.encode())).items():
+            merged[split_name] += split_ids
+    return {split_name: sorted(ids) for split_name, ids in merged.items()}
+
+
+def plan_template_pools(template_family_by_id: dict[str, str], seed: int,
+                        fractions: dict[str, float] = DEFAULT_SPLIT_FRACTIONS) -> dict[str, list[str]]:
+    """Template ids per split, stratified by layout family."""
+    return assign_ids_to_splits_stratified(template_family_by_id, fractions, seed, TEMPLATE_SALT)
+
+
+def plan_split_pools(template_family_by_id: dict[str, str], background_ids: list[str], seed: int,
                      fractions: dict[str, float] = DEFAULT_SPLIT_FRACTIONS) -> dict[str, SplitPools]:
     """Partition every id kind at once; handwriting and signature fonts come from the font registry."""
     by_kind = {
-        "template_ids": assign_ids_to_splits(template_ids, fractions, seed, TEMPLATE_SALT),
+        "template_ids": plan_template_pools(template_family_by_id, seed, fractions),
         "background_ids": assign_ids_to_splits(background_ids, fractions, seed, BACKGROUND_SALT),
         "handwriting_font_ids": assign_ids_to_splits(font_ids_with_role(FontRole.HANDWRITING), fractions, seed,
                                                      HANDWRITING_FONT_SALT),

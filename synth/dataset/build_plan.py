@@ -14,7 +14,7 @@ from synth.backgrounds.procedural import write_procedural_backgrounds
 from synth.compose.scene_config import SceneConfig
 from synth.dataset.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, plan_split_pools, scene_counts_per_split
 from synth.paths import DATA_ROOT
-from synth.render.check_templates import build_template_catalog
+from synth.render.check_templates import TemplateDesign, build_template_catalog
 
 BUILD_PLAN_FILENAME = "build_plan.json"
 PROCEDURAL_BACKGROUND_DIR = DATA_ROOT / "procedural-backgrounds"
@@ -39,6 +39,11 @@ class BuildPlan:
         return json.loads(json.dumps(asdict(self)))
 
 
+def template_family_by_id(catalog: list[TemplateDesign]) -> dict[str, str]:
+    """Template id -> layout family (the stratum for the template split)."""
+    return {template.template_id: template.layout_family.value for template in catalog}
+
+
 def resolve_backgrounds(background_root: Path, procedural_count: int, seed: int) -> tuple[Path, dict[str, str]]:
     """Background id -> path; procedural fabrics are generated (cached on the data drive) when requested."""
     if procedural_count:
@@ -56,8 +61,7 @@ def make_build_plan(seed: int, scene_total: int, template_count: int, background
     if len(background_paths) < len(SPLIT_NAMES):
         raise SystemExit(f"need at least 3 backgrounds under {background_root}, found {len(background_paths)}; "
                          "add photos, wait for the FLUX batch, or pass --procedural-backgrounds N")
-    template_ids = [template.template_id for template in build_template_catalog(template_count)]
-    pools = plan_split_pools(template_ids, sorted(background_paths), seed)
+    pools = plan_split_pools(template_family_by_id(build_template_catalog(template_count)), sorted(background_paths), seed)
     return BuildPlan(
         seed=seed, template_count=template_count,
         scene_counts=scene_counts_per_split(scene_total, DEFAULT_SPLIT_FRACTIONS),

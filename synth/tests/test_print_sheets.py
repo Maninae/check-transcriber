@@ -37,6 +37,14 @@ def test_every_check_carries_its_serial_and_field_texts(printed):
         assert record["text__payee"] == fields["payee"] and record["text__amount_numeric"] == fields["amount_numeric"]
 
 
+def test_print_sheets_render_clean_stock(printed):
+    """Real printer and paper supply toner grain and fibre, so printed checks come from the clean path."""
+    output_directory, _ = printed
+    records = json.loads((output_directory / "print_labels.json").read_text())
+    assert records and all(record["check_label"]["canonical"]["print_texture"] is False for record in records)
+    assert all(record["clean_stock"] for record in records)
+
+
 def test_each_page_has_handwritten_and_printed_fill_ins(printed):
     output_directory, _ = printed
     rows = list(csv.DictReader(open(output_directory / "print_labels.csv")))

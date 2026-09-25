@@ -7,10 +7,11 @@ import numpy as np
 import pytest
 
 from synth.dataset.build_dataset import build_dataset, parse_arguments, scene_tasks_for_plan
-from synth.dataset.build_plan import BuildPlan
+from synth.dataset.build_plan import BuildPlan, template_family_by_id
 from synth.dataset.manifest import read_manifest
 from synth.dataset.scene_task_runner import run_scene_task
-from synth.dataset.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_to_splits, plan_split_pools
+from synth.dataset.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_to_splits, plan_split_pools, plan_template_pools
+from synth.render.check_templates import build_template_catalog
 from synth.tests.conftest import BUILD_SCENES
 
 
@@ -93,8 +94,18 @@ def test_split_assignment_is_a_seeded_partition_with_useful_held_out_sizes():
     assert all(len(tiny[name]) == 1 for name in SPLIT_NAMES)
 
 
+def test_template_split_is_stratified_so_every_family_is_held_out():
+    catalog = build_template_catalog()
+    family_by_id = template_family_by_id(catalog)
+    pools = plan_template_pools(family_by_id, seed=0)
+    assert sorted(sum(pools.values(), [])) == sorted(family_by_id)
+    for family in set(family_by_id.values()):
+        counts = [sum(family_by_id[template_id] == family for template_id in pools[name]) for name in SPLIT_NAMES]
+        assert counts[1] >= 1 and counts[2] >= 1 and counts[0] > counts[1], (family, counts)
+
+
 def test_font_pools_partition_the_whole_registry():
-    pools = plan_split_pools([f"tpl_{i:03d}" for i in range(24)], ["a", "b", "c", "d"], seed=0)
+    pools = plan_split_pools({f"tpl_{i:03d}": "family" for i in range(24)}, ["a", "b", "c", "d"], seed=0)
     handwriting = [font for name in SPLIT_NAMES for font in pools[name].handwriting_font_ids]
     assert len(handwriting) == len(set(handwriting)) >= 24
     assert np.isclose(len(pools["train"].handwriting_font_ids) / len(handwriting), 0.7, atol=0.06)

@@ -6,7 +6,7 @@ photograph them. Each check carries a small printed serial (S-0007) under its me
 without hand transcription. `print_sheet__page=NN.png` is each page as rendered, for viewing.
 
 - Clean stock: a real printer and paper add their own toner and fibre, so checks are rendered
-  without simulated print texture when the renderer supports it (`simulate_print_texture=False`).
+  without simulated print texture (`render_check(..., simulate_print_texture=False)`) by default.
 - Coverage: each page alternates slots between handwritten and printed fill-ins, and cycles
   layout families, so every sheet has both kinds of fill-in and several designs.
 - `held_out_split="eval"` restricts templates and fonts to that seed's eval pools, so a model
@@ -14,7 +14,6 @@ without hand transcription. `print_sheet__page=NN.png` is each page as rendered,
 """
 
 import csv
-import inspect
 import json
 import logging
 from collections import defaultdict
@@ -27,9 +26,10 @@ from synth.dataset.splits import (
     DEFAULT_SPLIT_FRACTIONS,
     HANDWRITING_FONT_SALT,
     SIGNATURE_FONT_SALT,
-    TEMPLATE_SALT,
     assign_ids_to_splits,
+    plan_template_pools,
 )
+from synth.dataset.build_plan import template_family_by_id
 from synth.print.print_page_layout import LETTER_SIZE_PX, arrange_checks_on_page, draw_cut_guides
 from synth.render.check_fields import FieldName
 from synth.render.check_layout import RENDER_DPI, CheckSizeKind, check_size_pixels
@@ -48,31 +48,23 @@ PDF_JPEG_QUALITY = 95
 FOOTER_FONT_ID = "pt_sans"
 FOOTER_FONT_PX = 28
 FOOTER_GRAY = 90
-CLEAN_STOCK_KEYWORD = "simulate_print_texture"
 FIELD_TEXT_COLUMNS = [f"text__{field_name.value}" for field_name in FieldName]
 CSV_COLUMNS = ["serial", "page", "slot", "template_id", "layout_family", "size_kind", "rotated_on_page", "fill_in_style",
                "handwritten_fields", "handwriting_font_id", "signature_font_id", "amount_cents", "date_iso",
                "payee_canonical", "clean_stock", *FIELD_TEXT_COLUMNS]
 
 
-def renderer_supports_clean_stock() -> bool:
-    """True once the stock renderer exposes its texture switch."""
-    return CLEAN_STOCK_KEYWORD in inspect.signature(render_check).parameters
-
-
 def render_check_for_print(template: TemplateDesign, content, rng: np.random.Generator, font_pools: dict,
                            clean_stock: bool) -> tuple[Image.Image, object]:
-    """Render one check as RGB, on clean stock when asked and supported."""
-    extra = {CLEAN_STOCK_KEYWORD: False} if clean_stock and renderer_supports_clean_stock() else {}
+    """Render one check as RGB (clean stock has full alpha, so dropping it loses nothing)."""
     image, label = render_check(template, content, rng, handwriting_font_ids=font_pools.get("handwriting"),
-                                signature_font_ids=font_pools.get("signature"), **extra)
+                                signature_font_ids=font_pools.get("signature"), simulate_print_texture=not clean_stock)
     return image.convert("RGB"), label
 
 
 def layout_family_of(template: TemplateDesign) -> str:
-    """The template's layout family, or its size kind before layout families exist."""
-    family = getattr(template, "layout_family", None)
-    return family.value if family is not None else template.size_kind.value
+    """The template's layout family name."""
+    return template.layout_family.value
 
 
 def sample_content_with_style(template: TemplateDesign, rng: np.random.Generator, serial: str, want_handwritten: bool):
@@ -93,8 +85,7 @@ def print_pools(template_count: int, seed: int, held_out_split: str | None) -> t
     catalog = build_template_catalog(template_count)
     if held_out_split is None:
         return catalog, {}
-    template_ids = set(assign_ids_to_splits([t.template_id for t in catalog], DEFAULT_SPLIT_FRACTIONS, seed,
-                                            TEMPLATE_SALT)[held_out_split])
+    template_ids = set(plan_template_pools(template_family_by_id(catalog), seed)[held_out_split])
     font_pools = {
         "handwriting": assign_ids_to_splits(font_ids_with_role(FontRole.HANDWRITING), DEFAULT_SPLIT_FRACTIONS, seed,
                                             HANDWRITING_FONT_SALT)[held_out_split],
@@ -116,7 +107,7 @@ def label_record(serial: str, page: int, slot: int, template: TemplateDesign, ro
         "handwriting_font_id": label.canonical.get("handwriting_font_id"),
         "signature_font_id": label.canonical.get("signature_font_id"),
         "amount_cents": content.amount_cents, "date_iso": content.date_iso, "payee_canonical": content.payee_canonical,
-        "clean_stock": clean_stock and renderer_supports_clean_stock(),
+        "clean_stock": clean_stock,
         **{f"text__{field_name.value}": texts.get(field_name.value, "") for field_name in FieldName},
     }
 
@@ -172,5 +163,5 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
         writer.writerows(csv_rows)
     (output_directory / "print_labels.json").write_text(json.dumps(json_records, indent=1))
     logger.info("wrote %d pages, %d checks to %s (clean stock: %s)", page_count, len(csv_rows), output_directory,
-                clean_stock and renderer_supports_clean_stock())
+                clean_stock)
     return pdf_path
