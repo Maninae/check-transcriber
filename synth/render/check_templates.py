@@ -8,6 +8,9 @@ from `i`, never Python's salted `hash()`).
 
 - Family of design `i` is `LAYOUT_FAMILY_ORDER[i % 6]`, so families stay balanced at any count.
 - Geometry inside a family is jittered by the family module from the same template seed.
+- Printed fonts come from `printed_font_pools` on their own rng stream (`FONT_STREAM`), one font per
+  role; templates with index % 5 == 4 are the hold-out class and mostly use held-out fonts, which
+  no other template uses. `template_printed_font_ids` lists a template's fonts for split overlap reports.
 """
 
 from dataclasses import dataclass
@@ -17,9 +20,14 @@ import numpy as np
 
 from synth.render.check_layout import FAMILY_SIZE_KIND, CheckSizeKind, LayoutFamily
 from synth.render.fonts import FontRole, font_ids_with_role
+from synth.render.printed_font_pools import (
+    HOLDOUT_FONT_PREFERENCE, PRINTED_FONT_PROFILES_BY_ID, SHARED_PRINTED_FONT_IDS, PrintedRole, draw_printed_font,
+    is_holdout_template_index,
+)
 
 DEFAULT_TEMPLATE_COUNT = 66
 TEMPLATE_CATALOG_SEED = 1_000_003
+FONT_STREAM = 7
 MAX_PLATE_MISREGISTRATION_PX = 2.0
 PATTERN_INK_FLOOR = 70
 NEAR_WHITE_PATTERN_INK_RGB = (150, 158, 170)
@@ -82,10 +90,6 @@ DARK_PLATE_INKS_RGB: list[tuple[int, int, int]] = [
     (48, 54, 66),     # slate
 ]
 
-PRINTED_BODY_FONT_IDS = ["libre_baskerville", "eb_garamond", "source_sans_3", "pt_sans", "courier_prime"]
-PRINTED_HEADER_FONT_IDS = ["libre_baskerville", "eb_garamond", "pt_sans_bold", "oswald", "courier_prime_bold", "source_sans_3"]
-PRINTED_FILL_FONT_IDS = ["courier_prime", "source_sans_3", "pt_sans", "libre_baskerville"]
-LABEL_FONT_IDS = ["pt_sans", "source_sans_3", "libre_baskerville", "eb_garamond", "pt_sans_bold"]
 BANK_LOGO_SHAPES = ["circle", "square", "diamond", "building", "none"]
 
 
@@ -138,6 +142,32 @@ def pick(rng: np.random.Generator, options: list):
     return options[int(rng.integers(len(options)))]
 
 
+def choose_template_fonts(template_index: int, size_kind: CheckSizeKind) -> dict[PrintedRole, str]:
+    """One printed font per role for design `template_index`, from its own rng stream.
+
+    Hold-out-class templates pick from the held-out subset of each pool with probability
+    `HOLDOUT_FONT_PREFERENCE`; every other template never sees a held-out font.
+    """
+    rng = np.random.default_rng([TEMPLATE_CATALOG_SEED + template_index, FONT_STREAM])
+    holdout_class = is_holdout_template_index(template_index)
+    fonts = {}
+    for role in PrintedRole:
+        use_holdout = holdout_class and rng.random() < HOLDOUT_FONT_PREFERENCE
+        fonts[role] = draw_printed_font(rng, size_kind, role, use_holdout)
+    return fonts
+
+
+def template_printed_font_ids(template: TemplateDesign, include_shared: bool = False) -> tuple[str, ...]:
+    """Sorted distinct printed font ids a template draws with (for split font-overlap reports).
+
+    `include_shared` adds the fonts every template uses (serial, microprint), which overlap by design.
+    """
+    font_ids = {template.header_font_id, template.body_font_id, template.label_font_id, template.printed_fill_font_id}
+    if include_shared:
+        font_ids.update(SHARED_PRINTED_FONT_IDS)
+    return tuple(sorted(font_ids))
+
+
 def build_template_design(template_index: int) -> TemplateDesign:
     """Deterministically build design number `template_index`."""
     rng = np.random.default_rng(TEMPLATE_CATALOG_SEED + template_index)
@@ -153,6 +183,7 @@ def build_template_design(template_index: int) -> TemplateDesign:
     pattern_ink = saturated_ink_for_tint(tint, float(rng.uniform(3.0, 5.0)))
     if min(pattern_ink) > 200:  # near-white stock: use a neutral blue-gray security ink instead
         pattern_ink = NEAR_WHITE_PATTERN_INK_RGB
+    fonts = choose_template_fonts(template_index, size_kind)
     misregistration_angle = rng.uniform(0, 2 * np.pi)
     misregistration_length = rng.uniform(0, MAX_PLATE_MISREGISTRATION_PX)
     return TemplateDesign(
@@ -166,12 +197,12 @@ def build_template_design(template_index: int) -> TemplateDesign:
         pattern_strength=float(rng.uniform(0.18, 0.42) if scenic_kind != ScenicKind.NONE else rng.uniform(0.25, 0.6)),
         border_kind=pick(rng, list(BorderKind)),
         dark_ink_rgb=pick(rng, DARK_PLATE_INKS_RGB),
-        header_font_id=pick(rng, PRINTED_HEADER_FONT_IDS),
-        body_font_id=pick(rng, PRINTED_BODY_FONT_IDS),
-        label_font_id=pick(rng, LABEL_FONT_IDS),
+        header_font_id=fonts[PrintedRole.HEADER],
+        body_font_id=fonts[PrintedRole.BODY],
+        label_font_id=fonts[PrintedRole.LABEL],
         labels_uppercase=bool(rng.random() < (0.85 if is_business else 0.6)),
         amount_box_outlined=bool(rng.random() < 0.75),
-        printed_fill_font_id=pick(rng, PRINTED_FILL_FONT_IDS),
+        printed_fill_font_id=fonts[PrintedRole.FILL],
         bank_logo_shape=pick(rng, BANK_LOGO_SHAPES),
         micr_layout="business" if is_business else "personal",
         scenic_kind=scenic_kind,
@@ -186,6 +217,8 @@ def build_template_design(template_index: int) -> TemplateDesign:
 
 def build_template_catalog(template_count: int = DEFAULT_TEMPLATE_COUNT) -> list[TemplateDesign]:
     """All template designs, ids tpl_000 .. tpl_{n-1}."""
-    printed_fonts = set(font_ids_with_role(FontRole.PRINTED))
-    assert set(PRINTED_BODY_FONT_IDS + PRINTED_HEADER_FONT_IDS + LABEL_FONT_IDS) <= printed_fonts
+    registered_printed_fonts = set(font_ids_with_role(FontRole.PRINTED))
+    if set(PRINTED_FONT_PROFILES_BY_ID) != registered_printed_fonts:
+        raise ValueError("printed_font_pools profiles and fonts.py PRINTED registry disagree: "
+                         f"{sorted(set(PRINTED_FONT_PROFILES_BY_ID) ^ registered_printed_fonts)}")
     return [build_template_design(index) for index in range(template_count)]

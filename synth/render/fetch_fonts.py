@@ -3,10 +3,13 @@
 Usage: `python -m synth.render.fetch_fonts`. Idempotent: files already present are skipped.
 
 - google/fonts keeps the license next to the font: `OFL.txt` in `ofl/`, `LICENSE.txt` in `apache/`.
+- A few google/fonts folders (Tinos) carry no license text; their `METADATA.pb`, which records
+  the license, is saved instead and a warning is logged.
 - GnuMICR ships `COPYING` (GPL-2); it is fetched but never bundled anywhere.
 """
 
 import logging
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -20,6 +23,8 @@ LICENSE_FILENAME_BY_LICENSE = {
     APACHE_LICENSE: "LICENSE.txt",
 }
 GPL_LICENSE_FILENAME = "COPYING"
+GOOGLE_FONTS_METADATA_FILENAME = "METADATA.pb"
+HTTP_NOT_FOUND = 404
 
 
 def download_file(url: str, destination_path: Path) -> None:
@@ -41,9 +46,24 @@ def fetch_all_fonts(font_dir: Path = FONT_DIR) -> None:
         if not font_path.exists():
             logger.info("downloading %s", spec.font_id)
             download_file(spec.source_url, font_path)
-        license_path = font_path.parent / license_filename_for(spec)
-        if not license_path.exists():
-            download_file(spec.source_url.rsplit("/", 1)[0] + "/" + license_path.name, license_path)
+        fetch_license_text(spec, font_path.parent)
+
+
+def fetch_license_text(spec: FontSpec, local_directory: Path) -> None:
+    """Save the upstream license file next to the font, or METADATA.pb when upstream has none."""
+    upstream_directory_url = spec.source_url.rsplit("/", 1)[0]
+    license_path = local_directory / license_filename_for(spec)
+    metadata_path = local_directory / GOOGLE_FONTS_METADATA_FILENAME
+    if license_path.exists() or metadata_path.exists():
+        return
+    try:
+        download_file(f"{upstream_directory_url}/{license_path.name}", license_path)
+    except urllib.error.HTTPError as http_error:
+        if http_error.code != HTTP_NOT_FOUND or spec.license_name not in LICENSE_FILENAME_BY_LICENSE:
+            raise
+        logger.warning("%s has no %s upstream; saving %s (records the license) instead",
+                       spec.font_id, license_path.name, GOOGLE_FONTS_METADATA_FILENAME)
+        download_file(f"{upstream_directory_url}/{GOOGLE_FONTS_METADATA_FILENAME}", metadata_path)
 
 
 if __name__ == "__main__":
