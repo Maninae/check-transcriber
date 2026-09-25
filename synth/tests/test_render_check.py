@@ -34,7 +34,7 @@ def test_handwritten_box_contains_ink():
     content.handwritten_fields = ["payee"]
     image, label = render_check(template, content, rng)
     x0, y0, x1, y1 = label.field_by_name(FieldName.PAYEE).box
-    crop = np.asarray(image)[y0:y1, x0:x1].astype(int)
+    crop = np.asarray(image.convert("RGB"))[y0:y1, x0:x1].astype(int)
     assert (crop.sum(axis=2) < 300).mean() > 0.02  # there is dark ink inside the payee box
 
 

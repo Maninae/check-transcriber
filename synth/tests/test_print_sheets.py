@@ -11,3 +11,12 @@ def test_print_sheets(tmp_path):
     assert b"MediaBox [ 0 0 612.0 792.0 ]" in pdf_path.read_bytes()
     rows = list(csv.DictReader(open(tmp_path / "print_labels.csv")))
     assert [row["serial"] for row in rows] == ["S-0001", "S-0002", "S-0003"]
+
+
+def test_print_sheets_render_without_print_texture(tmp_path):
+    """Real printer and paper supply toner grain and fibre, so printed checks must come from the clean path."""
+    import json
+
+    write_print_sheets(tmp_path, page_count=1, seed=1, template_count=24)
+    records = json.loads((tmp_path / "print_labels.json").read_text())
+    assert records and all(record["check_label"]["canonical"]["print_texture"] is False for record in records)
