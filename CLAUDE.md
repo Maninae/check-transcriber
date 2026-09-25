@@ -10,7 +10,7 @@ Dependencies flow one direction: `synth/` and `experiments/` produce data/models
 
 ## Where things live
 
-- Product spec (goals, constraints, full UX flow, processing pipeline, all milestones): `~/.mineru/reports/2026-09-25-baclt-check-tool-spec.md` (outside this repo).
+- Product spec (goals, constraints, full UX flow, processing pipeline, all milestones): `docs/SPEC.md`.
 - App architecture, CSP/SW invariants, "how to add the next milestone" hook: `app/CLAUDE.md`.
 - Repo-level pointer for humans: `README.md`.
 

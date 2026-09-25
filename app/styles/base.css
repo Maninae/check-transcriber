@@ -30,7 +30,7 @@
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
 
   /* A plain system sans for every working piece of UI text — legible at small
-     sizes, and it matches what the rest of Angie's Windows desktop looks like. */
+     sizes, and it matches what the rest of the operator's Windows desktop looks like. */
   --font-body: "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, ui-sans-serif, system-ui, sans-serif;
 
   --spacing-unit: 8px;

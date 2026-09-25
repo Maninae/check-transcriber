@@ -1,6 +1,6 @@
 # app/ — Check Transcriber static site
 
-This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no framework, no bundler, no build step. GitHub Pages serves this directory (via `.github/workflows/deploy-pages.yml` at the repo root) exactly as it sits on disk, so what you see here is what ships. Full product spec: `~/.mineru/reports/2026-09-25-baclt-check-tool-spec.md` (referenced from the repo root README).
+This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no framework, no bundler, no build step. GitHub Pages serves this directory (via `.github/workflows/deploy-pages.yml` at the repo root) exactly as it sits on disk, so what you see here is what ships. Full product spec: `docs/SPEC.md` at the repo root.
 
 ## Module map
 

@@ -22,4 +22,4 @@ Open `http://localhost:8000/`.
 
 ## Full product spec
 
-The complete spec (goals, constraints, UX flow, processing pipeline, milestones) lives outside this repo at `~/.mineru/reports/2026-09-25-baclt-check-tool-spec.md`. This repo implements milestone 1 (the skeleton) as of the initial commit.
+The complete spec (goals, constraints, UX flow, processing pipeline, milestones) lives in `docs/SPEC.md`. This repo implements milestone 1 (the skeleton) as of the initial commit.

@@ -48,7 +48,7 @@ export const TESSERACT_CORE_SIZE_MB = 3.9;
 export const TESSERACT_JS_SIZE_MB = 0.2; // tesseract.min.js + worker.min.js combined
 
 // Total first-visit download across every CDN file, shown in the readiness line so
-// Angie knows what "getting ready" means and that it only happens once.
+// The operator knows what "getting ready" means and that it only happens once.
 export const TOTAL_DOWNLOAD_SIZE_MB = Math.round(
   OPENCV_JS_SIZE_MB + TESSERACT_JS_SIZE_MB + TESSERACT_CORE_SIZE_MB + TESSERACT_LANG_SIZE_MB,
 );
