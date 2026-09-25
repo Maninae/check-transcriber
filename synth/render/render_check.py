@@ -10,6 +10,8 @@ tight box in check pixels. Layers, each multiplied into the one below (print_mod
 add their own toner and fibre): flat paper, crisp text, no misregistration, full rectangle alpha.
 """
 
+import dataclasses
+
 import numpy as np
 from PIL import Image
 
@@ -29,7 +31,7 @@ from synth.render.stock_render import render_blank_template
 PRINTED_FILL_MAX_EM_INCHES = 0.15
 HANDWRITING_EM_RANGE_INCHES = (0.13, 0.18)
 LEGAL_DASH_MIN_GAP_INCHES = 0.35       # draw the trailing dash only when this much line is left
-LEGAL_DASH_PROBABILITY = 0.6
+LEGAL_DASH_PROBABILITY = 0.7
 LEFT_PERFORATION_PROBABILITY = 0.85
 
 
@@ -211,6 +213,7 @@ def render_check(
             "handwriting_font_id": writer.font_id,
             "signature_font_id": writer.signature_font_id,
             "pen_width_px": writer.pen_width_px,
+            "writer": dataclasses.asdict(writer),  # pen type and hand habits (C1 Writer), JSON-safe floats
             "serial": content.serial,
             "print_texture": simulate_print_texture,
             "perforated_side": perforated_side,

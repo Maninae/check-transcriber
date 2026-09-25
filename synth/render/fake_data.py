@@ -54,6 +54,8 @@ MEMO_TEMPLATES = [
     "{unit}", "Unit {unit} {month} rent", "rent + parking", "{full_month}", "{month} {year}", "Apt. {unit}",
 ]
 MONEY_ORDER_MAX_DOLLARS = 1000
+PERSONAL_HANDWRITTEN_PROBABILITY = 0.9   # the rest are typed by bill-pay or check-writing software
+BUSINESS_HANDWRITTEN_PROBABILITY = 0.15  # most business checks are printed by accounting software
 MONTH_ABBREVIATIONS = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"]
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
                "September", "October", "November", "December"]
@@ -90,7 +92,7 @@ def format_amount_numeric(amount_cents: int, rng: np.random.Generator, handwritt
         styles = [f"${dollars:,}.{cents:02d}", f"**{dollars:,}.{cents:02d}**", f"$***{dollars:,}.{cents:02d}"]
     elif handwritten:
         styles = [f"{dollars:,}.{cents:02d}", f"{dollars:,}.{cents:02d}", f"{dollars}.{cents:02d}", f"{dollars:,} {cents:02d}/100",
-                  f"{dollars} {cents:02d}/100"]
+                  f"{dollars} {cents:02d}/100", f"${dollars:,}.{cents:02d}"]
         if cents == 0:  # whole-dollar habits: "1,250.-", "1250 =", "1,250 xx/100", "1,250.xx"
             styles += [f"{dollars:,}.-", f"{dollars} =", f"{dollars:,} xx/100", f"{dollars:,}.xx", f"{dollars:,}"]
     else:
@@ -106,10 +108,12 @@ def format_amount_words(amount_cents: int, rng: np.random.Generator, handwritten
     if money_order:
         return [f"{words.upper()} DOLLARS AND {cents:02d} CENTS", f"***{words.upper()} AND {cents:02d}/100***",
                 f"{words.title()} Dollars {cents:02d} Cents"][int(rng.integers(3))]
-    if handwritten:
-        words = words.capitalize() if rng.random() < 0.7 else words
-        cents_part = ["and {c:02d}/100", "& {c:02d}/100", "and {c:02d}/100 ---", "and no/100" if cents == 0 else "and {c:02d}/100"][int(rng.integers(4))]
-        return f"{words} {cents_part.format(c=cents)}"
+    if handwritten:  # sentence case, no asterisks; the renderer adds the long hand-drawn dash, unlabelled
+        words = words.capitalize() if rng.random() < 0.85 else words
+        cents_parts = ["and {c:02d}/100", "and {c:02d}/100", "& {c:02d}/100"]
+        if cents == 0:
+            cents_parts += ["and no/100", "& xx/100", "and xx/100"]
+        return f"{words} {cents_parts[int(rng.integers(len(cents_parts)))].format(c=cents)}"
     words = words.title() if rng.random() < 0.5 else words.upper()
     return f"***{words} and {cents:02d}/100***"
 
@@ -179,14 +183,11 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
         payer_name = payer_name.upper()
     payer_address_lines = [faker.street_address(), f"{faker.city()}, {faker.state_abbr(include_territories=False, include_freely_associated_states=False)} {faker.zipcode()}"]
 
-    # Handwriting mode: business checks are usually computer-printed; personal mostly by hand.
-    handwritten_probability = 0.15 if is_business else 0.85
-    handwriting_mode_roll = rng.random()
-    handwritten_fields = []
-    for field_name in HANDWRITABLE_FIELDS:
-        per_field_probability = handwritten_probability if handwriting_mode_roll < 0.8 else 0.5
-        if rng.random() < per_field_probability:
-            handwritten_fields.append(field_name.value)
+    # One fill mode per check: a person writes every fill-in, or software types every one (never mixed,
+    # except money orders, where the issuer prints date and amount and the purchaser writes the rest).
+    handwritten_probability = BUSINESS_HANDWRITTEN_PROBABILITY if is_business else PERSONAL_HANDWRITTEN_PROBABILITY
+    written_by_hand = rng.random() < handwritten_probability
+    handwritten_fields = [field_name.value for field_name in HANDWRITABLE_FIELDS] if written_by_hand else []
     if is_money_order:  # the issuer printed date and amount; the purchaser writes payee and memo
         handwritten_fields = ["payee", "memo"]
 

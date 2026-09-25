@@ -67,8 +67,7 @@ def generate_scene(task: SceneTask) -> dict:
     rendered_checks = []
     for _ in range(check_count):
         template = catalog[task.template_ids[int(rng.integers(len(task.template_ids)))]]
-        check_image, check_label = render_check(template, sample_check_content(template, rng), rng)
-        rendered_checks.append((check_image.convert("RGB"), check_label))  # remove when compose reads alpha (C2)
+        rendered_checks.append(render_check(template, sample_check_content(template, rng), rng))
     background_id, background_path = task.backgrounds[int(rng.integers(len(task.backgrounds)))]
     scene_id = f"{task.split_name}_{task.scene_index:06d}"
     photo, label = compose_scene(scene_id, rendered_checks, cached_background(background_path), background_id, rng, task.scene_config)

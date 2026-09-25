@@ -6,7 +6,7 @@ Generates labeled "phone photo of several checks on a bedsheet" scenes for Check
 
 | Stage | Entry | Output |
 |---|---|---|
-| 1. Render one check | `synth.render.render_check.render_check` | flat 300 dpi check + label (every field's text, tight box, handwritten flag, template id) |
+| 1. Render one check | `synth.render.render_check.render_check` | flat 300 dpi RGBA check (alpha = paper, torn perforation) on 66 templates over 6 layout families + label (every field's text, tight box, handwritten flag, template id, layout family) |
 | 2. Compose a scene | `synth.compose.compose_scene.compose_scene` | phone-photo JPEG + label (corners, orientation, field quads, visibility) |
 | 3. Build a dataset | `python -m synth.dataset.build_dataset` | train/val/eval split by template and background, COCO + YOLO exports, manifest |
 

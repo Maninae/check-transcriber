@@ -94,8 +94,8 @@ def test_clean_stock_has_no_paper_texture_and_same_geometry():
                                 has_security_fibres=False, template_id="tpl_plain_test")
     clean, textured = render_blank_template(plain, textured=False), render_blank_template(plain, textured=True)
     empty_patch = (slice(10, 40), slice(plain.template_index + 900, plain.template_index + 1000))  # blank area right of the payer block
-    assert clean.rgb[empty_patch].std() == 0.0
-    assert textured.rgb[empty_patch].std() > 0.5
+    assert clean.rgb[empty_patch].reshape(-1, 3).std(axis=0).max() == 0.0     # per channel: flat tint
+    assert textured.rgb[empty_patch].reshape(-1, 3).std(axis=0).max() > 0.5
     assert clean.slots == textured.slots
     assert [label.box for label in clean.preprinted] == [label.box for label in textured.preprinted]
 
@@ -106,3 +106,30 @@ def test_clean_render_is_opaque_and_flagged():
     image, label = render_check(template, sample_check_content(template, rng), rng, simulate_print_texture=False)
     assert (np.asarray(image.getchannel("A")) == 255).all()
     assert label.canonical["print_texture"] is False and label.canonical["perforated_side"] is None
+
+
+def test_fill_mode_is_one_per_check_and_handwriting_never_looks_typed():
+    """A check is written by hand or typed by software, never mixed; handwritten values carry no printer formats."""
+    fill_fields = {"date", "payee", "amount_numeric", "amount_words"}
+    for index in range(600):
+        template = CATALOG[index % len(CATALOG)]
+        content = sample_check_content(template, np.random.default_rng([index, 5]))
+        written = fill_fields & set(content.handwritten_fields)
+        if template.layout_family == LayoutFamily.MONEY_ORDER:
+            assert written == {"payee"}  # issuer prints date and amount
+            continue
+        assert written in (set(), fill_fields), (template.template_id, content.handwritten_fields)
+        if written:
+            for text in (content.amount_numeric_text, content.amount_words_text, content.date_text):
+                assert "*" not in text and not (text.isupper() and len(text) > 6), text
+
+
+def test_label_records_writer_habits_as_json():
+    import json
+
+    template = FIRST_TEMPLATE_OF_FAMILY[LayoutFamily.PERSONAL_CLASSIC]
+    rng = np.random.default_rng(8)
+    _, label = render_check(template, sample_check_content(template, rng), rng)
+    writer_record = label.canonical["writer"]
+    assert {"font_id", "pen", "hand", "slant_degrees"} <= set(writer_record)
+    json.dumps(label.to_dict())

@@ -38,7 +38,7 @@ def draw_money_order(canvas: StockCanvas, rng: np.random.Generator) -> FieldSlot
     value_y = canvas.fy(row_bottom) - canvas.px(0.05)
     date = TextSlot(canvas.fx(0.05), value_y, canvas.fx(0.27), canvas.px(0.12))
     amount = TextSlot(canvas.fx(0.35), value_y, canvas.fx(0.58), canvas.px(0.14))
-    words = TextSlot(canvas.fx(0.05), canvas.fy(0.46), canvas.fx(0.9), canvas.px(0.1))
+    words = TextSlot(canvas.fx(0.05), canvas.fy(0.47), canvas.fx(0.9), canvas.px(0.13))
 
     payee_y = 0.58 + jitter(rng)
     canvas.label("label_pay_to", "PAY TO THE ORDER OF", canvas.fx(0.04), canvas.fy(payee_y), max_width=canvas.fx(0.12))
@@ -53,8 +53,8 @@ def draw_money_order(canvas: StockCanvas, rng: np.random.Generator) -> FieldSlot
     payer_address = ruled_fill(canvas, 0.17, 0.58, address_y, em_scale=0.75)
     canvas.label("label_memo", "MEMO", canvas.fx(0.62), canvas.fy(from_y + 0.045), max_width=canvas.fx(0.07))
     memo = ruled_fill(canvas, 0.69, 0.955, from_y + 0.045, em_scale=0.85)
-    canvas.label("label_limit_note", LIMIT_NOTES[variant], canvas.fx(0.955), canvas.fy(0.535), anchor="rs",
-                 em_px=small_em, apply_case=False)
+    canvas.label("label_limit_note", LIMIT_NOTES[variant], canvas.fx(0.04), canvas.fy(0.075) + issuer_em * 1.9,
+                 em_px=small_em, max_width=canvas.fx(0.3), apply_case=False)
     return FieldSlots(
         payer_name=payer_name, payer_address=payer_address, check_number=number, fractional_routing=None,
         bank_name=bank_name, bank_city=None, date=date, payee=payee, payee_address=None, amount_numeric=amount,
