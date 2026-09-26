@@ -29,11 +29,21 @@ DETECTION_EXPERIMENTS_ROOT = Path(
 SPLIT_NAMES = ("train", "val", "eval")
 
 
-def split_images_directory(split_name: str) -> Path:
-    """Full-resolution scene JPEGs for one split of the active dataset."""
-    return ACTIVE_SYNTHETIC_DATASET_ROOT / split_name / "images"
+V1_DATASET_NAME = "v1"
 
 
-def split_annotations_directory(split_name: str) -> Path:
+def synthetic_dataset_root(dataset_name: str | None = None) -> Path:
+    """Root of a named synthetic dataset under synth/ (e.g. "v1.1-closeup-train"); None = active."""
+    if dataset_name is None:
+        return ACTIVE_SYNTHETIC_DATASET_ROOT
+    return CHECK_TRANSCRIBER_DATA_ROOT / "synth" / dataset_name
+
+
+def split_images_directory(split_name: str, dataset_name: str | None = None) -> Path:
+    """Full-resolution scene JPEGs for one split of a dataset (default: the active one)."""
+    return synthetic_dataset_root(dataset_name) / split_name / "images"
+
+
+def split_annotations_directory(split_name: str, dataset_name: str | None = None) -> Path:
     """Per-scene JSON annotations (corners, outline, orientation, effects) for one split."""
-    return ACTIVE_SYNTHETIC_DATASET_ROOT / split_name / "annotations"
+    return synthetic_dataset_root(dataset_name) / split_name / "annotations"
