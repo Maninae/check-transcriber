@@ -76,7 +76,7 @@ class ClassicalDetectorConfig:
     edge_support_color_threshold: float = 12.0  # Lab distance, inner vs outer band
     edge_support_texture_threshold: float = 4.0  # outer minus inner local std
     minimum_edge_support: float = 0.45
-    minimum_verification_score: float = 0.35
+    minimum_verification_score: float = 0.65  # tuned (sweep_v1)
 
     # Interior appearance gate (a check has print on smooth, bright, near-neutral paper).
     print_residue_threshold: float = 20.0
@@ -87,8 +87,8 @@ class ClassicalDetectorConfig:
 
     # Interior seam gate: a straight strong border across the interior means a spanning quad.
     seam_gradient_threshold: float = 16.0
-    maximum_interior_seam_strength: float = 0.7
-    minimum_line_hypothesis_score: float = 0.75  # line-only quads need stronger borders
+    maximum_interior_seam_strength: float = 0.55  # tuned (sweep_v1)
+    minimum_line_hypothesis_score: float = 0.9  # line-only quads need stronger borders, tuned (sweep_v1)
 
     # Selection rank = score + 0.25 * rectangularity + this * weakest side's border strength.
     weakest_side_strength_rank_weight: float = 0.0
@@ -97,7 +97,7 @@ class ClassicalDetectorConfig:
     duplicate_iou_threshold: float = 0.5
     maximum_contained_fraction: float = 0.75  # smaller quad mostly inside a larger kept one
     relative_area_floor: float = 0.3  # of the median kept quad area; smaller ones are fragments
-    maximum_covered_fraction: float = 0.6  # candidate area already covered by the union of kept quads
+    maximum_covered_fraction: float = 0.75  # candidate area already covered by the union of kept quads, tuned (sweep_v1)
 
     # Full-resolution sub-pixel side refinement.
     refine_corners_at_full_resolution: bool = True
