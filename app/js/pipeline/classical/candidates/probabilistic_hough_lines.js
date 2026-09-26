@@ -11,13 +11,12 @@
  * Returns segments as `[x1, y1, x2, y2]` integer arrays, in OpenCV's output order.
  */
 
+import { OpenCvRandomGenerator } from "../numeric/opencv_random_generator.js";
+
 const fround = Math.fround;
 const FIXED_POINT_SHIFT = 16;
 const FIXED_POINT_ONE = 1 << FIXED_POINT_SHIFT;
 const FIXED_POINT_HALF = 1 << (FIXED_POINT_SHIFT - 1);
-const RNG_MULTIPLIER_HIGH = 4164903690 >>> 16; // cv::RNG coefficient 4164903690, split into 16-bit limbs
-const RNG_MULTIPLIER_LOW = 4164903690 & 0xffff;
-const TWO_TO_32 = 4294967296;
 // Float32 rounding moves a projection by < 5e-4 px while |projection| < 4096, so the float64
 // value alone decides the bin unless it is within this margin of a half-integer.
 const ROUNDING_AMBIGUITY_MARGIN = 2e-3;
@@ -28,35 +27,6 @@ const CV_PI = 3.1415926535897932384626433832795;
 function roundHalfEven(value) {
   const rounded = Math.round(value);
   return rounded - value === 0.5 && (rounded & 1) !== 0 ? rounded - 1 : rounded;
-}
-
-/** OpenCV `cv::RNG` (multiply-with-carry, 64-bit state) with `uniform(0, n)`. */
-class OpenCvRandomGenerator {
-  /** Seed `(uint64)-1`, as HoughLinesProbabilistic does. */
-  constructor() {
-    this.stateLow = 0xffffffff;
-    this.stateHigh = 0xffffffff;
-  }
-
-  /** `next()`: state = low * 4164903690 + high; returns the new low 32 bits. */
-  next() {
-    const low = this.stateLow;
-    const lowHigh16 = low >>> 16;
-    const lowLow16 = low & 0xffff;
-    const productLowLow = lowLow16 * RNG_MULTIPLIER_LOW;
-    const middle = lowLow16 * RNG_MULTIPLIER_HIGH + lowHigh16 * RNG_MULTIPLIER_LOW;
-    const productHighHigh = lowHigh16 * RNG_MULTIPLIER_HIGH;
-    const lowSum = productLowLow + (middle % 65536) * 65536 + this.stateHigh;
-    const carry = Math.floor(lowSum / TWO_TO_32);
-    this.stateLow = lowSum - carry * TWO_TO_32;
-    this.stateHigh = (productHighHigh + Math.floor(middle / 65536) + carry) % TWO_TO_32;
-    return this.stateLow;
-  }
-
-  /** `uniform(0, count)` for count > 0. */
-  uniformBelow(count) {
-    return this.next() % count;
-  }
 }
 
 /** OpenCV `computeNumangle(0, pi, theta)`. */

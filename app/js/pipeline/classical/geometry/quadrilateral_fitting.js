@@ -11,7 +11,8 @@
  * A fitted quad is `{ corners, rectangularity, sourceName }`.
  */
 
-import { createFloat32PointMatFromFlat, fitLineHuber, withMats } from "../numeric/mat_helpers.js";
+import { fitLineHuberExact } from "../numeric/huber_line_fit.js";
+import { createFloat32PointMatFromFlat, withMats } from "../numeric/mat_helpers.js";
 import { contourAreaOfFlatContour } from "../numeric/opencv_geometry_formulas.js";
 import {
   intersectLines, orderCornersClockwise, quadrilateralArea, quadrilateralAspectRatio, vectorLength,
@@ -79,7 +80,7 @@ function refitSidesWithLines(cv, flatPoints, coarseCorners) {
       }
     }
     if (keptCount < MINIMUM_POINTS_PER_SIDE) return coarseCorners;
-    fittedLines.push(fitLineHuber(cv, sidePoints, keptCount));
+    fittedLines.push(fitLineHuberExact(sidePoints, keptCount));
   }
   const refitCorners = [];
   for (let corner = 0; corner < 4; corner += 1) {

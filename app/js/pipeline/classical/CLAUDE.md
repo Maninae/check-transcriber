@@ -1,6 +1,6 @@
 # classical/: the no-model check detector, in the browser
 
-A faithful OpenCV.js port of the Python detector in `experiments/detection/classical/` (read its `CLAUDE.md` for the algorithm and tuning history). Same stages, same config, same output; on the 67-scene parity set every scene has the same detection count as Python and the median corner difference is 0 px.
+A faithful OpenCV.js port of the Python detector in `experiments/detection/classical/` (read its `CLAUDE.md` for the algorithm and tuning history). Same stages, same config, same output; on the 67-scene parity set every scene has the same detection count as Python and every corner is bit-identical.
 
 ## Contract
 
@@ -49,13 +49,17 @@ const checks = detectChecksClassical(cv, imageBgr /* CV_8UC3, full res, caller o
 | `numeric/binary_morphology.js` | Exact bit-packed binary erode/dilate/open/close for centered-run kernels. |
 | `numeric/bit_packed_rows.js` | Pack/unpack/shift primitives for 32-pixel words. |
 | `numeric/opencv_geometry_formulas.js` | `contourArea` and `isContourConvex`, ported (no Mat per call). |
-| `numeric/mat_helpers.js` | Mat creation, `withMats` cleanup, `fitLineHuber`, `findExternalContours`. |
+| `numeric/huber_line_fit.js` | `cv2.fitLine(DIST_HUBER)`, arm64-exact port of `fitLine2D` (fused moments and distances). |
+| `numeric/fused_multiply_add.js` | Correctly rounded float64 / float32 FMA emulation (round-to-odd). |
+| `numeric/opencv_random_generator.js` | OpenCV's fixed-seed `cv::RNG` (used by `HoughLinesP` and `fitLine`). |
+| `numeric/mat_helpers.js` | Mat creation, `withMats` cleanup, `findExternalContours`. |
 
 ## Why some OpenCV calls are JS ports
 
 The parity target is the Python cv2 on arm64 (OpenCV 5.0 with the KleidiCV/carotene HALs). There, clang contracts `a + b * c` into a fused multiply-add and NEON kernels use `vfma`; OpenCV.js (WASM) rounds the product separately. Most of the time that is a 1-ulp difference, but two places turn it into different detections: a uint8 truncation of an amplified Lab channel feeding Canny, and `HoughLinesP`, whose randomized point order reshuffles on a single differing edge pixel or vote. So every OpenCV call whose float result feeds a threshold or Canny was replaced by a JS port that reproduces the arm64 arithmetic, each verified bit-for-bit against cv2:
 
 - resize INTER_AREA, float Gaussian blur, Sobel, `magnitude`, bilinear `remap`, `HoughLinesP`: 0 differing values on real scenes.
+- Huber `fitLine`: 20 fixed-seed restarts keep the line with the smallest distance sum, so one ulp can pick a different restart and move a side by tenths of a pixel (up to hundreds on a degenerate point set). `cv.fitLine` disagreed with cv2 on ~40% of real calls; on eval_000207 a 0.18 px shift of one fitted side became 3.4 px after snapping, cost the true quad its edge support, and a line hypothesis won instead. The port matches cv2 on 99.88% of 26k captured calls; the rest differ by <= 6e-4 px because cv2 calls Apple's closed-source `__sincosf_stret` (fused sinf/cosf), which JS `Math.sin`/`Math.cos` cannot reproduce bit-for-bit.
 - Integer or bit-exact OpenCV paths stay on `cv.*`: `cvtColor` (Lab, gray), uint8 morphology and blur, Canny, connected components, contours, convex hull, `approxPolyN`, `fillConvexPoly`, box filters (float64 sums).
 - Binary morphology was ported for speed, not exactness (WASM ellipse morphology was ~1 s per photo); it is pixel-identical to `cv.morphologyEx`.
 - When you add a `cv.*` call on float data, check it against cv2 on arm64 before trusting it.
@@ -70,7 +74,7 @@ The parity target is the Python cv2 on arm64 (OpenCV 5.0 with the KleidiCV/carot
 
 ## Known residual differences
 
-- `cv.fitLine` (Huber) differs from cv2 by 1 float32 ulp in ~12% of calls (the Python side fuses a float64 `x2 - x*x`). Effect: 53% of corners are bit-identical, the rest differ by a median of ~1e-4 px, max 0.9 px on the parity set. No detection count changes.
+- Huber `fitLine` (ported, see above) still differs from cv2 on ~0.12% of calls, by <= 6e-4 px, from Apple's `__sincosf_stret`. It is a residual knife-edge: a scene whose selection hinges on that last bit can still diverge.
 - `cv.intersectConvexConvex` under-reports the overlap of nearly coincident quads (two quads 1e-4 px apart score IoU 0.37). Python has the same behaviour, so parity holds, but it weakens the duplicate test; the union-coverage test catches those duplicates instead.
 
 ## Parity and checks

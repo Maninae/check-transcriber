@@ -12,7 +12,7 @@
  */
 
 import { sampleBilinearReplicate } from "../numeric/bilinear_sampling.js";
-import { fitLineHuber } from "../numeric/mat_helpers.js";
+import { fitLineHuberExact } from "../numeric/huber_line_fit.js";
 import { linspace } from "../numeric/numpy_compatibility.js";
 import { intersectLines, vectorLength } from "./quadrilateral_geometry.js";
 
@@ -95,7 +95,7 @@ export function fitSideLineFromProfiles(cv, intensityMap, sideStart, sideEnd, se
     validCount += 1;
   }
   if (validCount / samplesPerSide < MINIMUM_VALID_FRACTION) return null;
-  return fitLineHuber(cv, edgePoints, validCount);
+  return fitLineHuberExact(edgePoints, validCount);
 }
 
 /**

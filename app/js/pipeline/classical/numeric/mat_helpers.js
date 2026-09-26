@@ -72,21 +72,6 @@ export function createUint8MatFromValues(cv, values, width, height) {
 }
 
 /**
- * `cv2.fitLine(points, DIST_HUBER, 0, 0.01, 0.01)` of flat float32 points.
- *
- * Returns the float32 line `[vx, vy, x0, y0]` as plain numbers.
- */
-export function fitLineHuber(cv, flatFloat32Points, pointCount) {
-  return withMats((track) => {
-    const pointMat = track(createFloat32PointMatFromFlat(cv, flatFloat32Points, pointCount));
-    const lineMat = track(new cv.Mat());
-    cv.fitLine(pointMat, lineMat, cv.DIST_HUBER, 0, 0.01, 0.01);
-    const lineValues = lineMat.data32F;
-    return [lineValues[0], lineValues[1], lineValues[2], lineValues[3]];
-  });
-}
-
-/**
  * External contours of a uint8 mask as flat Int32Arrays (cv.findContours).
  *
  * Args:

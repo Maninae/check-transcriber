@@ -2,7 +2,7 @@
  * Stage-by-stage diff of the JS classical detector against a Python `--debug` reference, to find
  * where a scene's outputs first diverge.
  *
- *     node app/tests/parity/compare_classical_stages.mjs [--reference-dir D] scene_id ...
+ *     node app/tests/parity/compare_classical_stages.mjs [--reference-dir D] [--scenes-dir D] scene_id ...
  *
  * Needs references written with `dump_classical_reference.py --debug`. Reports, per scene:
  * mask nonzero counts and region counts per mask, fitted-quad count and the largest corner
