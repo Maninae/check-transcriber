@@ -49,7 +49,7 @@ TOP_SETTINGS_TO_REFINE = 3
 
 def classical_candidates_for_scene(task: tuple) -> tuple[str, list]:
     """For one scene: per learned detection, a list of (classical corners, agreement IoU)."""
-    scene, detections, crop_margin, relaxed_angle = task
+    scene, detections, crop_margin, relaxed_angle, smallest_frame_fraction = task
     image_bgr = cv2.imread(str(scene.image_path), cv2.IMREAD_COLOR)
     image_height, image_width = image_bgr.shape[:2]
     classical_config = replace(
@@ -60,7 +60,7 @@ def classical_candidates_for_scene(task: tuple) -> tuple[str, list]:
     candidates_per_detection = []
     for detection in detections:
         frame_fraction = Polygon(detection.corners).buffer(0).area / (image_height * image_width)
-        if frame_fraction < min(FRAME_FRACTION_CANDIDATES):
+        if frame_fraction < smallest_frame_fraction:
             candidates_per_detection.append([])
             continue
         x_min, y_min = detection.corners.min(axis=0)
@@ -141,18 +141,27 @@ def main() -> None:
     parser.add_argument("--split", default="val")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--limit", type=int, default=None, help="first N scenes (keeps CPU cost bounded)")
+    parser.add_argument("--crop-margins", default=",".join(map(str, CROP_MARGIN_CANDIDATES)))
+    parser.add_argument("--relaxed-angles", default=",".join(map(str, RELAXED_ANGLE_CANDIDATES)))
+    parser.add_argument("--frame-fractions", default=",".join(map(str, FRAME_FRACTION_CANDIDATES)))
+    parser.add_argument("--agreement-ious", default=",".join(map(str, AGREEMENT_IOU_CANDIDATES)))
     arguments = parser.parse_args()
-    scenes = load_split_scene_annotations(arguments.split)
+    crop_margins = [float(value) for value in arguments.crop_margins.split(",")]
+    relaxed_angles = [float(value) for value in arguments.relaxed_angles.split(",")]
+    frame_fractions = [float(value) for value in arguments.frame_fractions.split(",")]
+    agreement_ious = [float(value) for value in arguments.agreement_ious.split(",")]
+    scenes = load_split_scene_annotations(arguments.split, limit=arguments.limit)
     ground_truth_check_count = sum(len(scene.checks) for scene in scenes)
     _, raw_predictions = load_predictions_file(arguments.predictions)
     baseline = summarize(score_predictions_against_split(raw_predictions, scenes), ground_truth_check_count)
     logger.info("raw learned boxes: %s", baseline)
     results = []
-    for crop_margin, relaxed_angle in itertools.product(CROP_MARGIN_CANDIDATES, RELAXED_ANGLE_CANDIDATES):
-        tasks = [(scene, raw_predictions[scene.scene_id], crop_margin, relaxed_angle) for scene in scenes]
+    for crop_margin, relaxed_angle in itertools.product(crop_margins, relaxed_angles):
+        tasks = [(scene, raw_predictions[scene.scene_id], crop_margin, relaxed_angle, min(frame_fractions)) for scene in scenes]
         with ProcessPoolExecutor(max_workers=arguments.workers) as executor:
             candidate_cache = dict(executor.map(classical_candidates_for_scene, tasks, chunksize=4))
-        for frame_fraction, agreement_iou in itertools.product(FRAME_FRACTION_CANDIDATES, AGREEMENT_IOU_CANDIDATES):
+        for frame_fraction, agreement_iou in itertools.product(frame_fractions, agreement_ious):
             hybrid_predictions = assemble_hybrid_predictions(scenes, raw_predictions, candidate_cache, frame_fraction, agreement_iou)
             settings = HybridCloseUpConfig(
                 minimum_frame_fraction=frame_fraction,
