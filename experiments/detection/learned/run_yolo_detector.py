@@ -18,6 +18,7 @@ import cv2
 from experiments.detection.dataset.scene_annotations import load_split_scene_annotations
 from experiments.detection.learned.yolo_inference import DEFAULT_CONFIDENCE_THRESHOLD, YoloCheckDetector
 from experiments.detection.predictions.detected_check import save_predictions_file
+from experiments.detection.refinement.quadrilateral_refinement import refine_detected_checks
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,6 @@ def main() -> None:
     parser.add_argument("--refine", action="store_true")
     arguments = parser.parse_args()
 
-    refine_detected_checks = None
-    if arguments.refine:
-        # Only needed with --refine; the refinement package is built separately.
-        from experiments.detection.refinement import refine_detected_checks  # noqa: PLC0415
-
     detector = YoloCheckDetector(
         arguments.weights, arguments.image_size, arguments.device, arguments.confidence
     )
@@ -51,7 +47,7 @@ def main() -> None:
         image_bgr = cv2.imread(str(scene.image_path), cv2.IMREAD_COLOR)
         start_time = time.perf_counter()
         detections = detector.detect_checks(image_bgr)
-        if refine_detected_checks is not None:
+        if arguments.refine:
             detections = refine_detected_checks(image_bgr, detections)
         total_detection_seconds += time.perf_counter() - start_time
         predictions_by_scene_id[scene.scene_id] = detections

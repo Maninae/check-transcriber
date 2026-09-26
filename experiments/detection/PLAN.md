@@ -19,8 +19,11 @@ Goal: from a phone photo of several checks on a household surface, return every 
 | U5 | YOLO-pose 4-corner keypoint model (ordered corners directly) | same as U3; compared to OBB+refine on val |
 | U6 | ONNX export + parity + latency + browser note (`export/`) | onnxruntime matches PyTorch on 20 eval images; size and CPU latency recorded |
 | U7 | Comparison table, overlays, failure gallery (`visualization/`, `REPORT.md`) | JPEGs < 3 MB, each opened and read |
-| U8 (stretch) | Permissively licensed learned detector in plain PyTorch | scored on val/eval like the others |
+| U8 | Permissively licensed CenterNet-style detector (MobileNetV3 + ordered corner offsets, plain PyTorch, `learned/centernet/`) | scored on val/eval like the others |
 
 ## Log
 
 - 2026-09-25: contracts written; ultralytics 8.4.163, onnx, onnxruntime, onnxslim, shapely installed in the vega venv.
+- 2026-09-25: U1 metrics landed (35 tests; GT-as-prediction scores perfect; a perfect quad scores only 0.90-0.99 IoU against deformed outlines, so corner error is the sharper metric).
+- 2026-09-25: YOLO data copies at 1280 long side (obb/ and pose/ trees; Ultralytics resolves symlinks, so each tree has its own image copy). YOLO26n-OBB at 1024 is ~8.5 min/epoch on MPS; cut to 20 epochs (~3 h) to stay within budget.
+- 2026-09-25: upside-down crop dataset built from GT (train 17,287 / val 3,716 crops, jittered corners); classifier written, training queued behind the OBB run (one GPU job at a time).
