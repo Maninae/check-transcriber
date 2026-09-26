@@ -46,7 +46,7 @@ LATENCY_WARMUP_RUNS = 3
 LATENCY_TIMED_RUNS = 20
 
 
-def export_checkpoint_to_onnx(weights_path: Path, image_size: int) -> Path:
+def export_checkpoint_to_onnx(weights_path: Path, image_size: int, model_name: str) -> Path:
     """Export and copy the .onnx next to the other export artifacts; returns its path."""
     exported_path = Path(
         YOLO(str(weights_path)).export(
@@ -54,7 +54,7 @@ def export_checkpoint_to_onnx(weights_path: Path, image_size: int) -> Path:
         )
     )
     EXPORT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    onnx_path = EXPORT_DIRECTORY / f"yolo26n-obb__imgsz={image_size}.onnx"
+    onnx_path = EXPORT_DIRECTORY / f"{model_name}__imgsz={image_size}.onnx"
     shutil.copyfile(exported_path, onnx_path)
     return onnx_path
 
@@ -165,8 +165,9 @@ def main() -> None:
     parser.add_argument("--weights", type=Path, required=True)
     parser.add_argument("--image-size", type=int, default=1024)
     parser.add_argument("--parity-scenes", type=int, default=20)
+    parser.add_argument("--name", default="yolo26n-obb", help="artifact name prefix")
     arguments = parser.parse_args()
-    onnx_path = export_checkpoint_to_onnx(arguments.weights, arguments.image_size)
+    onnx_path = export_checkpoint_to_onnx(arguments.weights, arguments.image_size, arguments.name)
     summary = {
         "onnx_path": str(onnx_path),
         "onnx_size_megabytes": onnx_path.stat().st_size / 1e6,
@@ -177,7 +178,7 @@ def main() -> None:
         "end_to_end_parity": measure_end_to_end_parity(arguments.weights, onnx_path, arguments.image_size, arguments.parity_scenes),
         "cpu_latency": measure_cpu_latency(onnx_path, arguments.image_size),
     }
-    summary_path = EXPORT_DIRECTORY / f"yolo26n-obb__imgsz={arguments.image_size}__summary.json"
+    summary_path = EXPORT_DIRECTORY / f"{arguments.name}__imgsz={arguments.image_size}__summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
     logger.info("%s", json.dumps(summary, indent=2))
 
