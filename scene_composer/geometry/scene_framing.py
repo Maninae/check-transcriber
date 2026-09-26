@@ -2,32 +2,44 @@
 
 Order of decisions (the camera is fitted to the checks, never the checks to the camera):
 1. Photo orientation follows the group's shape (portrait for a tall group), rarely the other way.
-2. A hand-held view is sampled (perspective.sample_camera_view): tilt, roll, lens distortion.
+   A single check may instead be cropped to its own aspect, leaving a thin band of surface.
+2. A hand-held view is sampled (perspective.sample_camera_view): tilt, roll, lens distortion;
+   sometimes a steep tilt so the far edge is clearly shorter.
 3. The sheet's scale (plane pixels per inch) and offset are solved so the group's projected
-   bounding box spans FILL_RANGE of the frame along its tighter dimension, centered with a
-   small hand-held offset. About 8% of scenes are wider shots.
-4. Optionally one edge check is slid outward until only part of it stays in frame.
+   bounding box spans the policy's fill range of the frame along its tighter dimension, centered
+   with a small hand-held offset. In the wide regime about 8% of scenes are wider shots.
+4. Optionally one edge check is slid outward (along an edge normal, or a diagonal for a corner)
+   until only part of it stays in frame.
+
+Every number that differs by regime lives in `framing_regimes.FRAMING_POLICIES`; draws that only
+close and single need are guarded so the wide path consumes the rng exactly as v1 did.
 """
 
 from dataclasses import dataclass
 
 import numpy as np
 
-from scene_composer.geometry.perspective import CameraView, apply_homography, clip_polygon_to_rect, polygon_area, sample_camera_view
+from scene_composer.geometry.framing_regimes import FRAMING_POLICIES, FramingPolicy, FramingRegime
+from scene_composer.geometry.perspective import (
+    MAX_TILT_FRACTION,
+    CameraView,
+    apply_homography,
+    clip_polygon_to_rect,
+    polygon_area,
+    sample_camera_view,
+)
 from scene_composer.geometry.placement import CheckPlacement, placement_corners_inches
 
-FILL_RANGE = (0.7, 0.95)
-WIDE_SHOT_PROBABILITY = 0.08
-WIDE_FILL_RANGE = (0.55, 0.7)   # below ~0.55 a 12-check group shrinks to unreadable
 ORIENTATION_MISMATCH_PROBABILITY = 0.1
 MISMATCH_ASPECT_RANGE = (0.6, 1.7)   # only near-square groups get shot the 'wrong' way round
-MIN_CHECKS_FOR_OUT_OF_FRAME = 3
 CENTER_OFFSET_FRACTION = 0.03
 FIT_ITERATIONS = 8
-OUT_OF_FRAME_PROBABILITY = 0.18
-IN_FRAME_FRACTION_RANGE = (0.5, 0.8)
 PUSH_SEARCH_STEPS = 30
 CAMERA_FIELD_OF_VIEW_DEGREES = 65.0
+CROPPED_FILL_RANGE = (0.9, 0.98)     # a photo cropped to the check: surface only as a thin band
+MAX_CROPPED_PHOTO_ASPECT = 2.6
+EDGE_NORMALS = {"left": (-1.0, 0.0), "right": (1.0, 0.0), "top": (0.0, -1.0), "bottom": (0.0, 1.0)}
+CORNER_DIAGONALS = {"top_left": (-1.0, -1.0), "top_right": (1.0, -1.0), "bottom_right": (1.0, 1.0), "bottom_left": (-1.0, 1.0)}
 
 
 @dataclass
@@ -42,17 +54,24 @@ class SceneFraming:
     fill_target: float
     wide_shot: bool
     pushed_out_check_index: int | None = None
+    framing_regime: FramingRegime = FramingRegime.WIDE
+    cropped_to_subject: bool = False
+    steep_angle: bool = False
 
     def inches_to_plane(self, points_inches: np.ndarray) -> np.ndarray:
         """Sheet inches -> plane pixels."""
         return self.origin_plane + np.asarray(points_inches) * self.plane_pixels_per_inch
 
     def to_dict(self) -> dict:
-        """Plain-JSON summary for the scene label's effects."""
-        return {"fill_target": round(self.fill_target, 3), "wide_shot": self.wide_shot,
-                "plane_pixels_per_inch": round(self.plane_pixels_per_inch, 2),
-                "camera_height_inches": round(self.camera_height_plane_px / self.plane_pixels_per_inch, 2),
-                "pushed_out_check_index": self.pushed_out_check_index}
+        """Plain-JSON summary for the scene label's effects; the regime keys appear only off the wide regime."""
+        record = {"fill_target": round(self.fill_target, 3), "wide_shot": self.wide_shot,
+                  "plane_pixels_per_inch": round(self.plane_pixels_per_inch, 2),
+                  "camera_height_inches": round(self.camera_height_plane_px / self.plane_pixels_per_inch, 2),
+                  "pushed_out_check_index": self.pushed_out_check_index}
+        if self.framing_regime != FramingRegime.WIDE:
+            record.update({"framing_regime": self.framing_regime.value, "cropped_to_subject": self.cropped_to_subject,
+                           "steep_angle": self.steep_angle})
+        return record
 
 
 def group_corners_inches(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement]) -> np.ndarray:
@@ -61,12 +80,13 @@ def group_corners_inches(sizes_inches: list[tuple[float, float]], placements: li
 
 
 def choose_photo_size(group_corners: np.ndarray, long_side_range: tuple[int, int], photo_aspect: float,
-                      rng: np.random.Generator) -> tuple[int, int]:
+                      rng: np.random.Generator, allow_orientation_mismatch: bool = True) -> tuple[int, int]:
     """Photo (width, height): landscape for a wide group, portrait for a tall one, rarely mismatched."""
     extent = group_corners.max(axis=0) - group_corners.min(axis=0)
     portrait = extent[1] > extent[0]
     aspect = extent[0] / extent[1]
-    if MISMATCH_ASPECT_RANGE[0] < aspect < MISMATCH_ASPECT_RANGE[1] and rng.random() < ORIENTATION_MISMATCH_PROBABILITY:
+    if (allow_orientation_mismatch and MISMATCH_ASPECT_RANGE[0] < aspect < MISMATCH_ASPECT_RANGE[1]
+            and rng.random() < ORIENTATION_MISMATCH_PROBABILITY):
         portrait = not portrait
     long_side = int(rng.integers(*long_side_range))
     short_side = int(round(long_side / photo_aspect))
@@ -118,18 +138,21 @@ def in_frame_fraction_of_check(corners_inches: np.ndarray, framing: SceneFraming
 
 
 def push_one_check_out_of_frame(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement],
-                                framing: SceneFraming, rng: np.random.Generator) -> int:
-    """Slide the check nearest a random photo edge outward until IN_FRAME_FRACTION_RANGE of it remains."""
+                                framing: SceneFraming, rng: np.random.Generator, policy: FramingPolicy) -> int:
+    """Slide the check nearest a random photo edge (or corner) outward until `policy.in_frame_fraction_range` of it remains."""
     view = framing.view
-    edge_normals = {"left": (-1.0, 0.0), "right": (1.0, 0.0), "top": (0.0, -1.0), "bottom": (0.0, 1.0)}
-    normal = np.array(edge_normals[str(rng.choice(list(edge_normals)))])
+    directions = EDGE_NORMALS
+    if policy.corner_push_probability and rng.random() < policy.corner_push_probability:
+        directions = CORNER_DIAGONALS
+    normal = np.array(directions[str(rng.choice(list(directions)))])
+    normal = normal / np.linalg.norm(normal)
     centers_inches = np.array([[p.center_x_inches, p.center_y_inches] for p in placements])
     centers_photo = apply_homography(framing.inches_to_plane(centers_inches), view.plane_to_photo)
     index = int(np.argmax(centers_photo @ normal))
     inverse = np.linalg.inv(view.plane_to_photo)
     ends = apply_homography(np.vstack([centers_photo[index], centers_photo[index] + normal * 50]), inverse)
     direction_inches = (ends[1] - ends[0]) / np.linalg.norm(ends[1] - ends[0])
-    target = rng.uniform(*IN_FRAME_FRACTION_RANGE)
+    target = rng.uniform(*policy.in_frame_fraction_range)
     placement = placements[index]
     start = np.array([placement.center_x_inches, placement.center_y_inches])
     low, high = 0.0, float(sum(sizes_inches[index])) * 2
@@ -144,20 +167,33 @@ def push_one_check_out_of_frame(sizes_inches: list[tuple[float, float]], placeme
 
 
 def frame_scene(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement], long_side_range: tuple[int, int],
-                photo_aspect: float, max_plane_pixels_per_inch: float, rng: np.random.Generator) -> SceneFraming:
+                photo_aspect: float, max_plane_pixels_per_inch: float, rng: np.random.Generator,
+                framing_regime: FramingRegime = FramingRegime.WIDE) -> SceneFraming:
     """Choose photo size, camera, and sheet scale for a laid-out group; may push one check partly out.
 
     If filling the frame would need more plane pixels per inch than the checks were rendered at,
     the photo is taken at a proportionally lower resolution instead of upsampling the paper.
     """
+    policy = FRAMING_POLICIES[framing_regime]
     corners = group_corners_inches(sizes_inches, placements)
-    photo_width, photo_height = choose_photo_size(corners, long_side_range, photo_aspect, rng)
-    wide_shot = bool(rng.random() < WIDE_SHOT_PROBABILITY)
-    fill_target = float(rng.uniform(*(WIDE_FILL_RANGE if wide_shot else FILL_RANGE)))
+    cropped = bool(policy.cropped_to_subject_probability) and rng.random() < policy.cropped_to_subject_probability
+    if cropped:  # the photo is cropped to the check's own shape, a hair looser than it
+        extent = corners.max(axis=0) - corners.min(axis=0)
+        subject_aspect = max(extent) / min(extent) * rng.uniform(*policy.cropped_aspect_slack_range)
+        photo_width, photo_height = choose_photo_size(corners, long_side_range, min(subject_aspect, MAX_CROPPED_PHOTO_ASPECT),
+                                                      rng, allow_orientation_mismatch=False)
+    else:
+        photo_width, photo_height = choose_photo_size(corners, long_side_range, photo_aspect, rng,
+                                                      policy.orientation_mismatch_allowed)
+    wide_shot = bool(rng.random() < policy.wide_shot_probability)
+    fill_range = CROPPED_FILL_RANGE if cropped else policy.wide_fill_range if wide_shot else policy.fill_range
+    fill_target = float(rng.uniform(*fill_range))
     offset_unit = rng.uniform(-1, 1, 2) * min(CENTER_OFFSET_FRACTION, (1 - fill_target) / 2)
     view_seed = int(rng.integers(2**31))
+    steep = bool(policy.steep_angle_probability) and rng.random() < policy.steep_angle_probability
+    tilt_range = policy.steep_tilt_range if steep else (0.0, MAX_TILT_FRACTION)
     for _ in range(2):
-        view = sample_camera_view(photo_width, photo_height, np.random.default_rng(view_seed))
+        view = sample_camera_view(photo_width, photo_height, np.random.default_rng(view_seed), tilt_range)
         center_target = np.array([photo_width / 2, photo_height / 2]) * (1 + 2 * offset_unit)
         ppi, origin = fit_group_to_view(corners, view, fill_target, center_target)
         if ppi <= max_plane_pixels_per_inch:
@@ -165,7 +201,9 @@ def frame_scene(sizes_inches: list[tuple[float, float]], placements: list[CheckP
         shrink = max_plane_pixels_per_inch / ppi
         photo_width, photo_height = int(photo_width * shrink), int(photo_height * shrink)
     nadir, camera_height = camera_nadir_and_height(view)
-    framing = SceneFraming(view, ppi, origin, nadir, camera_height, fill_target, wide_shot)
-    if len(placements) >= MIN_CHECKS_FOR_OUT_OF_FRAME and rng.random() < OUT_OF_FRAME_PROBABILITY:
-        framing.pushed_out_check_index = push_one_check_out_of_frame(sizes_inches, placements, framing, rng)
+    framing = SceneFraming(view, ppi, origin, nadir, camera_height, fill_target, wide_shot,
+                           framing_regime=framing_regime, cropped_to_subject=cropped, steep_angle=steep)
+    # A photo cropped to the check already leaves only a thin band of surface; do not also cut the check.
+    if not cropped and len(placements) >= policy.min_checks_for_out_of_frame and rng.random() < policy.out_of_frame_probability:
+        framing.pushed_out_check_index = push_one_check_out_of_frame(sizes_inches, placements, framing, rng, policy)
     return framing

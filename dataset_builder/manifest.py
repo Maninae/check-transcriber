@@ -40,6 +40,10 @@ class DatasetManifest:
     ocr_row_counts: dict[str, dict[str, int]]
     timings_seconds: dict[str, float]
     notes: list[str] = field(default_factory=list)
+    framing_regime_mix: dict[str, float] = field(default_factory=dict)
+    framing_regime_scene_counts: dict[str, dict[str, int]] = field(default_factory=dict)   # split -> regime -> scenes
+    ocr_rows_by_regime: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)  # split -> regime -> {rows, ok, too_small}
+    pools_source: str | None = None
 
 
 def current_git_commit(repository_root: Path = REPOSITORY_ROOT) -> str:
