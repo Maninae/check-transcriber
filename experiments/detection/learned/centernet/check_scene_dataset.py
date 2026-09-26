@@ -17,9 +17,9 @@ from experiments.detection.dataset.scene_annotations import SceneAnnotation
 from experiments.detection.learned.centernet.centernet_config import (
     IMAGENET_MEAN_RGB,
     IMAGENET_STD_RGB,
-    TRAINING_IMAGES_ROOT,
 )
 from experiments.detection.learned.centernet.check_center_targets import encode_check_targets
+from experiments.detection.learned.prepare_yolo_datasets import downscaled_copy_root
 from experiments.detection.learned.centernet.scene_augmentation import (
     augment_scene_for_training,
     letterbox_scene_for_evaluation,
@@ -28,12 +28,14 @@ from experiments.detection.learned.centernet.scene_augmentation import (
 TARGET_KEYS = ("center_heatmap_target", "corner_offset_target", "corner_offset_weight", "corner_offset_normalizer")
 
 
-def downscaled_image_path(scene: SceneAnnotation, images_root: Path = TRAINING_IMAGES_ROOT) -> Path:
-    """Path of the 1280-long-side copy of a scene image."""
+def downscaled_image_path(scene: SceneAnnotation, images_root: Path | None = None) -> Path:
+    """Path of the 1280-long-side copy of a scene image (per dataset unless `images_root` is given)."""
+    if images_root is None:
+        images_root = downscaled_copy_root(scene.dataset_name) / "obb" / "images"
     return images_root / scene.split_name / f"{scene.scene_id}.jpg"
 
 
-def load_downscaled_scene(scene: SceneAnnotation, images_root: Path = TRAINING_IMAGES_ROOT) -> dict:
+def load_downscaled_scene(scene: SceneAnnotation, images_root: Path | None = None) -> dict:
     """data_dict with `source_image_rgb`, `check_corner_sets` (in that image's pixels) and the scale."""
     image_bgr = cv2.imread(str(downscaled_image_path(scene, images_root)), cv2.IMREAD_COLOR)
     if image_bgr is None:

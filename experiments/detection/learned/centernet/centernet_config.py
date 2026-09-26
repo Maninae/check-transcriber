@@ -49,7 +49,9 @@ class CenterNetTrainingConfig:
     device: str = "mps"
     seed: int = 42
     train_scene_limit: int | None = None  # None = the whole train split
-    val_scene_limit: int = 200  # quick val metric subset used for checkpoint selection
+    val_scene_limit: int = 200  # quick val metric subset per dataset, used for checkpoint selection
+    extra_train_datasets: str = ""  # comma-separated synth/<name> sets added to v1 train, e.g. "v1.1-closeup-train"
+    extra_val_datasets: str = ""  # same for the selection val set, e.g. "v1.1-closeup-val"
     validate_every_epochs: int = 1
     augment: bool = True
     log_every_steps: int = 50

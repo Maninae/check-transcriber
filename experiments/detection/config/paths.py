@@ -12,6 +12,12 @@ CHECK_TRANSCRIBER_DATA_ROOT = Path(
     os.environ.get("CHECK_TRANSCRIBER_DATA_ROOT", "/Volumes/vega/datasets/check-transcriber")
 )
 SYNTHETIC_DATASET_V1_ROOT = CHECK_TRANSCRIBER_DATA_ROOT / "synth" / "v1"
+SYNTHETIC_DATASET_V1_1_CLOSEUP_EVAL_ROOT = CHECK_TRANSCRIBER_DATA_ROOT / "synth" / "v1.1-closeup-eval"
+# Which dataset every loader reads. Set CHECK_DETECTION_DATASET_ROOT to score another set
+# with the same layout (e.g. the v1.1 close-up eval set, eval split only).
+ACTIVE_SYNTHETIC_DATASET_ROOT = Path(
+    os.environ.get("CHECK_DETECTION_DATASET_ROOT", str(SYNTHETIC_DATASET_V1_ROOT))
+)
 REAL_SAMPLE_PHOTOS_ROOT = CHECK_TRANSCRIBER_DATA_ROOT / "samples"
 DETECTION_EXPERIMENTS_ROOT = Path(
     os.environ.get(
@@ -23,11 +29,21 @@ DETECTION_EXPERIMENTS_ROOT = Path(
 SPLIT_NAMES = ("train", "val", "eval")
 
 
-def split_images_directory(split_name: str) -> Path:
-    """Full-resolution scene JPEGs for one split of the v1 dataset."""
-    return SYNTHETIC_DATASET_V1_ROOT / split_name / "images"
+V1_DATASET_NAME = "v1"
 
 
-def split_annotations_directory(split_name: str) -> Path:
+def synthetic_dataset_root(dataset_name: str | None = None) -> Path:
+    """Root of a named synthetic dataset under synth/ (e.g. "v1.1-closeup-train"); None = active."""
+    if dataset_name is None:
+        return ACTIVE_SYNTHETIC_DATASET_ROOT
+    return CHECK_TRANSCRIBER_DATA_ROOT / "synth" / dataset_name
+
+
+def split_images_directory(split_name: str, dataset_name: str | None = None) -> Path:
+    """Full-resolution scene JPEGs for one split of a dataset (default: the active one)."""
+    return synthetic_dataset_root(dataset_name) / split_name / "images"
+
+
+def split_annotations_directory(split_name: str, dataset_name: str | None = None) -> Path:
     """Per-scene JSON annotations (corners, outline, orientation, effects) for one split."""
-    return SYNTHETIC_DATASET_V1_ROOT / split_name / "annotations"
+    return synthetic_dataset_root(dataset_name) / split_name / "annotations"

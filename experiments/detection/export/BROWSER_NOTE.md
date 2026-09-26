@@ -30,6 +30,6 @@ Artifacts: `/Volumes/vega/datasets/check-transcriber/experiments/detection/expor
 
 Numbering in reading order, the count header, and the confidence cues in spec 4.2 sit on top of this unchanged.
 
-## Licensing, before shipping
+## Licensing (settled 2026-09-26: the app repo is AGPL-3.0, so option (a) applies)
 
 The ONNX file is derived from Ultralytics' AGPL-3.0 code and pretrained weights. Shipping it inside the public app means either (a) licensing the app repo AGPL-3.0-compatible: the repo is public and serves its own source, so the source-availability duty is already met in practice, (b) buying an Ultralytics Enterprise licence, or (c) swapping in the permissively licensed CenterNet detector in `learned/centernet/`: built and tested, not yet trained, about 2.5 GPU hours, 13.1 MB ONNX, with the same JS post-processing minus NMS.

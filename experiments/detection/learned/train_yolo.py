@@ -38,7 +38,7 @@ def build_training_arguments(arguments: argparse.Namespace) -> dict:
     """Assemble the keyword arguments for `YOLO.train`."""
     is_pose_variant = arguments.variant == "pose"
     return {
-        "data": str(DEFAULT_OUTPUT_ROOT / f"data_{arguments.variant}.yaml"),
+        "data": arguments.data or str(DEFAULT_OUTPUT_ROOT / f"data_{arguments.variant}.yaml"),
         "imgsz": arguments.image_size,
         "epochs": arguments.epochs,
         "batch": arguments.batch_size,
@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--workers", type=int, default=DEFAULT_DATALOADER_WORKERS)
+    parser.add_argument("--data", default=None, help="data yaml; default is the v1 yaml for the variant")
     arguments = parser.parse_args()
     PRETRAINED_WEIGHTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
     os.chdir(PRETRAINED_WEIGHTS_DIRECTORY)  # Ultralytics downloads pretrained weights into cwd

@@ -30,7 +30,7 @@ import cv2
 import numpy as np
 from shapely.geometry import Polygon, box
 
-from experiments.detection.config.paths import DETECTION_EXPERIMENTS_ROOT, SPLIT_NAMES
+from experiments.detection.config.paths import DETECTION_EXPERIMENTS_ROOT, SPLIT_NAMES, V1_DATASET_NAME
 from experiments.detection.dataset.scene_annotations import (
     SceneAnnotation,
     load_split_scene_annotations,
@@ -41,6 +41,13 @@ logger = logging.getLogger(__name__)
 RESIZED_LONG_SIDE_PIXELS = 1280
 RESIZED_JPEG_QUALITY = 93
 DEFAULT_OUTPUT_ROOT = DETECTION_EXPERIMENTS_ROOT / "yolo_data" / f"long{RESIZED_LONG_SIDE_PIXELS}"
+
+
+def downscaled_copy_root(dataset_name: str) -> Path:
+    """Where a dataset's 1280 copies live: v1 at the historical root, others beside it."""
+    if dataset_name == V1_DATASET_NAME:
+        return DEFAULT_OUTPUT_ROOT
+    return DEFAULT_OUTPUT_ROOT.parent / f"long{RESIZED_LONG_SIDE_PIXELS}__{dataset_name}"
 MIN_IN_FRAME_AREA_PIXELS = 50.0
 KEYPOINT_VISIBLE = 2
 KEYPOINT_OUTSIDE_FRAME = 0
@@ -135,19 +142,42 @@ def write_variant_yaml(output_root: Path, variant: str) -> Path:
     return yaml_path
 
 
+def write_combined_variant_yaml(variant: str, train_datasets: list[str], val_datasets: list[str], yaml_name: str) -> Path:
+    """Data yaml whose train/val are lists of image folders from several datasets' copy trees.
+
+    Ultralytics accepts a list per split and finds each image's labels by path, so every
+    dataset keeps its own tree (scene ids repeat across datasets and must not share a folder).
+    """
+    def image_folders(dataset_names: list[str], split_name: str) -> list[str]:
+        return [str(downscaled_copy_root(name) / variant / "images" / split_name) for name in dataset_names]
+
+    yaml_lines = [
+        f"train: {image_folders(train_datasets, 'train')}",
+        f"val: {image_folders(val_datasets, 'val')}",
+        "names:",
+        "  0: check",
+    ]
+    if variant == "pose":
+        yaml_lines += ["kpt_shape: [4, 3]", "flip_idx: [1, 0, 3, 2]"]
+    yaml_path = DEFAULT_OUTPUT_ROOT.parent / f"{yaml_name}__{variant}.yaml"
+    yaml_path.write_text("\n".join(yaml_lines) + "\n")
+    return yaml_path
+
+
 def main() -> None:
     """Build both datasets for all splits."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--dataset", default=V1_DATASET_NAME, help="synth/<name> to copy, e.g. v1.1-closeup-train")
+    parser.add_argument("--splits", default=",".join(SPLIT_NAMES))
     parser.add_argument("--workers", type=int, default=4)
     arguments = parser.parse_args()
-    output_root: Path = arguments.output_root
-    for split_name in SPLIT_NAMES:
+    output_root = downscaled_copy_root(arguments.dataset)
+    for split_name in arguments.splits.split(","):
         for variant in LABEL_VARIANTS:
             for subdirectory in ("images", "labels"):
                 (output_root / variant / subdirectory / split_name).mkdir(parents=True, exist_ok=True)
-        scenes = load_split_scene_annotations(split_name)
+        scenes = load_split_scene_annotations(split_name, dataset_name=arguments.dataset)
         with ProcessPoolExecutor(max_workers=arguments.workers) as executor:
             checks_written = sum(
                 executor.map(write_scene_to_yolo_datasets, scenes, [output_root] * len(scenes), chunksize=16)

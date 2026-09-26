@@ -23,6 +23,7 @@ import numpy as np
 from experiments.detection.config.paths import (
     split_annotations_directory,
     split_images_directory,
+    synthetic_dataset_root,
 )
 
 # Keyword -> coarse surface category, first match wins. Used only for metric breakdowns.
@@ -106,6 +107,8 @@ class SceneAnnotation:
     background_source: str  # "web" (real photo texture) or "flux" (generated)
     layout_mode: str  # grid / loose_overlap / loose_fan
     cast_shadow_kind: str  # "none", "hand", "phone_and_hand"
+    dataset_name: str = "v1"  # synth/<dataset_name>; scene ids are only unique within a dataset
+    framing_regime: str = "wide"  # "wide" (v1 default), "close" (4-6 checks fill the frame), "single"
     checks: list[CheckAnnotation] = field(default_factory=list)
 
 
@@ -133,14 +136,17 @@ def parse_check_annotation(check_json: dict) -> CheckAnnotation:
     )
 
 
-def parse_scene_annotation(scene_json: dict, split_name: str) -> SceneAnnotation:
+def parse_scene_annotation(scene_json: dict, split_name: str, dataset_name: str | None = None) -> SceneAnnotation:
     """Build a SceneAnnotation from a parsed scene JSON dict."""
     background_id = scene_json["background_id"]
-    cast_shadow_json = (scene_json.get("effects") or {}).get("cast_shadow") or {}
+    effects_json = scene_json.get("effects") or {}
+    cast_shadow_json = effects_json.get("cast_shadow") or {}
+    framing_json = effects_json.get("framing") or {}
     return SceneAnnotation(
         scene_id=scene_json["scene_id"],
         split_name=split_name,
-        image_path=split_images_directory(split_name) / scene_json["image_file"],
+        image_path=split_images_directory(split_name, dataset_name) / scene_json["image_file"],
+        dataset_name=synthetic_dataset_root(dataset_name).name,
         image_width=int(scene_json["image_width"]),
         image_height=int(scene_json["image_height"]),
         background_id=background_id,
@@ -148,21 +154,28 @@ def parse_scene_annotation(scene_json: dict, split_name: str) -> SceneAnnotation
         background_source=background_id.split("/", 1)[0],
         layout_mode=scene_json["layout_mode"],
         cast_shadow_kind=cast_shadow_json.get("kind") or "none",
+        framing_regime=framing_json.get("framing_regime") or "wide",
         checks=[parse_check_annotation(check_json) for check_json in scene_json["checks"]],
     )
 
 
-def load_scene_annotation(annotation_json_path: Path, split_name: str) -> SceneAnnotation:
+def load_scene_annotation(annotation_json_path: Path, split_name: str, dataset_name: str | None = None) -> SceneAnnotation:
     """Read one scene annotation file."""
     with open(annotation_json_path) as annotation_file:
-        return parse_scene_annotation(json.load(annotation_file), split_name)
+        return parse_scene_annotation(json.load(annotation_file), split_name, dataset_name)
 
 
-def load_split_scene_annotations(split_name: str, limit: int | None = None) -> list[SceneAnnotation]:
-    """Load every scene of a split, sorted by scene id; `limit` keeps the first N."""
-    annotation_paths = sorted(split_annotations_directory(split_name).glob("*.json"))
+def load_split_scene_annotations(
+    split_name: str, limit: int | None = None, dataset_name: str | None = None
+) -> list[SceneAnnotation]:
+    """Load every scene of a split, sorted by scene id; `limit` keeps the first N.
+
+    `dataset_name` picks synth/<dataset_name>; None means the active dataset
+    (v1 unless CHECK_DETECTION_DATASET_ROOT is set).
+    """
+    annotation_paths = sorted(split_annotations_directory(split_name, dataset_name).glob("*.json"))
     if not annotation_paths:
-        raise FileNotFoundError(f"no annotations for split {split_name!r}")
+        raise FileNotFoundError(f"no annotations for split {split_name!r} of dataset {dataset_name or 'active'}")
     if limit is not None:
         annotation_paths = annotation_paths[:limit]
-    return [load_scene_annotation(path, split_name) for path in annotation_paths]
+    return [load_scene_annotation(path, split_name, dataset_name) for path in annotation_paths]

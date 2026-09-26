@@ -25,6 +25,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from experiments.detection.config.paths import split_annotations_directory
 from experiments.detection.dataset.scene_annotations import load_split_scene_annotations
 from experiments.detection.learned.centernet.centernet_config import CENTERNET_RUNS_ROOT, CenterNetTrainingConfig
 from experiments.detection.learned.centernet.centernet_losses import centernet_total_loss
@@ -50,6 +51,19 @@ def parse_training_config() -> tuple[CenterNetTrainingConfig, str]:
     arguments = vars(parser.parse_args())
     validation_split = arguments.pop("validation_split")
     return CenterNetTrainingConfig(**arguments), validation_split
+
+
+def load_combined_split(split_name: str, extra_dataset_names: str, limit: int | None) -> list:
+    """v1 scenes of a split plus the same split of each comma-separated extra dataset.
+
+    Extra datasets hold only the split their name says (e.g. v1.1-closeup-train holds
+    train), so a missing split in an extra dataset is skipped rather than an error.
+    """
+    scenes = load_split_scene_annotations(split_name, limit=limit)
+    for dataset_name in filter(None, extra_dataset_names.split(",")):
+        if split_annotations_directory(split_name, dataset_name).exists():
+            scenes += load_split_scene_annotations(split_name, limit=limit, dataset_name=dataset_name)
+    return scenes
 
 
 def learning_rate_multiplier(step: int, warmup_steps: int, total_steps: int) -> float:
@@ -94,11 +108,11 @@ def train(config: CenterNetTrainingConfig, validation_split: str) -> Path:
     (run_directory / "config.json").write_text(json.dumps(dataclasses.asdict(config) | {"validation_split": validation_split}, indent=2))
     log_path = run_directory / "training_log.jsonl"
 
-    train_scenes = load_split_scene_annotations("train", limit=config.train_scene_limit)
+    train_scenes = load_combined_split("train", config.extra_train_datasets, config.train_scene_limit)
     validation_scenes = (
         train_scenes[: config.val_scene_limit]
         if validation_split == "train"
-        else load_split_scene_annotations("val", limit=config.val_scene_limit)
+        else load_combined_split("val", config.extra_val_datasets, config.val_scene_limit)
     )
     train_dataset = CheckSceneCenterNetDataset(train_scenes, config.input_size_pixels, config.augment, config.seed)
     train_loader = DataLoader(
