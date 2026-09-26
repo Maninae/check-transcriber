@@ -32,6 +32,8 @@ CRNN_CHECKPOINTS = {
     "crnn_amount": RECOGNIZER_ROOT / "crnn_amount_h32" / "best.pt",
 }
 AMOUNT_FIELD_NAME = "amount_numeric"
+# CRNN confidence below which the cascade asks TrOCR-ft instead (selected on val, see the U4 report).
+CASCADE_CRNN_CONFIDENCE_THRESHOLD = 0.9
 
 
 @dataclass
@@ -118,6 +120,21 @@ def higher_confidence(reader_a: str, reader_b: str) -> MethodRunner:
     return run
 
 
+def confidence_cascade(primary_reader: str, fallback_reader: str, threshold: float) -> MethodRunner:
+    """Primary reads every row; the fallback reads only rows whose primary confidence < threshold."""
+    def run(rows, crops, pool):
+        results: list = [None] * len(rows)
+        read_subset(rows, crops, np.ones(len(rows), bool), primary_reader, pool, results)
+        low_confidence = np.array([result[1] < threshold for result in results])
+        fallback_results: list = [None] * len(rows)
+        read_subset(rows, crops, low_confidence, fallback_reader, pool, fallback_results)
+        for index in np.flatnonzero(low_confidence):
+            text, confidence, latency = fallback_results[index]
+            results[index] = (text, confidence, latency + results[index][2])
+        return results
+    return run
+
+
 def is_handwritten(rows: pd.DataFrame) -> np.ndarray:
     """ORACLE: the ground-truth handwritten flag."""
     return rows.handwritten.fillna(False).to_numpy(bool)
@@ -140,4 +157,5 @@ READING_METHOD_REGISTRY: dict[str, MethodRunner] = {
     "trocr_small_hw_ft": single_reader("trocr_small_handwritten_ft"),
     "trocr_ft_crnn_route_oraclehw": route_by_mask(is_handwritten, "trocr_small_handwritten_ft", "crnn_general"),
     "trocr_ft_crnn_maxconf": higher_confidence("trocr_small_handwritten_ft", "crnn_general"),
+    "crnn_trocr_ft_cascade": confidence_cascade("crnn_general", "trocr_small_handwritten_ft", CASCADE_CRNN_CONFIDENCE_THRESHOLD),
 }

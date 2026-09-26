@@ -39,9 +39,9 @@ def pick_one_check_per_family(check_records: list[dict]) -> list[dict]:
     return [picked[family][1] for family in sorted(picked)]
 
 
-def draw_box(image: np.ndarray, box: list[float], colour: tuple[int, int, int], thickness: int, inset: int) -> None:
-    """Rectangle inset by a few px per method so coincident boxes stay distinguishable."""
-    cv2.rectangle(image, (int(box[0]) - inset, int(box[1]) - inset), (int(box[2]) + inset, int(box[3]) + inset),
+def draw_box(image: np.ndarray, box: list[float], colour: tuple[int, int, int], thickness: int, outset: int) -> None:
+    """Rectangle grown outward by a few px per method so coincident boxes stay distinguishable (display only)."""
+    cv2.rectangle(image, (int(box[0]) - outset, int(box[1]) - outset), (int(box[2]) + outset, int(box[3]) + outset),
                   colour, thickness)
 
 
