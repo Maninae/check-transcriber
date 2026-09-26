@@ -36,3 +36,4 @@ Goal: from a rectified 1600 px check crop, locate and read payer name, payee, co
 - 22:05 Tesseract eval (oracle crops): tuned 41.6% all fields; payer 74.0, check number 89.5; handwritten coverage at 95% accuracy ~0 on every field. Real SSBI handwriting: 0/78 exact.
 - 22:05 Machine thrashing (swap ~17 GB): all our jobs capped at 2 workers; GPU yielded to the detection owner until ~23:30 on the coordinator's request; segnet checkpointed and paused, CRNN queued.
 - Real handwriting mini-set: 78 SSBI crops transcribed by eye (`field-reading/real_ssbi/`, LABELS.md), 5 excluded as ambiguous/illegible.
+- 00:25 U2 done: segnet eval IoU 0.887 / hit 99.99% / 0% false memo boxes vs layout priors 0.757 (family oracle) and 0.701 (size kind). ONNX 12.8 MB, 41 ms CPU, 20/20 identical boxes. End-to-end Tesseract: oracle 41.6%, segnet boxes 40.1%, size-kind prior 35.4%.
