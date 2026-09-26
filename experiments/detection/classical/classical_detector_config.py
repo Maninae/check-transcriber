@@ -28,6 +28,8 @@ class ClassicalDetectorConfig:
     # Canny edge-bounded cells: (low, high) hysteresis pairs on text-suppressed lightness.
     canny_threshold_pairs: tuple[tuple[float, float], ...] = ((20.0, 50.0), (40.0, 100.0))
     canny_dilation_pixels: int = 2
+    use_chroma_edges: bool = True  # OR Canny of amplified Lab a/b into every Canny edge map
+    chroma_edge_gain: float = 4.0
     use_hole_filled_edges: bool = True  # also offer each Canny map with enclosed holes filled
     # Textured masks (for plain white sheets, where the check's security print is the texture).
     textured_std_thresholds: tuple[float, ...] = (3.0,)
@@ -73,7 +75,7 @@ class ClassicalDetectorConfig:
     # Verification: sample the quad boundary; a sample is on an edge when ANY signal fires.
     boundary_samples_per_side: int = 40
     edge_support_gradient_threshold: float = 10.0  # normal gradient (Sobel / 4 units)
-    edge_support_color_threshold: float = 12.0  # Lab distance, inner vs outer band
+    edge_support_color_threshold: float = 8.0  # Lab distance, inner vs outer band
     edge_support_texture_threshold: float = 4.0  # outer minus inner local std
     edge_support_seam_residue_threshold: float = 30.0  # thin dark line on the side (print residue)
     minimum_edge_support: float = 0.45

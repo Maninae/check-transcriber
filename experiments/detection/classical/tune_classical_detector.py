@@ -27,16 +27,10 @@ from experiments.detection.metrics.score_predictions import score_predictions_ag
 logger = logging.getLogger(__name__)
 
 PARAMETER_GRID: dict[str, list] = {
-    "maximum_interior_seam_strength": [0.55, 0.85, 1.01],
-    "minimum_verification_score": [0.5, 0.65, 0.8],
-    "minimum_line_hypothesis_score": [0.6, 0.9],
-    "minimum_edge_support": [0.3, 0.6],
-    "minimum_interior_print_fraction": [0.03, 0.07],
-    "maximum_interior_texture": [3.5, 6.0],
-    "maximum_covered_fraction": [0.45, 0.75],
-    "relative_area_floor": [0.2, 0.4],
-    "refinement_search_fraction": [0.003, 0.008],
-    "working_long_side_pixels": [1400, 2000],
+    "minimum_line_hypothesis_score": [0.8],
+    "minimum_verification_score": [0.55, 0.75],
+    "maximum_interior_seam_strength": [0.45, 0.65],
+    "chroma_edge_gain": [3.0, 6.0],
 }
 
 

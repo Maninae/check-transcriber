@@ -1,6 +1,6 @@
 """Straight edge segments for the line-based hypothesis generator.
 
-Canny on the text-suppressed lightness, then `HoughLinesP`, then a greedy merge of
+Canny on the text-suppressed lightness OR color (`combined_edge_map`), then `HoughLinesP`, then a greedy merge of
 collinear pieces (a check border broken by a shadow or a faint stretch comes back as one
 segment). Check borders are long and straight; bedsheet wrinkles, carpet and crochet
 texture are curvy or short, so a length floor removes most clutter.
@@ -19,6 +19,7 @@ from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
+from experiments.detection.classical.preprocessing.combined_edge_map import build_combined_canny_edges
 from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 HOUGH_ANGLE_RESOLUTION_RADIANS = np.pi / 360
@@ -81,8 +82,7 @@ def merge_collinear_segments(segments: np.ndarray, maximum_gap_pixels: float) ->
 def extract_line_segments(channels: WorkingImageChannels, config: ClassicalDetectorConfig) -> np.ndarray:
     """Long straight edge segments, longest first, capped at `line_maximum_segments`."""
     long_side = channels.long_side_pixels
-    lightness_uint8 = np.clip(channels.lightness, 0, 255).astype(np.uint8)
-    edges = cv2.Canny(lightness_uint8, config.line_canny_low, config.line_canny_high, L2gradient=True)
+    edges = build_combined_canny_edges(channels, config.line_canny_low, config.line_canny_high, config)
     texture_window = odd_kernel_size(config.texture_window_fraction, long_side)
     nearest_smooth_texture = cv2.erode(
         channels.texture_std, cv2.getStructuringElement(cv2.MORPH_RECT, (2 * texture_window + 1, 2 * texture_window + 1))

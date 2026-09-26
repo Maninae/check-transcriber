@@ -33,6 +33,7 @@ from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
+from experiments.detection.classical.preprocessing.combined_edge_map import build_combined_canny_edges
 from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 DARK_FLOOR_PERCENTILE = 25.0  # smooth regions darker than this paper-score percentile are not paper
@@ -62,11 +63,10 @@ def build_candidate_masks(channels: WorkingImageChannels, config: ClassicalDetec
         edge_mask = cv2.dilate(edge_mask, dilation_kernel)
         masks[f"edge_cells{gradient_threshold:g}"] = cv2.bitwise_not(edge_mask)
 
-    lightness_uint8 = np.clip(channels.lightness, 0, 255).astype(np.uint8)
     canny_dilation_size = 2 * config.canny_dilation_pixels + 1
     canny_dilation_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (canny_dilation_size, canny_dilation_size))
     for low_threshold, high_threshold in config.canny_threshold_pairs:
-        canny_edges = cv2.Canny(lightness_uint8, low_threshold, high_threshold, L2gradient=True)
+        canny_edges = build_combined_canny_edges(channels, low_threshold, high_threshold, config)
         dilated_edges = cv2.dilate(canny_edges, canny_dilation_kernel)
         masks[f"canny_cells{low_threshold:g}"] = cv2.bitwise_not(dilated_edges)
         if config.use_hole_filled_edges:
