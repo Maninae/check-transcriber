@@ -49,3 +49,7 @@ python3.12 -m venv /Volumes/vega/datasets/check-transcriber/venv
 ## Full product spec
 
 The complete spec (goals, constraints, UX flow, processing pipeline, milestones) lives in `docs/SPEC.md`. The synthetic-data plan, contracts and build log live in `docs/SYNTHETIC_DATA_PLAN.md`.
+
+## License
+
+AGPL-3.0. The learned check detector is trained with Ultralytics (AGPL-3.0), and this repository is licensed to match so that the trained model can ship inside the app. A permissively licensed detector is in progress under `experiments/detection/learned/centernet/`; if it reaches parity, the repository may be relicensed more permissively.
