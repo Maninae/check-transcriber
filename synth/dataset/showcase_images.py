@@ -25,6 +25,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
+from synth.compose.perspective import polygon_area
 from synth.render.check_layout import LayoutFamily
 from synth.render.check_templates import build_template_catalog
 from synth.render.fake_data import sample_check_content
@@ -50,7 +51,8 @@ CAPTION_GRAY = (110, 110, 110)
 JPEG_QUALITY = 88
 MAX_OUTPUT_BYTES = 5_000_000
 PRINT_PAGE_HEIGHT_PX = 2400
-FLAT_CHECK_SEED = 11
+FLAT_CHECK_SEED = 21
+BEDDING_ID_WORDS = ("bedsheet", "duvet", "comforter", "blanket", "quilt", "sheet")
 DEFAULT_REAL_PHOTO = Path("/Volumes/vega/datasets/check-transcriber/samples/sarahhdd-cheque-dz/"
                           "cheques__Train__BDL__IMG_20240926_124907.jpg")
 
@@ -71,6 +73,21 @@ def readable_group_score(scene_label: dict) -> float:
         return -1.0
     visible = [check for check in checks if check["visible_fraction"] > 0.97 and check["fully_in_frame"]]
     return len(visible) / len(checks) + min(len(checks), 8) / 8
+
+
+def frame_fill_fraction(scene_label: dict) -> float:
+    """Share of the photo covered by check outlines (overlaps counted twice; fine for ranking)."""
+    area = sum(polygon_area(np.array(check["outline"])) for check in scene_label["checks"])
+    return area / (scene_label["image_width"] * scene_label["image_height"])
+
+
+def choose_full_scene(labels: list[tuple[Path, dict]]) -> tuple[Path, dict]:
+    """A landscape, frame-filling scene of 4-8 fully visible checks, on bedding when possible."""
+    candidates = [(split_directory, scene_label) for split_directory, scene_label in labels
+                  if FULL_SCENE_CHECK_RANGE[0] <= len(scene_label["checks"]) <= FULL_SCENE_CHECK_RANGE[1]
+                  and readable_group_score(scene_label) >= 1.0 + FULL_SCENE_CHECK_RANGE[0] / 8]
+    bedding = [c for c in candidates if any(word in c[1]["background_id"] for word in BEDDING_ID_WORDS)]
+    return max(bedding or candidates, key=lambda item: frame_fill_fraction(item[1]))
 
 
 def choose_scenes_on_distinct_backgrounds(labels: list[tuple[Path, dict]], count: int) -> list[tuple[Path, dict]]:
@@ -200,8 +217,7 @@ def write_showcase(dataset_directory: Path, output_directory: Path, print_page_p
     labels = load_scene_labels(dataset_directory)
     scenes = choose_scenes_on_distinct_backgrounds(labels, CONTACT_SCENE_COUNT)
     written = [write_contact_sheet(scenes, output_directory / "showcase__1__contact_sheet.jpg")]
-    full_candidates = [s for s in scenes if FULL_SCENE_CHECK_RANGE[0] <= len(s[1]["checks"]) <= FULL_SCENE_CHECK_RANGE[1]]
-    split_directory, scene_label = (full_candidates or scenes)[0]
+    split_directory, scene_label = choose_full_scene(labels)
     written.append(save_jpeg_bgr(read_scene_bgr(split_directory, scene_label), output_directory / "showcase__2__full_scene.jpg"))
     written.append(write_crop_comparison(labels, real_photo_path, output_directory / "showcase__3__crop_3x_vs_real.jpg"))
     written.append(write_flat_check(output_directory / "showcase__4__flat_check.jpg"))
