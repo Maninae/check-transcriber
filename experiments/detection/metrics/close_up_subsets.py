@@ -9,6 +9,10 @@ come closest:
 - `large-checks-frame-relative`: same, but width as a fraction of the photo's long side,
   because v1 photos range from ~2 to ~6 MP and pixel width partly measures resolution.
 - `one-or-two-checks`: scenes with 1-2 checks.
+- `framing=<regime>`: one subset per `framing_regime` label when the set has several or a
+  non-default one (the v1.1 close-up eval set labels "close" and "single").
+
+Run against another dataset with the same layout by setting CHECK_DETECTION_DATASET_ROOT.
 
     python -m experiments.detection.metrics.close_up_subsets --split eval \
         --detector name=<predictions.json> [--detector ...] --output-dir <dir>
@@ -51,8 +55,15 @@ def select_close_up_subsets(scenes: list[SceneAnnotation]) -> dict[str, list[Sce
     pixel_threshold = np.percentile(pixel_widths, TOP_QUARTILE_PERCENTILE)
     relative_threshold = np.percentile(relative_widths, TOP_QUARTILE_PERCENTILE)
     logger.info("top-quartile thresholds: %.0f px mean check width, %.3f of photo long side", pixel_threshold, relative_threshold)
+    framing_regimes = sorted({scene.framing_regime for scene in scenes})
+    framing_subsets = {}
+    if framing_regimes != ["wide"]:
+        framing_subsets = {
+            f"framing={regime}": [scene for scene in scenes if scene.framing_regime == regime] for regime in framing_regimes
+        }
     return {
         "all": scenes,
+        **framing_subsets,
         "large-checks": [scene for scene, width in zip(scenes, pixel_widths) if width >= pixel_threshold],
         "large-checks-frame-relative": [scene for scene, width in zip(scenes, relative_widths) if width >= relative_threshold],
         "one-or-two-checks": [scene for scene in scenes if len(scene.checks) <= MAX_CHECKS_FOR_FEW_CHECK_SUBSET],

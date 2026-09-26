@@ -47,6 +47,31 @@ Failure modes, from the galleries (`showcase/failures__*.jpg`):
 - **Refinement**
   - It improves the median and p90, but on white bedding and curled ends it can move a nearly right corner by a few px. Flat checks end at 0.8 px median.
 
+## Close-up regime (v1.1 close-up eval set, the way the operator shoots)
+
+Takeaway: with 4-6 checks filling the frame, YOLO still gets 98% of photos entirely right. With ONE check filling the frame under a steep tilt, it finds the check (98% recall) but its corners are poor (refined median 11 px, p90 153 px), and classical places corners better. This is the largest open weakness of the learned pipeline.
+
+600 photos from the v1 eval pools (no overlap with training): 450 "close" (4-6 checks filling the frame, median check width 1,367 px) and 150 "single" (one check filling 70-100% of the frame, any rotation, sometimes a corner cut, steep tilt). Scored once, CPU.
+
+| Regime | Pipeline | Precision | Recall | Photos all-correct | Corner median px | p90 | Orientation |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| close (2,120 checks) | Classical + refine + orient | 93.6 | 93.9 | 68.9 | 2.89 | 25.9 | 98.5 |
+| close | YOLO26n-OBB + refine + orient | 99.3 | **100.0** | **98.0** | 4.14 | **21.4** | 99.0 |
+| single (150 checks) | Classical + refine + orient | 78.5 | 85.3 | 82.0 | **2.64** | **14.5** | 97.6 |
+| single | YOLO26n-OBB + refine + orient | **96.7** | **98.0** | **94.7** | 11.02 | 152.6 | 97.9 |
+| single | YOLO26n-OBB raw box | 96.7 | 98.0 | 94.7 | 78.25 | 176.8 | – |
+
+Why the single regime fails for YOLO (see `showcase/v1.1-closeup__single__worst4.jpg`):
+- The check is a strong trapezoid, which a rotated rectangle cannot represent.
+- v1 training never showed a check larger than about half the frame, so the box also comes out loose and mis-rotated.
+- Refinement only searches a narrow band around each side, so it cannot bridge a 100-300 px gap.
+- Classical, which fits edges directly, is tight on the same photos but misses or splits 15% of them (for example, a printed rule splits one check into panels).
+
+Fixes, in order of expected value:
+1. Train on close-up framing. The v1.1 regime generator exists; a training split in that regime is needed.
+2. Use the ordered-corner CenterNet, which regresses the four corners directly, so a trapezoid is natural. It will be scored on this set.
+3. A hybrid for the product: when the learned box covers most of the frame, run the classical fitter inside it and keep its quad when it verifies. This needs close-up validation data to tune, so it was not tuned on eval.
+
 ## Recommendation
 
 1. **Milestone 2 (ship now): classical + refinement + orientation classifier.**

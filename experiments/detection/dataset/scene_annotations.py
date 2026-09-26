@@ -106,6 +106,7 @@ class SceneAnnotation:
     background_source: str  # "web" (real photo texture) or "flux" (generated)
     layout_mode: str  # grid / loose_overlap / loose_fan
     cast_shadow_kind: str  # "none", "hand", "phone_and_hand"
+    framing_regime: str = "wide"  # "wide" (v1 default), "close" (4-6 checks fill the frame), "single"
     checks: list[CheckAnnotation] = field(default_factory=list)
 
 
@@ -136,7 +137,9 @@ def parse_check_annotation(check_json: dict) -> CheckAnnotation:
 def parse_scene_annotation(scene_json: dict, split_name: str) -> SceneAnnotation:
     """Build a SceneAnnotation from a parsed scene JSON dict."""
     background_id = scene_json["background_id"]
-    cast_shadow_json = (scene_json.get("effects") or {}).get("cast_shadow") or {}
+    effects_json = scene_json.get("effects") or {}
+    cast_shadow_json = effects_json.get("cast_shadow") or {}
+    framing_json = effects_json.get("framing") or {}
     return SceneAnnotation(
         scene_id=scene_json["scene_id"],
         split_name=split_name,
@@ -148,6 +151,7 @@ def parse_scene_annotation(scene_json: dict, split_name: str) -> SceneAnnotation
         background_source=background_id.split("/", 1)[0],
         layout_mode=scene_json["layout_mode"],
         cast_shadow_kind=cast_shadow_json.get("kind") or "none",
+        framing_regime=framing_json.get("framing_regime") or "wide",
         checks=[parse_check_annotation(check_json) for check_json in scene_json["checks"]],
     )
 
