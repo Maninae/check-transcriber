@@ -11,6 +11,9 @@ import cv2
 import numpy as np
 
 LIGHT_FIELD_DOWNSAMPLE = 32
+# Inter-reflection from a coloured surface tints paper a few percent at most; beyond this, a purple
+# rug or an orange table dyed the checks (seen on CC0 material swatches, Sep 25).
+MAX_INTERREFLECTION_TINT = 0.06
 
 
 def background_light_field(background: np.ndarray) -> np.ndarray:
@@ -25,7 +28,8 @@ def background_light_field(background: np.ndarray) -> np.ndarray:
 
 
 def background_color_gains(background: np.ndarray, strength: float) -> np.ndarray:
-    """Per-channel gains that push white paper toward the background's color cast."""
+    """Per-channel gains that push white paper slightly toward the background's colour (capped inter-reflection)."""
     mean_color = background[::8, ::8].reshape(-1, 3).mean(axis=0)
     gains = mean_color / max(1e-4, float(mean_color.mean()))
-    return (1 + (gains - 1) * strength).astype(np.float32)
+    tint = np.clip((gains - 1) * strength, -MAX_INTERREFLECTION_TINT, MAX_INTERREFLECTION_TINT)
+    return (1 + tint).astype(np.float32)

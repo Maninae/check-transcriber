@@ -95,7 +95,7 @@ def dot_screen(x_grid, y_grid, rng):
     height, width = x_grid.shape
     period = rng.uniform(6, 10)
     dots = (np.cos(2 * np.pi * x_grid / period) * np.cos(2 * np.pi * y_grid / period) + 1) / 2
-    threshold = 0.62 + 0.12 * smooth_noise(height, width, 400.0, rng)
+    threshold = 0.62 + 0.05 * smooth_noise(height, width, 400.0, rng)
     return np.clip((dots - threshold) * 4, 0, 1).astype(np.float32)
 
 
@@ -171,7 +171,7 @@ def make_security_pattern(kind: SecurityPatternKind, width: int, height: int, rn
     """Coverage map for `kind` on warped coordinates, with patchy density, a faint emblem and optional pantograph."""
     x_grid, y_grid = warped_grids(width, height, rng, warp_amplitude_px)
     coverage = PATTERN_GENERATORS[kind](x_grid, y_grid, rng)
-    density = np.clip(0.8 + 0.22 * smooth_noise(height, width, 320.0, rng), 0.35, 1.1)
+    density = np.clip(0.9 + 0.08 * smooth_noise(height, width, 320.0, rng), 0.7, 1.05)  # real stock is even; more read as parchment
     coverage = coverage * density
     radial_distance = np.hypot((x_grid - width * rng.uniform(0.35, 0.65)) / (width * 0.22),
                                (y_grid - height * 0.5) / (height * 0.38))

@@ -1,8 +1,8 @@
 """Blank check paper as an RGB reflectance map (float32, 0..1), before any ink.
 
 Textured paper (the on-screen synthetic path) layers, all multiplicative on the tint:
-- tint unevenness: a very low-frequency brightness drift of about 1%, with a trace of hue drift;
-- formation: cloudy flocs of pulp, blotches a few to tens of pixels across (the dominant look);
+- tint unevenness: a very low-frequency brightness drift of about 0.5%, with a trace of hue drift;
+- formation: faint cloudy flocs of pulp, blotches a few to tens of pixels across;
 - fibre: faint fine noise stretched along the machine direction (x), plus a finer isotropic grain;
 - specks: a few dark dust/pulp specks, and on some stock short coloured security fibres.
 Clean paper (print sheets) is the flat tint: the real sheet supplies its own texture.
@@ -13,9 +13,9 @@ import numpy as np
 
 from synth.render.noise_fields import fine_noise, smooth_noise
 
-TINT_DRIFT_STRENGTH = 0.012
+TINT_DRIFT_STRENGTH = 0.005
 TINT_CHROMA_DRIFT_STRENGTH = 0.003
-FORMATION_STRENGTH = 0.016
+FORMATION_STRENGTH = 0.006   # formation shows in transmitted light; reflected, it is nearly invisible (more read as parchment)
 FLOC_STRENGTH = 0.012
 FIBRE_STRENGTH = 0.009
 GRAIN_STRENGTH = 0.012

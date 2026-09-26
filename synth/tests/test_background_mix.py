@@ -44,3 +44,13 @@ def test_cloth_relief_shades_a_flat_swatch_without_changing_its_level():
     assert shaded.std() > 5
     assert abs(float(shaded.mean()) - 180) < 12
     assert np.array_equal(shaded, add_cloth_relief(swatch, np.random.default_rng(4)))
+
+
+def test_a_strongly_coloured_surface_only_tints_paper_slightly():
+    """A saturated purple background moves white paper by at most the inter-reflection cap per channel."""
+    from synth.compose.lighting import MAX_INTERREFLECTION_TINT, background_color_gains
+
+    purple = np.zeros((64, 64, 3), np.float32)
+    purple[..., 0], purple[..., 2] = 0.7, 0.6
+    gains = background_color_gains(purple, strength=0.6)
+    assert np.all(np.abs(gains - 1) <= MAX_INTERREFLECTION_TINT + 1e-6)
