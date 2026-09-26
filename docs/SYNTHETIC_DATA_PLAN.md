@@ -1,6 +1,6 @@
 # Synthetic check images: plan (owner's working doc)
 
-Goal: scenes a person would mistake for phone photos of rent checks on household surfaces, at a glance and under a 3x crop, with labels exact after every transform. Definition of done is in the owner brief; the short form: 60+ templates across layout families, ballpoint-looking handwriting, paper that looks like paper, room lighting, frame-filling layouts, splits by template + background + handwriting font, COCO / YOLO seg + OBB / per-field OCR manifest exports, print sheets, a ~5,000-scene `v1` build.
+Goal: scenes a person would mistake for phone photos of checks on household surfaces, at a glance and under a 3x crop, with labels exact after every transform. Definition of done is in the owner brief; the short form: 60+ templates across layout families, ballpoint-looking handwriting, paper that looks like paper, room lighting, frame-filling layouts, splits by template + background + handwriting font, COCO / YOLO seg + OBB / per-field OCR manifest exports, print sheets, a ~5,000-scene `v1` build.
 
 ## How we judge
 

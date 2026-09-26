@@ -1,6 +1,6 @@
 # UX audit: Check Transcriber (Sep 26 2026, before the polish pass)
 
-Screenshot-grounded, graded against the 20 foundations (Rams R1-R10, Nielsen N1-N10). Driven with Playwright through the real flow on eval scene `synth/v1.1-closeup-eval/eval_000001.jpg` (six checks on a wood-grain table, two upside down; the detector found five), at 1366x768 (her laptop) and 1920x1080, CPU throttled 4x during processing to approximate a mid-range Windows laptop. Screenshots: `/tmp/check-transcriber-ux/before/<size>/`. A status-text timeline was recorded every 100 ms.
+Screenshot-grounded, graded against the 20 foundations (Rams R1-R10, Nielsen N1-N10). Driven with Playwright through the real flow on eval scene `synth/v1.1-closeup-eval/eval_000001.jpg` (six checks on a wood-grain table, two upside down; the detector found five), at 1366x768 (her laptop) and 1920x1080, CPU throttled 4x during processing to approximate a mid-range laptop. Screenshots: `/tmp/check-transcriber-ux/before/<size>/`. A status-text timeline was recorded every 100 ms.
 
 The operator is non-technical, on Chrome or Edge, and should never have to wonder whether the page is working. Owen's brief: "make it feel really intuitive and natural without them having to wonder if it's buggy."
 

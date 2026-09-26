@@ -1,6 +1,6 @@
 # Check Transcriber: Spec (draft 1, Sep 25 2026)
 
-A browser-only tool that turns a phone photo of several checks into upright, cropped, readable check images with the key fields pulled out, reviewed by a person, and copied into a spreadsheet. Built for a three-person housing nonprofit. Primary user: the operations person who records rent (HCI background, Windows laptop, Chrome or Edge), referred to below as the operator.
+A browser-only tool that turns a phone photo of several checks into upright, cropped, readable check images with the key fields pulled out, reviewed by a person, and copied into a spreadsheet. The person using it is referred to below as the operator.
 
 ## 1. Goal
 
@@ -8,7 +8,7 @@ Several checks arrive as one phone photo: a handful of checks laid on a plain su
 
 The tool replaces the reading-by-eye step. The operator pastes the photo into a web page, the page finds each check, straightens it, reads the printed fields, leaves the uncertain ones blank, and shows everything on one scrolling page for the operator's to confirm and copy. Target: a six-check batch goes from ten minutes of squinting to under two minutes of confirming.
 
-Success looks like: the operator uses it for every batch without being asked to, the operator never has to install or update anything, and nobody at the nonprofit has to approve sharing any data with anyone, because no data ever leaves the operator's laptop.
+Success looks like: it gets used for every batch without being asked, nothing ever has to be installed or updated, and no data ever leaves the laptop, so there is nothing to approve or share.
 
 ## 2. Constraints and non-goals
 
@@ -175,7 +175,7 @@ Performance budget on a mid-range laptop: under 3 seconds from paste to the coun
 
 - Plain HTML, CSS and JavaScript, no framework and no build step, so the repo on GitHub Pages is the deployed artifact and stays runnable indefinitely. Modules split by responsibility: input, detection, rectification, OCR, field gating, review UI, lightbox, clipboard, local history, settings.
 - Public GitHub repo under Owen's account, GitHub Pages from `main`. The repo contains no real check data of any kind.
-- Mock check set for development: print a dozen fake checks (fictional names, addresses, banks, the standard layout, a printed MICR-style line of made-up digits), lay them on a bedsheet in the ways a property manager would (grid, rotated, upside down, overlapping, one out of frame), photograph with a phone under a few lighting conditions. This set is the regression suite: detection count, orientation, and field reads are checked against a hand-written answer key.
+- Mock check set for development: print a dozen fake checks (fictional names, addresses, banks, the standard layout, a printed MICR-style line of made-up digits), lay them on a bedsheet in the ways people actually do (grid, rotated, upside down, overlapping, one out of frame), photograph with a phone under a few lighting conditions. This set is the regression suite: detection count, orientation, and field reads are checked against a hand-written answer key.
 - Real-photo test: the operator tries it on a real batch on the operator's own laptop and reports what went blank and what read wrong. We never receive the photo; we receive the operator's description or, at most, a redacted screenshot the operator chooses to send.
 - Browser test on Windows Chrome and Edge, including a laptop without a discrete GPU.
 
