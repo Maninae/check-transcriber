@@ -1,6 +1,6 @@
 """Snap a payee read to a known payee list and score identification (spec 4.3: payee is a sanity check).
 
-In the app the list is BACLT's configured co-ops; here each split's own held-out payee pool stands
+In the app the list is the nonprofit's configured co-ops; here each split's own held-out payee pool stands
 in for it (synth v1 manifest `split_pools.<split>.payee_names`, 4 names, so chance is 25%). Reads
 use abbreviated variants ("Blue Heron CLT"), so matching is rapidfuzz WRatio against each canonical
 name; below SNAP_MIN_SCORE the payee stays blank.
