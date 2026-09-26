@@ -1,8 +1,13 @@
 /**
  * The review grid (spec 4.3): one row per check. The upright crop, about 500 px wide, is
- * the payload and gets the left of every row; the hand-typed fields sit in a compact
- * column to its right. Buttons are small and gray; done rows dim.
+ * the payload and gets the left of every row; the fields sit in a compact column to its
+ * right. Buttons are small and gray; done rows dim. Field states and the magnifier live in
+ * review-fields.css, the settings panel in settings-panel.css (imported here because this
+ * file is the one index.html links for the review page).
  */
+
+@import url("./review-fields.css");
+@import url("./settings-panel.css");
 
 .review-step {
   display: flex;
@@ -20,6 +25,32 @@
 
 .review-toolbar--bottom {
   justify-content: flex-start;
+}
+
+.email-date-label {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-unit);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.email-date-input {
+  width: 9.5em;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--color-text);
+}
+
+.email-date-input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  border-color: var(--color-accent);
 }
 
 .review-heading {
@@ -56,6 +87,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-unit);
+}
+
+.review-crop-frame {
+  position: relative;
+  width: 500px;
 }
 
 .review-crop-canvas {
@@ -108,54 +144,9 @@
   color: var(--color-accent);
 }
 
-.review-fields {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) auto;
-  gap: 6px calc(var(--spacing-unit) * 1);
-  align-items: center;
-}
-
-.review-field-label {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.review-field-input {
-  font-family: var(--font-body);
-  font-size: 0.95rem;
-  padding: 5px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: #fffdf8;
-  color: var(--color-text);
-  min-width: 0;
-}
-
-.review-field-input:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 0;
-  border-color: var(--color-accent);
-}
-
-.copy-icon-button {
-  width: 28px;
-  height: 28px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  color: #aaa092;
-  cursor: pointer;
-  font-size: 0.85rem;
-  line-height: 1;
-}
-
-.copy-icon-button:hover {
-  border-color: var(--color-border);
-  color: var(--color-accent);
-}
-
-.copy-icon-button--copied {
-  color: var(--color-accent);
+/* Wide enough for "Copied", so the flash never shifts the row's fields. */
+.review-row-side .quiet-button {
+  min-width: 6.5em;
 }
 
 .review-row-side {

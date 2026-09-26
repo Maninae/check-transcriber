@@ -1,0 +1,172 @@
+/**
+ * The field lines beside each crop (spec 4.3 "Field states"), readable without a legend:
+ * a confident or confirmed field is plain; an unsure or blank one sits on a soft amber
+ * ground (blank also says "read from the check"). Amber is the only signal color here.
+ * Also: the note under a disagreeing amount, the email-date suggestion, the payer
+ * suggestions, the duplicate warning, and the focused field's box outline and magnifier.
+ */
+
+.review-fields-column {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 1.5);
+  min-width: 0;
+}
+
+.review-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  gap: 6px calc(var(--spacing-unit) * 1);
+  align-items: start;
+}
+
+.review-field-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 32px; /* the input's height, so the label sits on the input's line */
+}
+
+.review-field-cell {
+  min-width: 0;
+}
+
+.review-field-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-field-input {
+  flex: 1 1 auto;
+  height: 32px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.review-field-input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  border-color: var(--color-accent);
+}
+
+/* Unsure or blank: look here. */
+.review-field-input--flagged {
+  background: var(--color-attention-soft);
+  border-color: var(--color-attention-line);
+}
+
+.review-field-input--flagged:focus {
+  outline-color: var(--color-attention-line);
+  border-color: var(--color-attention-line);
+}
+
+.review-field-input::placeholder {
+  color: #b39462;
+  font-style: italic;
+}
+
+.review-field-note {
+  margin: 2px 0 0 2px;
+  font-size: 0.75rem;
+  color: var(--color-attention);
+}
+
+.email-date-suggestion {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.email-date-suggestion:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.copy-icon-button {
+  width: 28px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #aaa092;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.copy-icon-button:hover {
+  border-color: var(--color-border);
+  color: var(--color-accent);
+}
+
+.copy-icon-button--copied {
+  color: var(--color-accent);
+}
+
+.payer-suggestions {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(43, 39, 35, 0.12);
+  font-size: 0.9rem;
+}
+
+.payer-suggestion {
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+/* Hover is a lighter tint than the keyboard highlight: Enter picks only the highlighted one. */
+.payer-suggestion:hover {
+  background: #f3f6f3;
+}
+
+.payer-suggestion--highlighted,
+.payer-suggestion--highlighted:hover {
+  background: var(--color-accent-soft);
+}
+
+.review-duplicate-warning {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-attention);
+}
+
+/* The focused unsure/blank field's read box, drawn over the crop. */
+.review-crop-box-outline {
+  position: absolute;
+  border: 2px solid var(--color-attention-line);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* The inline magnifier: the focused field's region, large, right under the crop. */
+.review-magnifier {
+  display: block;
+  max-width: 500px;
+  border: 1px solid var(--color-attention-line);
+  border-radius: 4px;
+  background: #ece6da;
+}

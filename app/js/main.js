@@ -2,7 +2,8 @@
  * Wires the page together: grabs the DOM, starts the engines, hooks up the three input
  * doors, and hands each decoded photo to the batch flow (batch_flow.js), which drives
  * the count step (count/) and the review grid (review/) through the pipeline worker
- * (pipeline/). Everything else is a leaf that only knows its own piece.
+ * (pipeline/). What the page remembers between visits (text only) lives in storage/ and
+ * settings/. Everything else is a leaf that only knows its own piece.
  */
 
 import { initializeInputDoors } from "./input_doors.js";
@@ -16,6 +17,10 @@ import { BatchFlow } from "./batch_flow.js";
 import { CountStep } from "./count/count_step.js";
 import { ReviewGrid } from "./review/review_grid.js";
 import { Lightbox } from "./review/lightbox.js";
+import { openBrowserLocalStore } from "./storage/local_store.js";
+import { BatchHistory } from "./storage/batch_history.js";
+import { AppSettings } from "./settings/app_settings.js";
+import { createSettingsPanel } from "./settings/settings_panel_setup.js";
 
 const ACCEPTED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -54,15 +59,19 @@ function initializeDom() {
   };
 }
 
-function createBatchFlow(dom) {
+function createBatchFlow(dom, { settings, batchHistory }) {
   const toast = new Toast(queryRequiredElement("toast"));
   let batchFlow = null;
   const reviewGrid = new ReviewGrid({
     rowsContainerElement: queryRequiredElement("review-rows"),
     headingElement: queryRequiredElement("review-heading"),
+    emailDateInputElement: queryRequiredElement("email-date-input"),
     toast,
+    settings,
+    batchHistory,
     onOpenLightbox: (index) => lightbox.open(index),
     onRowsChanged: () => {},
+    rereadCheckFields: (index, rotatedHalfTurn) => batchFlow.pipelineClient.rereadCheckFields(index, rotatedHalfTurn),
   });
   const lightbox = new Lightbox({
     lightboxElement: queryRequiredElement("lightbox"),
@@ -90,6 +99,7 @@ function createBatchFlow(dom) {
   batchFlow = new BatchFlow({
     countStep,
     reviewGrid,
+    batchHistory,
     stepIndicator: new StepIndicator(queryRequiredElement("step-indicator")),
     progressLine: queryRequiredElement("pipeline-progress-line"),
     recordedLine: queryRequiredElement("batch-recorded-line"),
@@ -182,17 +192,18 @@ function initializeStartOverButton(dom, batchFlow) {
  * Deliberately callback-style, not `await`ed: see the "CALLBACK STYLE IS LOAD-BEARING"
  * note at the top of engine_loader.js.
  */
-function startEngineLoading(dom, batchFlow) {
+function startEngineLoading(dom, batchFlow, onPipelineClientReady) {
   dom.engineStatusLine.showLoading(READINESS_MESSAGE);
   loadProcessingEngines(
     (engines) => {
       console.log("OpenCV build info:\n" + engines.openCvBuildInfo);
       dom.engineStatusLine.showReady();
       batchFlow.setPipelineClient(engines.pipelineClient);
+      onPipelineClientReady(engines.pipelineClient);
     },
     (error) => {
       console.error("engine loading failed:", error);
-      dom.engineStatusLine.showError(FAILURE_MESSAGE, () => startEngineLoading(dom, batchFlow));
+      dom.engineStatusLine.showError(FAILURE_MESSAGE, () => startEngineLoading(dom, batchFlow, onPipelineClientReady));
     },
   );
 }
@@ -210,9 +221,28 @@ function registerServiceWorker() {
 
 function main() {
   const dom = initializeDom();
-  const batchFlow = createBatchFlow(dom);
-  // Read-only view for the Playwright tests (quads, step, timings; never pixels).
-  window.__checkTranscriberDebug = { describe: () => batchFlow.describeForDebug() };
+  const localStore = openBrowserLocalStore();
+  const batchHistory = new BatchHistory(localStore);
+  const settings = new AppSettings(localStore);
+  const batchFlow = createBatchFlow(dom, { settings, batchHistory });
+  // The PipelineClient is a plain class (not a thenable), so resolving a Promise with it is safe.
+  let resolvePipelineClient;
+  const pipelineClientReady = new Promise((resolve) => { resolvePipelineClient = resolve; });
+  const settingsPanel = createSettingsPanel({
+    settings,
+    batchHistory,
+    localStore,
+    reviewGrid: batchFlow.reviewGrid,
+    whenPipelineClientReady: () => pipelineClientReady,
+  });
+  // Finish batch adds names; keep an open panel's list current.
+  queryRequiredElement("finish-batch-button").addEventListener("click", () => settingsPanel.renderAll());
+  // For the Playwright tests: a text-only view (quads, step, timings, field values and
+  // states; never pixels), and field reads fed through the same path as the worker's.
+  window.__checkTranscriberDebug = {
+    describe: () => batchFlow.describeForDebug(),
+    setFieldReads: (checkIndex, rawReads) => batchFlow.reviewGrid.receiveFieldReads(checkIndex, rawReads),
+  };
 
   initializeInputDoors({
     dropZoneElement: dom.dropZoneElement,
@@ -223,7 +253,10 @@ function main() {
   });
   initializeStartOverButton(dom, batchFlow);
   registerServiceWorker();
-  startEngineLoading(dom, batchFlow);
+  startEngineLoading(dom, batchFlow, (pipelineClient) => {
+    resolvePipelineClient(pipelineClient);
+    settingsPanel.restoreHandwritingReaderAtStartup();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", main);

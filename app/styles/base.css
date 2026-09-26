@@ -19,6 +19,12 @@
   --color-accent: #3f6f5b;
   --color-accent-soft: #e8efe9;
 
+  /* Amber: the one "look here" signal (unsure and blank fields, a duplicate warning),
+     matching the count step's amber outlines. */
+  --color-attention: #9a6414;
+  --color-attention-line: #d99a2b;
+  --color-attention-soft: #fcefd6;
+
   --color-error: #96402b;
   --color-error-soft: #f6e7e1;
 

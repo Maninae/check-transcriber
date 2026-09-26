@@ -32,6 +32,21 @@ export function isOrientationUnsure(upsideDownProbability) {
     && upsideDownProbability < UNSURE_ORIENTATION_PROBABILITY_RANGE[1];
 }
 
+/**
+ * Whether the top band must be blurred too: whenever the crop as displayed has more than a
+ * small chance of being upside down (its MICR line at the top). Without a rotation that is the
+ * unsure range; after the operator's half turn the classifier's call flips, so a check the
+ * classifier was sure about gets its (now top) MICR band blurred as well. A rotation that fixes
+ * a confidently wrong call also blurs the payer line; that rare case is the price of never
+ * showing bank numbers by accident ("Show bottom line" unblurs both).
+ */
+export function shouldBlurTopBand(upsideDownProbability, rotatedHalfTurn) {
+  // The worker already turned the crop when p > 0.5, so the upright crop is wrong with min(p, 1 - p).
+  const uprightCropWrongProbability = Math.min(upsideDownProbability, 1 - upsideDownProbability);
+  const displayedUpsideDownProbability = rotatedHalfTurn ? 1 - uprightCropWrongProbability : uprightCropWrongProbability;
+  return displayedUpsideDownProbability > UNSURE_ORIENTATION_PROBABILITY_RANGE[0];
+}
+
 function blurHorizontalBand(context, sourceCanvas, bandTop, bandHeight, blurRadius) {
   const { width } = sourceCanvas;
   context.save();

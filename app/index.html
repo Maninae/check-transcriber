@@ -18,12 +18,20 @@
     Emscripten embind bindings, which use `new Function` to build dynamic-call
     trampolines at load time — confirmed by testing the exact pinned build
     under this CSP; 'wasm-unsafe-eval' alone is not enough for this build.
-  - connect-src 'self' <CDN> data:: fetches our own app shell and
-    models/upside_down_classifier.onnx, the CDN files Tesseract's worker and
+  - connect-src 'self' <CDN> <Hub> data:: fetches our own app shell and
+    models/*.onnx (orientation classifier and the four field readers), the CDN files Tesseract's worker and
     onnxruntime-web load at runtime (core WASM, language data, ORT's .mjs glue
     and .wasm), and the data: URI OpenCV.js's loader fetches for its own
     inlined WASM binary. onnxruntime-web lives on the same pinned CDN origin, so
     adding it widened nothing here.
+    <Hub> = https://huggingface.co https://*.hf.co, for the opt-in handwriting
+    reader ONLY (settings, "Read handwriting", off by default, never fetched
+    unless the operator turns it on): three files pinned to one revision in
+    js/cdn_config.js. huggingface.co answers with a redirect to the Hub's own CDN,
+    whose host varies by region and storage backend (us.aws.cdn.hf.co,
+    cas-bridge.xethub.hf.co, cdn-lfs.hf.co), hence *.hf.co: Hugging Face's CDN
+    domain, which serves no user pages (Spaces live on hf.space, not allowed).
+    This is a download only; nothing is ever sent to these origins.
   - worker-src 'self' blob:: blob: is how both workers start. Tesseract.js runs
     its worker from a blob URL, and js/pipeline/pipeline_client.js starts the
     pipeline worker from a blob bootstrap ON PURPOSE: a blob worker inherits
@@ -42,7 +50,7 @@
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
   script-src 'self' https://cdn.jsdelivr.net 'unsafe-eval';
-  connect-src 'self' https://cdn.jsdelivr.net data:;
+  connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co data:;
   worker-src 'self' blob:;
   style-src 'self';
   img-src 'self' data:;
@@ -66,12 +74,57 @@
 <div class="page">
   <header class="page-header">
     <h1 class="app-title">Check Transcriber</h1>
-    <ol id="step-indicator" class="step-indicator" hidden>
-      <li class="step-indicator-step" data-step="photo">Photo</li>
-      <li class="step-indicator-step" data-step="count">Count</li>
-      <li class="step-indicator-step" data-step="review">Review</li>
-    </ol>
+    <div class="page-header-end">
+      <ol id="step-indicator" class="step-indicator" hidden>
+        <li class="step-indicator-step" data-step="photo">Photo</li>
+        <li class="step-indicator-step" data-step="count">Count</li>
+        <li class="step-indicator-step" data-step="review">Review</li>
+      </ol>
+      <button id="settings-button" type="button" class="small-link-button settings-button" aria-expanded="false" aria-controls="settings-panel">Settings</button>
+    </div>
   </header>
+
+  <section id="settings-panel" class="settings-panel" aria-label="Settings" hidden>
+    <div class="settings-group">
+      <h2 class="settings-heading">Show dates as</h2>
+      <label class="settings-choice"><input type="radio" name="date-display-format" value="iso" /> 2026-09-12</label>
+      <label class="settings-choice"><input type="radio" name="date-display-format" value="m/d/yyyy" /> 9/12/2026</label>
+      <p class="settings-help">Copied dates are always <span class="settings-nowrap">2026-09-12</span>.</p>
+
+      <h2 class="settings-heading">Columns to copy</h2>
+      <ol id="copy-columns-list" class="copy-columns-list"></ol>
+      <p class="settings-help">Drag to match the tracker's column order.</p>
+    </div>
+
+    <div class="settings-group">
+      <h2 class="settings-heading">Payer names remembered</h2>
+      <ul id="known-payers-list" class="settings-name-list"></ul>
+      <p id="known-payers-empty" class="settings-help">None yet. Names are added when you finish a batch.</p>
+      <button id="clear-known-payers-button" type="button" class="small-link-button">Clear all names</button>
+
+      <h2 class="settings-heading">Payees (who the checks are written to)</h2>
+      <ul id="payee-names-list" class="settings-name-list"></ul>
+      <p class="settings-help">A check written to one of these shows it as the payee.</p>
+      <form id="add-payee-form" class="settings-add-form">
+        <input id="add-payee-input" class="settings-text-input" type="text" autocomplete="off" spellcheck="false" placeholder="Add a payee" aria-label="Payee name" />
+        <button type="submit" class="quiet-button settings-small-button">Add</button>
+      </form>
+    </div>
+
+    <div class="settings-group">
+      <h2 class="settings-heading">Handwriting</h2>
+      <label class="settings-switch">
+        <input id="handwriting-switch" type="checkbox" role="switch" />
+        <span>Read handwriting (one-time 128 MB download)</span>
+      </label>
+      <p class="settings-help">The download happens once and then stays on this computer. The handwriting reader is made by a third party: <a href="https://github.com/Maninae/check-transcriber/blob/main/README.md#license" target="_blank" rel="noopener noreferrer">licence note</a>.</p>
+      <p id="handwriting-status" class="settings-status" role="status" aria-live="polite" hidden></p>
+
+      <h2 class="settings-heading">Remembered on this computer</h2>
+      <p class="settings-help">Payer names, check numbers with their payer and date, and these settings. Never the photos.</p>
+      <button id="clear-everything-button" type="button" class="quiet-button settings-small-button">Clear everything this page remembers</button>
+    </div>
+  </section>
 
   <main class="page-main">
     <div id="drop-zone" class="drop-zone">
@@ -112,6 +165,9 @@
     <section id="review-step" class="review-step" hidden>
       <div class="review-toolbar">
         <h2 id="review-heading" class="review-heading"></h2>
+        <label class="email-date-label">Email date
+          <input id="email-date-input" class="email-date-input" type="text" autocomplete="off" spellcheck="false" placeholder="optional" />
+        </label>
         <button id="copy-all-top-button" type="button" class="primary-button">Copy all rows</button>
       </div>
       <div id="review-rows" class="review-rows"></div>

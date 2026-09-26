@@ -24,6 +24,7 @@ import {
   OPENCV_JS_URL,
   ONNX_RUNTIME_JS_URL,
   ONNX_RUNTIME_WASM_DIRECTORY,
+  HANDWRITING_READER_URLS,
   TESSERACT_JS_URL,
   TESSERACT_WORKER_URL,
   TESSERACT_CORE_PATH,
@@ -55,6 +56,7 @@ function startPipelineWorker(onReady, onError) {
     openCvUrl: OPENCV_JS_URL,
     onnxRuntimeJsUrl: ONNX_RUNTIME_JS_URL,
     onnxRuntimeWasmDirectory: ONNX_RUNTIME_WASM_DIRECTORY,
+    handwritingReaderUrls: HANDWRITING_READER_URLS,
   });
   pipelineClient.start(
     ({ openCvBuildInfo }) => onReady({ pipelineClient, openCvBuildInfo }),
