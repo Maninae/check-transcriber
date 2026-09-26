@@ -3,7 +3,7 @@
 Each scene's randomness comes from `np.random.default_rng([seed, split_index, scene_index])`,
 so any single scene can be regenerated without rebuilding the others.
 
-- Checks draw templates, fonts and the background only from the task's split pools (contract C4).
+- Checks draw templates, fonts, payees, banks and the background only from the task's split pools (contract C4).
 - The scene annotation is written last, via rename, so its existence means the scene is complete
   (resume in `scene_task_runner.py` relies on this).
 """
@@ -42,6 +42,8 @@ class SceneTask:
     scene_config: SceneConfig
     handwriting_font_ids: tuple[str, ...]
     signature_font_ids: tuple[str, ...]
+    payee_names: tuple[str, ...]
+    bank_names: tuple[str, ...]
 
 
 def scene_id_for_task(task: SceneTask) -> str:
@@ -78,7 +80,8 @@ def generate_scene(task: SceneTask) -> dict:
     rendered_checks = []
     for _ in range(check_count):
         template = catalog[task.template_ids[int(rng.integers(len(task.template_ids)))]]
-        rendered_checks.append(render_check(template, sample_check_content(template, rng), rng,
+        rendered_checks.append(render_check(template, sample_check_content(template, rng, payee_names=task.payee_names,
+                                                                         bank_names=task.bank_names), rng,
                                             handwriting_font_ids=list(task.handwriting_font_ids),
                                             signature_font_ids=list(task.signature_font_ids)))
     background_id, background_path = task.backgrounds[int(rng.integers(len(task.backgrounds)))]

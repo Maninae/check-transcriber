@@ -8,7 +8,7 @@ Generates labeled "phone photo of several checks on a bedsheet" scenes for Check
 |---|---|---|
 | 1. Render one check | `synth.render.render_check.render_check` | flat 300 dpi RGBA check (alpha = paper, torn perforation) on 66 templates over 6 layout families + label (every field's text, tight box, handwritten flag, template id, layout family) |
 | 2. Compose a scene | `synth.compose.compose_scene.compose_scene` | phone-photo JPEG + label (corners, orientation, field quads, visibility) |
-| 3. Build a dataset | `python -m synth.dataset.build_dataset` | train/val/eval split by template (stratified by family), background and handwriting + signature font; COCO + YOLO seg/OBB exports; per-field OCR manifest; manifest |
+| 3. Build a dataset | `python -m synth.dataset.build_dataset` | train/val/eval split by template (stratified by family), background, handwriting + signature font, payee and bank; COCO + YOLO seg/OBB exports; per-field OCR manifest; manifest |
 
 ## Setup
 
@@ -46,7 +46,7 @@ python -m synth.dataset.build_dataset --output DIR --scenes 200 --harmonize --ha
 
 # print-ready Letter PDF (clean stock) + one PNG per page + labels CSV/JSON keyed by printed serial
 python -m synth.dataset.build_dataset --output DIR --print-sheets 4
-# ... restricted to this seed's eval-split templates and fonts
+# ... restricted to this seed's eval-split templates, fonts, payees and banks
 python -m synth.dataset.build_dataset --output DIR --print-sheets 4 --print-pool eval --seed 1
 
 # visual QA: 12 scenes with label polygons drawn
@@ -56,7 +56,7 @@ python -m synth.dataset.contact_sheet DIR --out /tmp/sheet.png
 python -m synth.dataset.ocr_crop_grid DIR --out /tmp/ocr_grid.png --split val
 ```
 
-Backgrounds are read recursively from `/Volumes/vega/datasets/check-transcriber/backgrounds/` (`flux/` generated, `photos/` real). A background's id is its relative path, and ids are what the split assigns.
+Backgrounds are read recursively from the accepted subfolders of `/Volumes/vega/datasets/check-transcriber/backgrounds/` (`flux/` generated, `photos/` real; `rejected/` and anything else is ignored). A background's id is its path relative to that root, and ids are what the split assigns.
 
 ## Output layout
 
@@ -76,7 +76,7 @@ DIR/ocr/<split>/fields/*.png             each field cropped from that (box + sma
 DIR/ocr/ocr_fields__split=<split>.jsonl  one row per field: text, handwritten, status/usable, box, crop paths, fonts
 ```
 
-Split rule (contract C4): template ids (stratified by layout family), background ids, handwriting font ids and signature font ids are each partitioned 70/15/15, so eval checks use stock, surfaces and hands train never saw. OCR rows are `usable` only when the field is fully in frame and not covered by another check; the MICR band is kept as a flagged row (the app blurs it).
+Split rule (contract C4): template ids (stratified by layout family), background ids, handwriting and signature font ids, payee names and bank names are each partitioned 70/15/15, so eval checks use stock, surfaces, hands and names train never saw. Each id is placed by its own hash, so a background pool of 50+ never moves an existing id when more backgrounds land (details in `synth/dataset/splits.py`). OCR rows are `usable` only when the field is fully in frame, not covered by another check, and its ink is at least 14 px tall in the photo (`too_small` otherwise); the MICR band is kept as a flagged row (the app blurs it).
 
 ## Dependencies
 

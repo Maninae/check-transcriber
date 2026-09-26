@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from synth.dataset.annotation_exports import passes_ultralytics_label_check
 from synth.dataset.coco_export import CHECK_CATEGORY_ID, FIELD_CATEGORY_IDS
 from synth.dataset.ocr_rectify import rectify_check, field_box_in_crop
 from synth.dataset.splits import SPLIT_NAMES
@@ -61,13 +62,15 @@ def test_yolo_seg_and_obb_lines_match_annotations(built_dataset):
                 assert min(line[1:]) >= 0 and max(line[1:]) <= 1
             for line in oriented:
                 assert line[0] == 0 and len(line) == 9
-                assert min(line[1:]) >= 0 and max(line[1:]) <= 1
+                assert passes_ultralytics_label_check(np.array(line[1:]).reshape(4, 2))
 
 
 def test_data_yamls_and_obb_symlinks_resolve(built_dataset):
     _, output_directory, manifest, _ = built_dataset
     assert "test: eval/images" in (output_directory / "data.yaml").read_text()
     assert "yolo_obb" in (output_directory / "data_obb.yaml").read_text()
+    assert "path:" not in (output_directory / "data.yaml").read_text().replace("`path:`", "")
+    assert not (output_directory / "yolo_obb" / "train" / "images").is_symlink()
     for split_name in SPLIT_NAMES:
         obb_images = sorted((output_directory / "yolo_obb" / split_name / "images").glob("*.jpg"))
         assert len(obb_images) == manifest.scene_counts[split_name]
@@ -81,6 +84,8 @@ def test_ocr_manifest_rows_point_at_real_crops(built_dataset):
         assert len(rows) == manifest.ocr_row_counts[split_name]["rows"] > 0
         assert any(row["usable"] and row["handwritten"] for row in rows)
         assert any(row["status"] == "micr_blurred_in_app" and not row["usable"] for row in rows)
+        assert all(row["usable"] == (row["status"] == "ok") for row in rows)
+        assert all(row["text_height_in_photo_px"] >= 14 for row in rows if row["usable"])
         for row in rows:
             assert row["template_id"] in manifest.split_pools[split_name]["template_ids"]
             check_crop = Image.open(output_directory / row["check_crop"])

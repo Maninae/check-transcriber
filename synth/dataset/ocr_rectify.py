@@ -8,6 +8,9 @@ TL, TR, BR, BL), so the crop comes out upright as well; the app gets upright via
 - Field quads are mapped through the SAME homography as the pixels. On curled or folded paper
   the rectified text is not perfectly flat (neither is the app's), but the field's enclosing
   photo quad maps to an enclosing quad in the crop, so the box still contains the ink.
+- Pixel convention: the homography works in OpenCV's (and the scene labels') pixel-centre
+  coordinates, so the check's corners land on the crop's outer pixel edges (-0.5 and size - 0.5).
+  `box_in_check_crop` is reported in pixel-edge coordinates (pixel i spans [i, i + 1]) like COCO.
 """
 
 import cv2
@@ -19,6 +22,7 @@ from synth.render.check_layout import CHECK_SIZE_INCHES, CheckSizeKind
 RECTIFIED_CHECK_WIDTH_PX = 1600
 FIELD_CROP_MARGIN_FRACTION = 0.15   # of the field box height, on every side
 FIELD_CROP_MIN_MARGIN_PX = 6
+PIXEL_CENTRE_TO_EDGE_OFFSET = 0.5
 
 
 def rectified_check_size(size_kind: str, corners: np.ndarray) -> tuple[int, int]:
@@ -34,9 +38,9 @@ def rectified_check_size(size_kind: str, corners: np.ndarray) -> tuple[int, int]
 
 
 def photo_to_rectified_homography(corners: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    """3x3 map from photo pixels to the rectified crop (corners -> the crop's own corners)."""
+    """3x3 map from photo pixels to the rectified crop (corners -> the crop's outer edges), pixel-centre coordinates."""
     width, height = size
-    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], np.float32)
+    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], np.float32) - PIXEL_CENTRE_TO_EDGE_OFFSET
     return cv2.getPerspectiveTransform(corners.astype(np.float32), target).astype(np.float64)
 
 
@@ -53,9 +57,9 @@ def rectify_check(photo_rgb: np.ndarray, corners: list[list[float]], size_kind: 
 
 
 def field_box_in_crop(quad: list[list[float]], homography: np.ndarray, crop_size: tuple[int, int]) -> list[float] | None:
-    """Axis-aligned box [x0, y0, x1, y1] of a photo field quad inside the rectified crop, clipped; None if empty."""
+    """Axis-aligned box [x0, y0, x1, y1] (pixel edges) of a photo field quad inside the rectified crop, clipped; None if empty."""
     width, height = crop_size
-    mapped = apply_homography(np.asarray(quad, np.float64), homography)
+    mapped = apply_homography(np.asarray(quad, np.float64), homography) + PIXEL_CENTRE_TO_EDGE_OFFSET
     x0, y0 = np.clip(mapped.min(axis=0), 0, [width, height])
     x1, y1 = np.clip(mapped.max(axis=0), 0, [width, height])
     if x1 - x0 < 1 or y1 - y0 < 1:

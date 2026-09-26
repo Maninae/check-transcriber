@@ -10,7 +10,7 @@ from synth.dataset.build_dataset import build_dataset, parse_arguments, scene_ta
 from synth.dataset.build_plan import BuildPlan, template_family_by_id
 from synth.dataset.manifest import read_manifest
 from synth.dataset.scene_task_runner import run_scene_task
-from synth.dataset.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_to_splits, plan_split_pools, plan_template_pools
+from synth.dataset.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_by_hash_rank, plan_split_pools, plan_template_pools
 from synth.render.check_templates import build_template_catalog
 from synth.tests.conftest import BUILD_SCENES
 
@@ -29,6 +29,7 @@ def test_build_writes_every_per_scene_file(built_dataset):
 
 def test_no_id_of_any_kind_crosses_splits(built_dataset):
     _, _, manifest, _ = built_dataset
+    assert {"payee_names", "bank_names"} <= set(manifest.split_pools["train"])
     for kind in manifest.split_pools["train"]:
         pools = [set(manifest.split_pools[name][kind]) for name in SPLIT_NAMES]
         assert all(pools), kind
@@ -47,6 +48,9 @@ def test_scenes_only_use_their_own_split_pools(built_dataset):
                 assert check["template_id"] in pools["template_ids"]
                 assert check["canonical"]["handwriting_font_id"] in pools["handwriting_font_ids"]
                 assert check["canonical"]["signature_font_id"] in pools["signature_font_ids"]
+                assert check["canonical"]["payee_canonical"] in pools["payee_names"]
+                bank_texts = [field["text"] for field in check["fields"] if field["field_name"] == "bank_name"]
+                assert bank_texts and all(text in pools["bank_names"] for text in bank_texts)
                 used_handwriting_fonts.add(check["canonical"]["handwriting_font_id"])
     assert len(used_handwriting_fonts) > 1
 
@@ -82,15 +86,15 @@ def test_one_failing_scene_is_recorded_not_fatal(built_dataset):
     assert summary["status"] == "failed" and summary["scene_id"] == "train_000999" and summary["error"]
 
 
-def test_split_assignment_is_a_seeded_partition_with_useful_held_out_sizes():
+def test_registry_split_is_a_seeded_partition_with_exact_held_out_sizes():
     ids = [f"id_{i}" for i in range(64)]
-    splits = assign_ids_to_splits(ids, DEFAULT_SPLIT_FRACTIONS, seed=1, salt=2)
+    splits = assign_ids_by_hash_rank(ids, DEFAULT_SPLIT_FRACTIONS, seed=1, salt=2)
     assert sorted(sum(splits.values(), [])) == sorted(ids)
-    assert splits == assign_ids_to_splits(ids, DEFAULT_SPLIT_FRACTIONS, seed=1, salt=2)
+    assert splits == assign_ids_by_hash_rank(ids, DEFAULT_SPLIT_FRACTIONS, seed=1, salt=2)
     assert len(splits["val"]) == len(splits["eval"]) == 10
-    small = assign_ids_to_splits([f"f{i}" for i in range(13)], DEFAULT_SPLIT_FRACTIONS, seed=0, salt=5)
+    small = assign_ids_by_hash_rank([f"f{i}" for i in range(13)], DEFAULT_SPLIT_FRACTIONS, seed=0, salt=5)
     assert [len(small[name]) for name in SPLIT_NAMES] == [9, 2, 2]
-    tiny = assign_ids_to_splits(["a", "b", "c"], DEFAULT_SPLIT_FRACTIONS, seed=0, salt=5)
+    tiny = assign_ids_by_hash_rank(["a", "b", "c"], DEFAULT_SPLIT_FRACTIONS, seed=0, salt=5)
     assert all(len(tiny[name]) == 1 for name in SPLIT_NAMES)
 
 

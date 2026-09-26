@@ -1,8 +1,8 @@
 """Invent the values written on a check. Everything here is fake by construction.
 
 - Names and addresses come from Faker (made-up combinations).
-- Payees are a fixed list of invented land-trust / co-op names.
-- Banks and payee mailing addresses are invented.
+- Payees and banks are invented (`fake_payees_and_banks.py`); callers pass the split's own
+  payee and bank pools (contract C4), defaulting to every name.
 - Money orders follow issuer rules: the issuer prints number, date and amount (capped at $1,000);
   the purchaser writes payee, memo and their own name and address.
 - Routing numbers are 9 digits that deliberately FAIL the ABA checksum, so no generated
@@ -19,33 +19,8 @@ from synth.render.amount_words import spell_whole_dollars
 from synth.render.check_fields import HANDWRITABLE_FIELDS, CheckContent
 from synth.render.check_layout import LayoutFamily
 from synth.render.check_templates import TemplateDesign
+from synth.render.fake_payees_and_banks import BANK_NAMES, PAYEE_BY_NAME, PAYEE_NAMES
 from synth.render.fonts import MICR_ON_US_SYMBOL, MICR_TRANSIT_SYMBOL
-
-# Canonical payee -> spellings a tenant might actually write.
-PAYEE_SPELLINGS: dict[str, list[str]] = {
-    "Quailbrook Community Land Trust": ["Quailbrook Community Land Trust", "Quailbrook CLT", "Quailbrook Land Trust"],
-    "Fennimore Street Housing Cooperative": ["Fennimore Street Housing Cooperative", "Fennimore St. Housing Co-op", "Fennimore Co-op"],
-    "Driftwood Commons Land Trust": ["Driftwood Commons Land Trust", "Driftwood Commons", "Driftwood Commons LT"],
-    "Marrowstone Co-op Homes": ["Marrowstone Co-op Homes", "Marrowstone Co-op", "Marrowstone Coop Homes"],
-    "Saltgrass Community Land Trust": ["Saltgrass Community Land Trust", "Saltgrass CLT"],
-    "Hollis Yard Housing Co-op": ["Hollis Yard Housing Co-op", "Hollis Yard Co-op", "Hollis Yard Housing"],
-}
-
-FAKE_BANK_NAMES = [
-    "First Meridian Bank", "Pacific Tidewater Credit Union", "Cedar Valley Savings Bank",
-    "Golden Bluff Bank, N.A.", "Harborline Federal Credit Union", "Summit Ridge Bank",
-    "Redwood Crossing Bank", "Copper Canyon Savings", "Bayshore Mutual Bank", "Northgate Trust Bank",
-]
-
-# Invented mailing addresses printed under the payee on business stock (window-envelope block).
-PAYEE_MAILING_ADDRESSES: dict[str, list[str]] = {
-    "Quailbrook Community Land Trust": ["PO Box 4418", "Quailbrook, OR 97999"],
-    "Fennimore Street Housing Cooperative": ["212 Fennimore St, Office 2", "Larchmont Falls, WI 53999"],
-    "Driftwood Commons Land Trust": ["88 Driftwood Commons Way", "Seacliff Harbor, ME 04999"],
-    "Marrowstone Co-op Homes": ["1400 Marrowstone Loop", "Tidewater Bend, WA 98999"],
-    "Saltgrass Community Land Trust": ["PO Box 2207", "Saltgrass Flats, NM 87999"],
-    "Hollis Yard Housing Co-op": ["9 Hollis Yard, Suite B", "Brickmill, PA 19999"],
-}
 
 MEMO_TEMPLATES = [
     "", "", "", "{month} rent", "Unit {unit}", "Rent - {month}", "Apt {unit} rent",
@@ -179,8 +154,13 @@ def shared_faker() -> Faker:
     return Faker("en_US")
 
 
-def sample_check_content(template: TemplateDesign, rng: np.random.Generator, serial: str | None = None) -> CheckContent:
-    """Invent every value for one check drawn on `template`."""
+def sample_check_content(template: TemplateDesign, rng: np.random.Generator, serial: str | None = None,
+                         payee_names: tuple[str, ...] | list[str] = PAYEE_NAMES,
+                         bank_names: tuple[str, ...] | list[str] = BANK_NAMES) -> CheckContent:
+    """Invent every value for one check drawn on `template`.
+
+    `payee_names` / `bank_names` are the split's pools (contract C4); the default is every name.
+    """
     faker = shared_faker()
     faker.seed_instance(int(rng.integers(2**31)))
     is_business = template.micr_layout == "business"
@@ -209,8 +189,8 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
     if is_money_order and amount_cents > MONEY_ORDER_MAX_DOLLARS * 100:  # issuers cap one money order at $1,000
         amount_cents = int(rng.integers(RENT_MIN_DOLLARS, MONEY_ORDER_MAX_DOLLARS + 1)) * 100
     date_value = DATE_RANGE_START + datetime.timedelta(days=int(rng.integers(DATE_RANGE_DAYS)))
-    payee_canonical = list(PAYEE_SPELLINGS)[int(rng.integers(len(PAYEE_SPELLINGS)))]
-    spellings = PAYEE_SPELLINGS[payee_canonical]
+    payee_canonical = payee_names[int(rng.integers(len(payee_names)))]
+    spellings = PAYEE_BY_NAME[payee_canonical].spellings
     payee_text = spellings[int(rng.integers(len(spellings)))]
     unit = f"{int(rng.integers(1, 30))}{'ABCD'[int(rng.integers(4))] if rng.random() < 0.6 else ''}"
     memo_text = MEMO_TEMPLATES[int(rng.integers(len(MEMO_TEMPLATES)))].format(
@@ -237,7 +217,7 @@ def sample_check_content(template: TemplateDesign, rng: np.random.Generator, ser
         amount_numeric_text=format_amount_numeric(amount_cents, rng, "amount_numeric" in handwritten_fields, is_money_order,
                                                   template.layout_family in FAMILIES_WITH_PREPRINTED_DOLLAR_SIGN),
         amount_words_text=format_amount_words(amount_cents, rng, "amount_words" in handwritten_fields, is_money_order),
-        bank_name=FAKE_BANK_NAMES[int(rng.integers(len(FAKE_BANK_NAMES)))],
+        bank_name=bank_names[int(rng.integers(len(bank_names)))],
         bank_city_line=f"{faker.city()}, {faker.state_abbr(include_territories=False, include_freely_associated_states=False)}",
         memo_text=memo_text,
         signature_text=payer_name.title() if not is_business or is_money_order else faker.name(),
