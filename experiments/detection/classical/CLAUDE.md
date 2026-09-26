@@ -24,6 +24,7 @@ flowchart LR
 | `classical_detector_config.py` | Every threshold (one dataclass). Scale-dependent sizes are fractions of the working long side. |
 | `detect_checks_classical.py` | Top-level `detect_checks_classical(image_bgr, config)`; wires the stages, cheapest gates first. |
 | `preprocessing/working_image_channels.py` | Resize; text-suppressed lightness, chroma, Lab a/b, paper score, print residue, texture std, gradients. |
+| `preprocessing/combined_edge_map.py` | Canny of lightness OR amplified Lab a/b; every Canny-based generator uses it (lit sides of a check on a white sheet only show in hue). |
 | `candidates/candidate_regions.py` | Mask families (smooth, textured, paper-score Otsu, gradient / Canny edge cells, hole-filled Canny) and their regions. |
 | `candidates/adjacent_cell_merging.py` | Unions of neighbouring edge cells (a check cut by a shadow edge or fold). |
 | `candidates/line_segment_extraction.py` | Canny + HoughLinesP + collinear merge, texture-suppressed. |
@@ -48,6 +49,12 @@ flowchart LR
 - Any per-image work that can grow combinatorially must be budgeted (see line hypotheses).
 - Tune on val only (`--offset` slices keep dev and tuning subsets apart); eval is scored once with the frozen config.
 - Outputs go to `/Volumes/vega/datasets/check-transcriber/experiments/detection/classical/`, never the internal disk. Keep process pools at 2 workers on the shared 16 GB machine.
+
+## Tuning history
+
+- Dev slice: val scenes 0-119 (looked at by eye while building). Tuning slice: val 120-269 (`--offset 120 --limit 150`), objective = mean(F1@0.5, F1@0.9).
+- `sweep_v1` then `sweep_v2` (after chroma edges) on the tuning slice; results in `<vega>/classical/sweep_v{1,2}/sweep_results.jsonl`. Frozen values are the config defaults, marked `tuned (sweep_vN)`.
+- Working resolution 1600 beat 1400 and 2000; the refinement radius was flat.
 
 ## Commands
 
