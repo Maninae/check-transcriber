@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 
 PRETRAINED_WEIGHTS_DIRECTORY = DETECTION_EXPERIMENTS_ROOT / "pretrained"
 DEFAULT_IMAGE_SIZE = 1024
-DEFAULT_EPOCHS = 20
+DEFAULT_EPOCHS = 8
 DEFAULT_BATCH_SIZE = 8
 DEFAULT_DATALOADER_WORKERS = 4
 EARLY_STOP_PATIENCE_EPOCHS = 15
-CLOSE_MOSAIC_FINAL_EPOCHS = 4  # last epochs train on un-mosaicked, full scenes
+CLOSE_MOSAIC_FINAL_EPOCHS = 2  # last epochs train on un-mosaicked, full scenes
 
 
 def build_training_arguments(arguments: argparse.Namespace) -> dict:
