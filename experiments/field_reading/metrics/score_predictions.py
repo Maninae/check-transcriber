@@ -4,7 +4,7 @@ Usage (from the worktree root):
     python -m experiments.field_reading.metrics.score_predictions \
         --split val \
         --predictions path/to/methodA__loc=oracle.jsonl path/to/methodB__loc=oracle.jsonl \
-        [--subset all|hard|too_small] [--run-name NAME] [--output-dir DIR] [--only-predicted-rows]
+        [--subset all|hard|handwritten|handwritten_degraded|printed_degraded|too_small] [--run-name NAME] [--output-dir DIR] [--only-predicted-rows]
 
 - Prediction rows follow PLAN.md's contract and join on `row_key`; each (method, localization)
   pair is one method label `<method>__loc=<localization>`.
@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_PREDICTION_KEYS = ["row_key", "field_name", "method", "localization", "pred_text", "confidence"]
 SCORED_STATUSES = ["ok", "too_small"]
-HARD_SET_JOIN_COLUMNS = ["row_key", "in_hard_set", "contrast_statistic", *[name for name in HARD_SET_FLAG_NAMES if name != "handwritten"]]
+HARD_SET_JOIN_COLUMNS = ["row_key", "in_hard_set", "contrast_statistic", "handwritten_degraded", "printed_degraded",
+                         *[name for name in HARD_SET_FLAG_NAMES if name != "handwritten"]]
+HARD_SET_BOOLEAN_COLUMNS = ["in_hard_set", "handwritten_degraded", "printed_degraded", *HARD_SET_FLAG_NAMES]
 
 
 def load_prediction_files(prediction_paths: list[Path]) -> pd.DataFrame:
@@ -65,11 +67,15 @@ def load_scored_ground_truth(split_name: str, hard_set_flags_path: Path | None) 
     excluded_row_counts = {status: int(count) for status, count in field_rows[~field_rows.status.isin(SCORED_STATUSES)].status.value_counts().items()}
     scored_ground_truth = field_rows[field_rows.status.isin(SCORED_STATUSES)]
     hard_set_flags = load_or_build_hard_set_flags(split_name, hard_set_flags_path)
+    missing_columns = [name for name in HARD_SET_JOIN_COLUMNS if name not in hard_set_flags.columns]
+    if missing_columns:
+        raise ValueError(f"hard-set flag cache lacks {missing_columns}; rebuild it with "
+                         f"`python -m experiments.field_reading.metrics.hard_set --split {split_name}`")
     scored_ground_truth = scored_ground_truth.merge(hard_set_flags[HARD_SET_JOIN_COLUMNS], on="row_key", how="left", validate="one_to_one")
     unflagged_count = int(scored_ground_truth.in_hard_set.isna().sum())
     if unflagged_count:
         logger.warning("%d scored rows have no hard-set flags (stale cache?); treating them as not hard", unflagged_count)
-    for column_name in ["in_hard_set", *HARD_SET_FLAG_NAMES]:
+    for column_name in HARD_SET_BOOLEAN_COLUMNS:
         scored_ground_truth[column_name] = scored_ground_truth[column_name].fillna(False).astype(bool)
     return scored_ground_truth.reset_index(drop=True), excluded_row_counts
 

@@ -22,4 +22,7 @@ Scores reading predictions (PLAN.md contract) against ground truth and writes `r
 - Unparseable prediction = None = wrong. GT value = parsed GT text, falling back to the canonical column.
 - Headline = status ok rows only; too_small is always its own section. Occluded / out-of-frame rows are excluded and counted.
 - Parsed GT text must match canonical values on >= 99.5% of rows (`tests/test_metrics_gt_self_consistency.py`; currently 100% on train/val/eval).
+- Slices over ok rows: `handwritten`; `handwritten_degraded` = handwritten AND (small_text OR low_contrast); `printed_degraded` = printed AND (small_text OR low_contrast OR money_order); `hard` = either degraded slice; easy = clean printed. All are `--subset` values alongside `all` and `too_small`.
+- Every md report carries a gating table on handwritten ok rows (the app's real question: how much handwriting can be filled at 95/98% accuracy).
+- Metrics score raw predictions: never import reader-side cleanup (e.g. `ocr_baselines/field_text_cleanup.py`) here.
 - Low-contrast quartile is per field, per split. Rebuild a stale flag cache with `python -m experiments.field_reading.metrics.hard_set --split <s>`.

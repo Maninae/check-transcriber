@@ -9,7 +9,11 @@ Flags (all per row):
   after a 3x3 Gaussian blur. Verified by eye: low values are dim, shadowed, grey-paper or blurry
   crops. Blind spot: a dark printed baseline rule inside the crop can mask faint ink.
 - `too_small`: status == too_small (text under 14 px); reported separately, never in the hard set.
-`in_hard_set` = status ok AND any of handwritten / small_text / low_contrast / money_order.
+Slices over ok rows (what reports and `--subset` use):
+- `handwritten_degraded` = handwritten AND (small_text OR low_contrast)
+- `printed_degraded` = printed AND (small_text OR low_contrast OR money_order)
+- `in_hard_set` = handwritten_degraded OR printed_degraded
+- easy remainder = printed and none of the above
 All eval handwriting fonts are held out from train by construction, so there is no separate
 held-out-font flag (breakdowns carry pen_font_id).
 
@@ -38,8 +42,9 @@ PAPER_LUMINANCE_PERCENTILE = 50
 INK_LUMINANCE_PERCENTILE = 2
 MONEY_ORDER_LAYOUT_FAMILY = "money_order"
 HARD_SET_FLAG_NAMES = ["handwritten", "small_text", "low_contrast", "money_order"]
+HARD_SET_SLICE_NAMES = ["handwritten", "handwritten_degraded", "printed_degraded"]
 CACHE_COLUMN_NAMES = ["row_key", "field_name", "status", "contrast_statistic", "low_contrast_threshold",
-                      *HARD_SET_FLAG_NAMES, "too_small", "in_hard_set"]
+                      *HARD_SET_FLAG_NAMES, "too_small", "handwritten_degraded", "printed_degraded", "in_hard_set"]
 
 
 def hard_set_cache_path(split_name: str) -> Path:
@@ -85,7 +90,10 @@ def build_hard_set_flags(field_rows: pd.DataFrame, worker_count: int = 8) -> pd.
     flags["money_order"] = field_rows.layout_family.eq(MONEY_ORDER_LAYOUT_FAMILY)
     flags["low_contrast"] = ok_mask & flags.contrast_statistic.lt(flags.low_contrast_threshold)
     flags["too_small"] = field_rows.status.eq("too_small")
-    flags["in_hard_set"] = ok_mask & flags[HARD_SET_FLAG_NAMES].any(axis=1)
+    degraded_mask = flags.small_text | flags.low_contrast
+    flags["handwritten_degraded"] = ok_mask & flags.handwritten & degraded_mask
+    flags["printed_degraded"] = ok_mask & ~flags.handwritten & (degraded_mask | flags.money_order)
+    flags["in_hard_set"] = flags.handwritten_degraded | flags.printed_degraded
     return flags[CACHE_COLUMN_NAMES]
 
 
@@ -118,9 +126,10 @@ def main() -> None:
     flags = build_hard_set_flags(load_field_rows(arguments.split), arguments.workers)
     write_hard_set_flags(flags, arguments.output or hard_set_cache_path(arguments.split))
     ok_flags = flags[flags.status.eq("ok")]
-    logger.info("ok rows %d; flag rates among ok: %s; hard set %d (%.1f%%); too_small rows %d",
+    slice_counts = {name: int(ok_flags[name].sum()) for name in [*HARD_SET_SLICE_NAMES, "in_hard_set"]}
+    logger.info("ok rows %d; flag rates among ok: %s; slice sizes: %s; too_small rows %d",
                 len(ok_flags), {name: round(float(ok_flags[name].mean()), 3) for name in HARD_SET_FLAG_NAMES},
-                int(flags.in_hard_set.sum()), 100 * flags.in_hard_set.sum() / max(len(ok_flags), 1), int(flags.too_small.sum()))
+                slice_counts, int(flags.too_small.sum()))
 
 
 if __name__ == "__main__":

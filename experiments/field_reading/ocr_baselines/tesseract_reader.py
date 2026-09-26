@@ -15,6 +15,7 @@ import tesserocr
 from PIL import Image
 
 from experiments.field_reading.config import TESSDATA_ROOT
+from experiments.field_reading.ocr_baselines.field_text_cleanup import clean_field_text
 from experiments.field_reading.ocr_baselines.field_crop_preprocessing import (TesseractPreprocessingConfig,
                                                                                 preprocess_field_crop)
 
@@ -64,10 +65,10 @@ def tesseract_api_for(page_segmentation_mode: int, whitelist: str) -> tesserocr.
 
 
 def read_field_crop_with_tesseract(crop_rgb: np.ndarray, field_name: str, config: TesseractReadConfig) -> tuple[str, float]:
-    """(text with newlines collapsed to spaces, confidence in [0, 1]) for one field crop."""
+    """(cleaned text, confidence in [0, 1]) for one field crop; see field_text_cleanup for the rules."""
     whitelist = FIELD_CHARACTER_WHITELISTS.get(field_name, "") if config.use_field_whitelist else ""
     api = tesseract_api_for(config.page_segmentation_mode, whitelist)
     api.SetImage(Image.fromarray(preprocess_field_crop(crop_rgb, config.preprocessing)))
-    text = " ".join(api.GetUTF8Text().split())
+    text = clean_field_text(field_name, " ".join(api.GetUTF8Text().split()))
     confidence = api.MeanTextConf() / 100.0 if text else 0.0
     return text, max(0.0, min(1.0, confidence))

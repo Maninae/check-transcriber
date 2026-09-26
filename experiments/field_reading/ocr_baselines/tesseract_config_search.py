@@ -1,13 +1,13 @@
 """Grid-search Tesseract read configs per field on a stratified val sample; pick the best per field.
 
-Selection score: exact match on a loose key (casefold, keep only [0-9a-z/]), tie-broken by
-mean CER on the same key. The loose key ignores `$`, `*`, commas and spacing, which the value
-parsers in `metrics/` also ignore; final numbers always come from the shared metrics harness.
+Selection score: the metrics harness's own correctness rule (`normalize_field_value` equality:
+money as cents, dates as ISO, digits, normalized text), tie-broken by CER on the loose key
+(casefold, keep only [0-9a-z/]). Final numbers always come from the shared metrics harness.
 
 Output: `field-reading/reports/tesseract_config_search__split=val.json` (every config x field)
 and the chosen per-field configs `tesseract_best_configs.json` next to it.
 
-Run: python -m experiments.field_reading.ocr_baselines.tesseract_config_search --rows-per-field 120 --workers 4
+Run: python -m experiments.field_reading.ocr_baselines.tesseract_config_search --rows-per-field 240 --workers 4
 """
 
 import argparse
@@ -24,6 +24,7 @@ from rapidfuzz.distance import Levenshtein
 
 from experiments.field_reading.config import REPORTS_ROOT, TARGET_FIELD_NAMES
 from experiments.field_reading.data_access.field_manifest import load_field_rows
+from experiments.field_reading.metrics.field_value_parsing import normalize_field_value
 from experiments.field_reading.ocr_baselines.field_crop_preprocessing import TesseractPreprocessingConfig
 from experiments.field_reading.ocr_baselines.tesseract_reader import (FIELD_CHARACTER_WHITELISTS, TesseractReadConfig,
                                                                         read_field_crop_with_tesseract)
@@ -62,7 +63,7 @@ def stratified_sample(rows: pd.DataFrame, rows_per_field: int) -> pd.DataFrame:
 
 
 def score_config_on_rows(task: tuple[dict, str, list[tuple[str, str]]]) -> dict:
-    """Worker: read every (crop path, gt) with one config; return accuracy and CER on the loose key."""
+    """Worker: read every (crop path, gt) with one config; return harness accuracy and loose-key CER."""
     config_dict, field_name, crop_paths_and_truths = task
     preprocessing = TesseractPreprocessingConfig(**config_dict.pop("preprocessing"))
     config = TesseractReadConfig(preprocessing=preprocessing, **config_dict)
@@ -71,7 +72,8 @@ def score_config_on_rows(task: tuple[dict, str, list[tuple[str, str]]]) -> dict:
         crop_rgb = cv2.cvtColor(cv2.imread(crop_path), cv2.COLOR_BGR2RGB)
         predicted_text, _ = read_field_crop_with_tesseract(crop_rgb, field_name, config)
         truth_key, predicted_key = loose_match_key(truth), loose_match_key(predicted_text)
-        correct_count += truth_key == predicted_key
+        predicted_value = normalize_field_value(field_name, predicted_text)
+        correct_count += predicted_value is not None and predicted_value == normalize_field_value(field_name, truth)
         character_error_total += Levenshtein.distance(truth_key, predicted_key) / max(1, len(truth_key))
     count = len(crop_paths_and_truths)
     return {"field_name": field_name, "config_id": config.config_id(), "config": asdict(config),

@@ -1,10 +1,11 @@
 """Assemble the full report (JSON-able dict + markdown) from scored rows of one or more methods.
 
-Row sets:
-- headline set: status ok rows (`subset=all`), ok rows in the hard set (`hard`), or too_small rows (`too_small`)
+Row sets (`--subset`; slices defined in hard_set.py):
+- `all` = status ok rows; `hard` = handwritten_degraded OR printed_degraded; `handwritten`,
+  `handwritten_degraded`, `printed_degraded` = those ok-row slices; `too_small` = too_small rows
 - too_small rows are always scored in their own section, never mixed into the headline
-Sections: headline (per field x method), gating (per field x method, on the headline set),
-hard set (overall + per flag + the easy remainder), too_small, breakdowns, status.
+Sections: headline (per field x method), gating on the headline set, gating on handwritten ok rows,
+hard set (overall + per slice + the easy remainder), too_small, breakdowns, status.
 """
 
 import datetime
@@ -21,7 +22,7 @@ from experiments.field_reading.metrics.breakdowns import (
     summarize_scored_rows,
 )
 from experiments.field_reading.metrics.confidence_gating import summarize_gating
-from experiments.field_reading.metrics.hard_set import HARD_SET_FLAG_NAMES
+from experiments.field_reading.metrics.hard_set import HARD_SET_SLICE_NAMES
 from experiments.field_reading.metrics.report_tables import (
     accuracy_and_cer_pivot,
     format_percent,
@@ -29,7 +30,13 @@ from experiments.field_reading.metrics.report_tables import (
     headline_detail_table,
 )
 
-SUBSET_NAMES = ["all", "hard", "too_small"]
+SUBSET_NAMES = ["all", "hard", *HARD_SET_SLICE_NAMES, "too_small"]
+SUBSET_NAME_TO_SLICE_COLUMN: dict[str, str] = {
+    "hard": "in_hard_set",
+    "handwritten": "handwritten",
+    "handwritten_degraded": "handwritten_degraded",
+    "printed_degraded": "printed_degraded",
+}
 FIELD_ROW_ORDER = [*TARGET_FIELD_NAMES, ALL_FIELDS_LABEL]
 EASY_ROWS_LABEL = "none (easy)"
 
@@ -50,7 +57,9 @@ def select_headline_rows(scored_rows: pd.DataFrame, subset_name: str) -> pd.Data
     if subset_name == "too_small":
         return scored_rows[scored_rows.status.eq("too_small")]
     ok_rows = scored_rows[scored_rows.status.eq("ok")]
-    return ok_rows[ok_rows.in_hard_set.astype(bool)] if subset_name == "hard" else ok_rows
+    if subset_name == "all":
+        return ok_rows
+    return ok_rows[ok_rows[SUBSET_NAME_TO_SLICE_COLUMN[subset_name]].astype(bool)]
 
 
 def build_gating_entries(headline_rows: pd.DataFrame) -> list[dict]:
@@ -63,11 +72,11 @@ def build_gating_entries(headline_rows: pd.DataFrame) -> list[dict]:
     return entries
 
 
-def build_hard_set_flag_summary(ok_rows: pd.DataFrame) -> pd.DataFrame:
-    """Pooled (all fields) summary per method for each hard flag, plus the easy remainder."""
-    per_flag_frames = [summarize_scored_rows(ok_rows[ok_rows[flag_name].astype(bool)], ["method_label"]).assign(slice=flag_name)
-                       for flag_name in HARD_SET_FLAG_NAMES]
-    easy_rows = ok_rows[~ok_rows.in_hard_set.astype(bool)]
+def build_hard_set_slice_summary(ok_rows: pd.DataFrame) -> pd.DataFrame:
+    """Pooled (all fields) summary per method for each hard-set slice, plus the easy (clean printed) remainder."""
+    per_flag_frames = [summarize_scored_rows(ok_rows[ok_rows[slice_name].astype(bool)], ["method_label"]).assign(slice=slice_name)
+                       for slice_name in HARD_SET_SLICE_NAMES]
+    easy_rows = ok_rows[~ok_rows.in_hard_set.astype(bool) & ~ok_rows.handwritten.astype(bool)]
     per_flag_frames.append(summarize_scored_rows(easy_rows, ["method_label"]).assign(slice=EASY_ROWS_LABEL))
     return pd.concat(per_flag_frames, ignore_index=True)
 
@@ -86,10 +95,11 @@ def build_report(scored_rows: pd.DataFrame, split_name: str, subset_name: str, r
     too_small_rows = scored_rows[scored_rows.status.eq("too_small")]
     headline_summary = summarize_per_field_with_total(headline_rows)
     hard_set_summary = summarize_per_field_with_total(ok_rows[ok_rows.in_hard_set.astype(bool)])
-    hard_flag_summary = build_hard_set_flag_summary(ok_rows)
+    hard_slice_summary = build_hard_set_slice_summary(ok_rows)
     too_small_summary = summarize_per_field_with_total(too_small_rows)
     status_summary = summarize_scored_rows(scored_rows, ["method_label", "status"])
     gating_entries = build_gating_entries(headline_rows)
+    handwritten_gating_entries = build_gating_entries(ok_rows[ok_rows.handwritten.astype(bool)])
     breakdown_tables = build_breakdown_tables(headline_rows)
     report = {
         "run_name": run_name,
@@ -103,7 +113,8 @@ def build_report(scored_rows: pd.DataFrame, split_name: str, subset_name: str, r
         "headline": frame_to_records(headline_summary),
         "gating": gating_entries,
         "hard_set": frame_to_records(hard_set_summary),
-        "hard_set_by_flag": frame_to_records(hard_flag_summary),
+        "hard_set_by_slice": frame_to_records(hard_slice_summary),
+        "gating_handwritten": handwritten_gating_entries,
         "too_small": frame_to_records(too_small_summary),
         "status": frame_to_records(status_summary),
         "breakdowns": {name: frame_to_records(table) for name, table in breakdown_tables.items()},
@@ -116,9 +127,12 @@ def build_report(scored_rows: pd.DataFrame, split_name: str, subset_name: str, r
         "## Headline detail", headline_detail_table(order_by_method_then_field(headline_summary)),
         "## Confidence gating", "cov@X%acc = max coverage keeping accuracy >= X, @ confidence threshold.",
         gating_table(gating_entries),
-        "## Hard set (ok rows with any hard flag)", accuracy_and_cer_pivot(hard_set_summary, "field_name", FIELD_ROW_ORDER),
-        "### By hard flag (all fields pooled; a row can carry several flags)",
-        accuracy_and_cer_pivot(hard_flag_summary, "slice", [*HARD_SET_FLAG_NAMES, EASY_ROWS_LABEL]),
+        "### Gating on handwritten ok rows (how much handwriting can be filled at 95/98% accuracy)",
+        gating_table(handwritten_gating_entries),
+        "## Hard set (ok rows: handwritten_degraded OR printed_degraded)",
+        accuracy_and_cer_pivot(hard_set_summary, "field_name", FIELD_ROW_ORDER),
+        "### By slice (all fields pooled; handwritten contains handwritten_degraded; easy = clean printed)",
+        accuracy_and_cer_pivot(hard_slice_summary, "slice", [*HARD_SET_SLICE_NAMES, EASY_ROWS_LABEL]),
         "## too_small rows (text < 14 px, scored separately)", accuracy_and_cer_pivot(too_small_summary, "field_name", FIELD_ROW_ORDER),
         "## Status (ok vs too_small, all fields pooled)", accuracy_and_cer_pivot(status_summary, "status"),
         "## Breakdowns (headline rows, all fields pooled)",
