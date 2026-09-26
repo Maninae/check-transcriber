@@ -32,11 +32,11 @@ from experiments.detection.predictions.detected_check import DetectedCheck
 class HybridCloseUpConfig:
     """Thresholds for when and how the classical fit replaces a learned quad."""
 
-    minimum_frame_fraction: float = 0.25  # learned quad area / photo area
-    crop_margin_fraction: float = 0.15  # of the quad's bounding-box size, per side
-    minimum_agreement_iou: float = 0.6
+    minimum_frame_fraction: float = 0.2  # learned quad area / photo area; tuned on close-up val
+    crop_margin_fraction: float = 0.2  # of the quad's bounding-box size, per side
+    minimum_agreement_iou: float = 0.7
     relaxed_maximum_area_fraction: float = 0.97
-    relaxed_minimum_interior_angle_degrees: float = 40.0
+    relaxed_minimum_interior_angle_degrees: float = 35.0
 
 
 def quadrilateral_iou(first_corners: np.ndarray, second_corners: np.ndarray) -> float:
