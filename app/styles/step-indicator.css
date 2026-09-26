@@ -40,7 +40,7 @@
 .step-indicator-step[aria-current="step"]::before {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-surface);
 }
 
 .step-indicator-step--done::before {

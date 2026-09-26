@@ -27,7 +27,8 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | `js/cdn_config.js` | Every third-party URL, pinned (jsDelivr libraries; the opt-in handwriting reader's Hub files at one revision), plus first-visit transfer sizes. |
 | `models/` | Our own models, all fp32 ONNX: `upside_down_classifier.onnx` (1.9 MB, orientation), and the field readers from `experiments/field_reading/`: `segnet_mobilenetv3l_768.onnx` (12.8 MB, field boxes), `crnn_general_h32.onnx` (8.3 MB), `crnn_amount_h32.onnx` (8.2 MB), `style_classifier_h32.onnx` (0.75 MB). |
 | `sw.js` | Service worker: app-shell + CDN cache-first, offline after first visit. |
-| `styles/` | One stylesheet per screen; `base.css` holds the palette, type and shared buttons. |
+| `styles/` | One stylesheet per screen; `base.css` holds every colour token (the only hex values), type and shared buttons. |
+| `fonts/` | Poppins Regular and Medium (latin subset woff2, SIL OFL 1.1, licence in `Poppins-OFL.txt`), self-hosted and precached; only Medium is on screen. |
 
 ## Feedback and guidance (the UX pass, docs/UX_AUDIT.md)
 
@@ -43,7 +44,9 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 
 ## Visual hierarchy
 
-The photo (count step) and the crop (review grid) are the payload: the largest things on the page. Chrome stays small and gray. The accent green marks only the primary action (Continue, Copy all rows) and confident outlines; amber marks outlines worth a look. Corner handles appear on hover or selection only.
+The photo (count step) and the crop (review grid) are the payload: the largest things on the page. Chrome stays small and slate. The primary action (Continue, Copy all rows, Retry, Replace) is a black pill; secondary buttons are quiet outlined pills. The accent green marks focus, progress, done and confident outlines; amber marks outlines and fields worth a look. Corner handles appear on hover or selection only.
+
+The theme borrows from the land trust's own site: lavender page (#edeef8), white cards, slate (#5b6b71) for muted text and the hand-drawn section rules, Poppins 500 for the title, step headings, panel titles and buttons, the system sans for fields and prose. Their pale yellow (#eae085) is used ONLY as the hand-drawn underline under the title and step headings (a CSS background, so headings keep their box); it must never become a fill or a state colour, because amber means "please check". The header stays light on purpose: a slate bar out-pulled the drop zone.
 
 ## Field reading (milestone 4)
 

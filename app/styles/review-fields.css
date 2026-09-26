@@ -45,7 +45,7 @@
   padding: 5px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fffdf8;
+  background: var(--color-field);
   color: var(--color-text);
   min-width: 0;
 }
@@ -75,15 +75,15 @@
 /* Not read yet: a soft moving shimmer, so a waiting field never looks like an empty read. */
 .review-field-input[data-review-state="unread"] {
   color: transparent;
-  border-color: #ece5d6;
-  background: linear-gradient(100deg, #f4efe5 20%, #fbf8f1 40%, #f4efe5 60%) 0 0 / 300% 100%;
+  border-color: var(--color-border-soft);
+  background: linear-gradient(100deg, var(--color-sunken) 20%, var(--color-sunken-highlight) 40%, var(--color-sunken) 60%) 0 0 / 300% 100%;
   animation: field-shimmer 1.4s linear infinite;
 }
 
 .review-field-input[data-review-state="unread"]:focus {
   color: var(--color-text);
   animation: none;
-  background: #fffdf8;
+  background: var(--color-field);
 }
 
 @keyframes field-shimmer {
@@ -104,7 +104,7 @@
 /* Rotated: the untouched fields are being read again. */
 .review-row--rereading .review-field-input:not(:focus):not([data-touched="true"]) {
   color: transparent;
-  background: linear-gradient(100deg, #f4efe5 20%, #fbf8f1 40%, #f4efe5 60%) 0 0 / 300% 100%;
+  background: linear-gradient(100deg, var(--color-sunken) 20%, var(--color-sunken-highlight) 40%, var(--color-sunken) 60%) 0 0 / 300% 100%;
   animation: field-shimmer 1.4s linear infinite;
 }
 
@@ -186,7 +186,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(43, 39, 35, 0.12);
+  box-shadow: 0 6px 18px rgba(var(--shadow-color), 0.12);
   font-size: 0.9rem;
 }
 
@@ -197,7 +197,7 @@
 
 /* Hover is a lighter tint than the keyboard highlight: Enter picks only the highlighted one. */
 .payer-suggestion:hover {
-  background: #f3f6f3;
+  background: var(--color-payer-hover);
 }
 
 .payer-suggestion--highlighted,
@@ -225,7 +225,7 @@
   max-width: 500px;
   border: 1px solid var(--color-attention-line);
   border-radius: 4px;
-  background: #ece6da;
+  background: var(--color-sunken);
 }
 
 .review-row--rereading .review-field-input:not(:focus):not([data-touched="true"])::placeholder,

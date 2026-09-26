@@ -43,7 +43,7 @@
     styles/*.css (toast tick, copy icon) are data: URIs; every photo and
     check crop is drawn to <canvas>, never <img>, so no other image source is
     needed (and no blob:/object URL of a photo ever exists).
-  - font-src 'self': no webfont network dependency (system font stack only).
+  - font-src 'self': Poppins is self-hosted in fonts/ (OFL); no font request leaves this origin.
   - base-uri 'none', form-action 'none', object-src 'none',
     frame-ancestors 'none': no injected <base>, no form ever submits anywhere
     (there is no <form> at all), no plugin embeds, page is never framed.
@@ -63,6 +63,8 @@
 " />
 <!-- Empty data-URI favicon: suppresses the browser's automatic /favicon.ico request (which img-src would otherwise have to allow) rather than shipping an icon file this milestone doesn't need. -->
 <link rel="icon" href="data:," />
+<!-- Poppins Medium is the only weight on screen (title, headings, buttons); preload it so they do not flash the fallback. -->
+<link rel="preload" href="./fonts/poppins-latin-medium.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="./styles/base.css" />
 <link rel="stylesheet" href="./styles/drop-zone.css" />
 <link rel="stylesheet" href="./styles/status-line.css" />

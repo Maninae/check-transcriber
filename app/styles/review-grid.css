@@ -16,6 +16,23 @@
   margin-top: calc(var(--spacing-unit) * 3);
 }
 
+/* A hand-drawn slate rule in the margin above the review step, absolutely placed so the
+   step's own layout does not move. */
+.review-step {
+  position: relative;
+}
+
+.review-step::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--spacing-unit) * -2.5);
+  height: 6px;
+  background: var(--rule-hand-drawn) center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
 .review-toolbar {
   display: flex;
   align-items: center;
@@ -43,7 +60,7 @@
   padding: 5px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fffdf8;
+  background: var(--color-field);
   color: var(--color-text);
 }
 
@@ -99,7 +116,7 @@
   height: auto;
   display: block;
   border-radius: 4px;
-  background: #ece6da;
+  background: var(--color-sunken);
   cursor: zoom-in;
 }
 
@@ -107,7 +124,7 @@
   width: 500px;
   aspect-ratio: 2.3;
   border-radius: 4px;
-  background: #ece6da;
+  background: var(--color-sunken);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -173,7 +190,7 @@
 
 /* Waiting for its crop: a shimmering card the shape of a check, never an empty box. */
 .review-crop-placeholder {
-  background: linear-gradient(100deg, #ece6da 20%, #f5f1e8 40%, #ece6da 60%) 0 0 / 300% 100%;
+  background: linear-gradient(100deg, var(--color-sunken) 20%, var(--color-sunken-highlight) 40%, var(--color-sunken) 60%) 0 0 / 300% 100%;
   animation: field-shimmer 1.4s linear infinite;
 }
 
@@ -195,8 +212,8 @@
   top: 8px;
   padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(43, 39, 35, 0.72);
-  color: #ffffff;
+  background: rgba(var(--shadow-color), 0.72);
+  color: var(--color-surface);
   font-size: 0.75rem;
   pointer-events: none;
   opacity: 0;
@@ -233,7 +250,7 @@
 /* Done rows step back, but the fields stay readable (text never below AA). */
 .review-row--done {
   opacity: 1;
-  background: #fbf9f4;
+  background: var(--color-done-row);
 }
 
 .review-row--done .review-crop-column,

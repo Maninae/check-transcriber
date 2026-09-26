@@ -4,7 +4,7 @@
  */
 
 .drop-zone {
-  border: 2px dashed var(--color-border);
+  border: 2px dashed var(--color-border-strong);
   border-radius: 16px;
   background: var(--color-surface);
   min-height: 320px;
@@ -63,12 +63,13 @@
 }
 
 .start-over-button {
-  font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.875rem;
   color: var(--color-text);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 999px;
   padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
   cursor: pointer;
 }
@@ -93,8 +94,8 @@
 
 /* The empty drop zone invites a click: it lifts slightly on hover and shows a focus ring. */
 .drop-zone:not(.drop-zone--compact):hover {
-  border-color: #c9bda4;
-  background: #fffefb;
+  border-color: var(--color-slate);
+  background: var(--color-field);
 }
 
 .drop-zone-prompt {
@@ -110,19 +111,19 @@
 }
 
 .drop-zone-glyph-back {
-  fill: #f1ece1;
-  stroke: #c9bda4;
+  fill: var(--color-sunken);
+  stroke: var(--color-border-strong);
   stroke-width: 1.5;
 }
 
 .drop-zone-glyph-front {
-  fill: #ffffff;
+  fill: var(--color-surface);
   stroke: var(--color-accent);
   stroke-width: 1.8;
 }
 
 .drop-zone-glyph-line {
-  stroke: #b9cbbf;
+  stroke: var(--color-accent-line);
   stroke-width: 2;
   stroke-linecap: round;
 }
