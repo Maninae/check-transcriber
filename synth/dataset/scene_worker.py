@@ -4,6 +4,8 @@ Each scene's randomness comes from `np.random.default_rng([seed, split_index, sc
 so any single scene can be regenerated without rebuilding the others.
 
 - Checks draw templates, fonts, payees, banks and the background only from the task's split pools (contract C4).
+- The background is chosen by `choose_background` (lit photos favoured, soft surfaces weighted up);
+  flat soft swatches get procedural cloth relief before compositing.
 - The scene annotation is written last, via rename, so its existence means the scene is complete
   (resume in `scene_task_runner.py` relies on this).
 """
@@ -16,7 +18,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from synth.backgrounds.background_traits import SceneBackground, choose_background
 from synth.backgrounds.loader import load_background_rgb
+from synth.backgrounds.surface_relief import add_cloth_relief
 from synth.compose.compose_scene import SceneConfig, compose_scene, sample_check_count
 from synth.dataset.annotation_exports import write_yolo_labels
 from synth.dataset.splits import SPLIT_NAMES
@@ -36,7 +40,7 @@ class SceneTask:
     split_name: str
     scene_index: int
     template_ids: tuple[str, ...]
-    backgrounds: tuple[tuple[str, str], ...]  # (background_id, file path)
+    backgrounds: tuple[SceneBackground, ...]  # the split's backgrounds with their surface traits
     split_directory: str
     template_count: int
     scene_config: SceneConfig
@@ -84,9 +88,12 @@ def generate_scene(task: SceneTask) -> dict:
                                                                          bank_names=task.bank_names), rng,
                                             handwriting_font_ids=list(task.handwriting_font_ids),
                                             signature_font_ids=list(task.signature_font_ids)))
-    background_id, background_path = task.backgrounds[int(rng.integers(len(task.backgrounds)))]
+    background = choose_background(task.backgrounds, rng)
+    background_rgb = cached_background(background.file_path)
+    if background.is_soft and not background.is_lit_photo:
+        background_rgb = add_cloth_relief(background_rgb, rng)  # a flat swatch becomes a slept-on sheet
     scene_id = scene_id_for_task(task)
-    photo, label = compose_scene(scene_id, rendered_checks, cached_background(background_path), background_id, rng, task.scene_config)
+    photo, label = compose_scene(scene_id, rendered_checks, background_rgb, background.background_id, rng, task.scene_config)
 
     split_directory = Path(task.split_directory)
     cv2.imwrite(str(split_directory / "images" / label.image_file), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR),
@@ -98,4 +105,4 @@ def generate_scene(task: SceneTask) -> dict:
     partial_path.write_text(json.dumps(label_dict))
     partial_path.replace(annotation_path)
     return {"split": task.split_name, "scene_id": scene_id, "check_count": check_count,
-            "template_ids": sorted({check.template_id for check in label.checks}), "background_id": background_id}
+            "template_ids": sorted({check.template_id for check in label.checks}), "background_id": background.background_id}

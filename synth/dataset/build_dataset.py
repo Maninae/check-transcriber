@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 from synth import GENERATOR_VERSION
+from synth.backgrounds.background_traits import describe_backgrounds
 from synth.compose.compose_scene import SceneConfig
 from synth.dataset.annotation_exports import write_yolo_data_yaml
 from synth.dataset.build_plan import (
@@ -64,7 +65,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKER_COUNT)
     parser.add_argument("--templates", type=int, default=DEFAULT_TEMPLATE_COUNT, help="size of the template catalog")
-    parser.add_argument("--backgrounds", type=Path, default=BACKGROUND_DIR, help="background root; only its accepted subfolders (flux/, photos/) are scanned")
+    parser.add_argument("--backgrounds", type=Path, default=BACKGROUND_DIR, help="background root; only its accepted subfolders (flux/, photos/, web/) are scanned")
     parser.add_argument("--procedural-backgrounds", type=int, default=0,
                         help="use N procedural fabrics instead of --backgrounds (for tests or before real backgrounds exist)")
     parser.add_argument("--ocr-splits", default=DEFAULT_OCR_SPLITS,
@@ -108,7 +109,8 @@ def scene_tasks_for_plan(plan: BuildPlan, output_directory: Path) -> list[SceneT
     tasks = []
     for split_name in SPLIT_NAMES:
         pools = plan.split_pools[split_name]
-        backgrounds = tuple((background_id, plan.background_paths[background_id]) for background_id in pools["background_ids"])
+        backgrounds = describe_backgrounds(Path(plan.background_root),
+                                           [(background_id, plan.background_paths[background_id]) for background_id in pools["background_ids"]])
         for scene_index in range(plan.scene_counts[split_name]):
             tasks.append(SceneTask(plan.seed, split_name, scene_index, tuple(pools["template_ids"]), backgrounds,
                                    str(output_directory / split_name), plan.template_count, scene_config,
