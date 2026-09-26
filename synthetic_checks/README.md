@@ -10,9 +10,11 @@ python -m synthetic_checks.fonts.fetch_fonts
 python -m synthetic_checks.print_sheets --output DIR --pages 4
 # ... only this seed's eval-split templates, fonts, payees and banks (the real-photo gold set)
 python -m synthetic_checks.print_sheets --output DIR --pages 12 --print-pool eval --seed 1
+# ... hand-fill: handwritten fields left blank, a strip under each check says what to write, 3 writers (serials -A/-B/-C)
+python -m synthetic_checks.print_sheets --output DIR --pages 6 --print-pool eval --seed 1 --hand-fill --writers 3
 ```
 
-Print `print_sheets.pdf` at 100% scale, cut along the guides, lay the checks on a bedsheet and photograph them; `print_labels.csv` maps each printed serial (S-0007) to every field's text.
+Print `print_sheets.pdf` at 100% scale, cut along the guides, lay the checks on a bedsheet and photograph them; `print_labels.csv` maps each printed serial (S-0007) to every field's text. Hand-fill sheets are written on by people first (instruction page per writer), and the labels add `writer`, `hand_fill` and `prompt_strip_text`.
 
 ## Fonts
 
