@@ -75,6 +75,7 @@ class ClassicalDetectorConfig:
     edge_support_gradient_threshold: float = 10.0  # normal gradient (Sobel / 4 units)
     edge_support_color_threshold: float = 12.0  # Lab distance, inner vs outer band
     edge_support_texture_threshold: float = 4.0  # outer minus inner local std
+    edge_support_seam_residue_threshold: float = 30.0  # thin dark line on the side (print residue)
     minimum_edge_support: float = 0.45
     minimum_verification_score: float = 0.65  # tuned (sweep_v1)
 

@@ -9,7 +9,10 @@ signals fires (each is the natural border cue on some background):
 - color: Lab distance between a point just inside and one just outside
   (pastel check on a same-lightness colored fabric);
 - texture: local std just outside minus just inside (white check on white crochet or
-  beige carpet: same color, but the fabric is textured and the paper is not).
+  beige carpet: same color, but the fabric is textured and the paper is not);
+- thin seam: print residue (a thin dark line) right on the side, maximized over +-2 px.
+  Two touching checks meet along a seam thinner than the text-suppression closing, which
+  erases it from the lightness map every other signal reads.
 
 Samples falling outside the image count as supported (the check runs out of frame).
 
@@ -114,8 +117,10 @@ def measure_side_border_support(
     )
 
     normal_gradient = np.zeros(len(sample_points))
+    seam_residue = np.zeros(len(sample_points))
     for offset in GRADIENT_SEARCH_OFFSETS_PIXELS:
         shifted_points = sample_points + offset * inward_normal
+        seam_residue = np.maximum(seam_residue, sample_map_at_points(channels.print_residue, shifted_points))
         gradient_x = sample_map_at_points(channels.gradient_x, shifted_points)
         gradient_y = sample_map_at_points(channels.gradient_y, shifted_points)
         normal_gradient = np.maximum(normal_gradient, np.abs(gradient_x * inward_normal[0] + gradient_y * inward_normal[1]))
@@ -139,6 +144,7 @@ def measure_side_border_support(
             normal_gradient / config.edge_support_gradient_threshold,
             color_distance / config.edge_support_color_threshold,
             texture_contrast / config.edge_support_texture_threshold,
+            seam_residue / config.edge_support_seam_residue_threshold,
         ]
     )
     signal_ratio = np.where(out_of_frame, 1.0, np.minimum(signal_ratio, MAXIMUM_STRENGTH_RATIO))
