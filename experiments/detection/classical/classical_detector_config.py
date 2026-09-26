@@ -48,6 +48,8 @@ class ClassicalDetectorConfig:
     line_maximum_gap_fraction: float = 0.006  # HoughLinesP gap bridging
     line_merge_gap_fraction: float = 0.03  # collinear pieces closer than this are fused
     line_maximum_segments: int = 120
+    line_maximum_pairs: int = 1500
+    line_maximum_hypotheses: int = 400
     line_parallel_tolerance_degrees: float = 7.0
     line_perpendicular_tolerance_degrees: float = 10.0
     line_minimum_separation_fraction: float = 0.03
@@ -88,9 +90,13 @@ class ClassicalDetectorConfig:
     maximum_interior_seam_strength: float = 0.7
     minimum_line_hypothesis_score: float = 0.75  # line-only quads need stronger borders
 
+    # Selection rank = score + 0.25 * rectangularity + this * weakest side's border strength.
+    weakest_side_strength_rank_weight: float = 0.0
+
     # Selection: duplicates above this IoU are suppressed; overlaps are resolved by score.
     duplicate_iou_threshold: float = 0.5
     maximum_contained_fraction: float = 0.75  # smaller quad mostly inside a larger kept one
+    relative_area_floor: float = 0.3  # of the median kept quad area; smaller ones are fragments
     maximum_covered_fraction: float = 0.6  # candidate area already covered by the union of kept quads
 
     # Full-resolution sub-pixel side refinement.

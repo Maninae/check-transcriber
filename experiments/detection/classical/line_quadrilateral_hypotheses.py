@@ -14,7 +14,11 @@ a white sheet) or when checks touch; their straight borders still show. Construc
    perspective is preserved, else a perpendicular).
 
 Hypotheses are deliberately generous; the shared snap / border / interior verification
-decides which are checks.
+decides which are checks. Straight-line textures (gingham, tartan, tile grids) would make
+this combinatorial, so it is budgeted: pairs are visited longest first up to
+`line_maximum_pairs`, each pair keeps its longest `MAXIMUM_CAPS_PER_PAIR` caps, and only
+the `line_maximum_hypotheses` best-supported hypotheses are returned (support = how much of
+the four sides observed segments cover).
 """
 
 import numpy as np
@@ -27,6 +31,8 @@ MINIMUM_SPAN_COVERAGE_FRACTION = 0.4  # each pair segment must cover this much o
 MINIMUM_CAP_COVERAGE_FRACTION = 0.5  # an end cap must span this much of the pair separation
 POSITION_DEDUPLICATION_PIXELS = 4.0
 HYPOTHESIS_DEDUPLICATION_GRID_PIXELS = 6.0
+MAXIMUM_CAPS_PER_PAIR = 6
+CAP_SUPPORT_WEIGHT = 0.5  # a real cap line at an end adds this much support per end
 
 
 def segment_lines(segments: np.ndarray) -> np.ndarray:
@@ -57,6 +63,8 @@ def build_line_quadrilateral_hypotheses(
     angle_difference = np.abs(angles[:, None] - angles[None, :])
     angle_difference = np.minimum(angle_difference, 180.0 - angle_difference)
     first_indices, second_indices = np.nonzero(np.triu(angle_difference < parallel_tolerance, k=1))
+    pair_order = np.argsort(-(lengths[first_indices] + lengths[second_indices]))[: config.line_maximum_pairs]
+    first_indices, second_indices = first_indices[pair_order], second_indices[pair_order]
     perpendicular_mask = np.abs(angle_difference - 90.0) < config.line_perpendicular_tolerance_degrees
 
     hypotheses = []
@@ -77,13 +85,19 @@ def build_line_quadrilateral_hypotheses(
 
         # candidate end positions: the pair's extent ends, plus perpendicular caps between the lines
         end_positions = [(min(first_interval[0], second_interval[0]), None), (max(first_interval[1], second_interval[1]), None)]
-        for cap_index in np.flatnonzero(perpendicular_mask[first_index] & perpendicular_mask[second_index]):
+        cap_indices = np.flatnonzero(perpendicular_mask[first_index] & perpendicular_mask[second_index])
+        cap_indices = cap_indices[np.argsort(-lengths[cap_indices])]
+        accepted_cap_count = 0
+        for cap_index in cap_indices:
+            if accepted_cap_count >= MAXIMUM_CAPS_PER_PAIR:
+                break
             cap_points = segments[cap_index].reshape(2, 2) - origin
             cap_normal_extent = sorted((cap_points @ normal).tolist())
             pair_normal_extent = sorted([0.0, float(second_offsets.mean())])
             if interval_overlap(tuple(cap_normal_extent), tuple(pair_normal_extent)) < MINIMUM_CAP_COVERAGE_FRACTION * separation:
                 continue
             end_positions.append((float((cap_points @ direction).mean()), cap_index))
+            accepted_cap_count += 1
         end_positions.sort(key=lambda item: item[0])
         deduplicated_positions = []
         for position, cap_index in end_positions:
@@ -101,11 +115,13 @@ def build_line_quadrilateral_hypotheses(
                 aspect = max(span, separation) / max(min(span, separation), 1e-6)
                 if not aspect_low <= aspect <= aspect_high:
                     continue
-                if min(
-                    interval_overlap(first_interval, (start_position, end_position)),
-                    interval_overlap(second_interval, (start_position, end_position)),
-                ) < MINIMUM_SPAN_COVERAGE_FRACTION * span:
+                first_coverage = interval_overlap(first_interval, (start_position, end_position))
+                second_coverage = interval_overlap(second_interval, (start_position, end_position))
+                if min(first_coverage, second_coverage) < MINIMUM_SPAN_COVERAGE_FRACTION * span:
                     continue
+                support = (first_coverage + second_coverage) / (2.0 * span) + CAP_SUPPORT_WEIGHT * (
+                    (start_cap is not None) + (end_cap is not None)
+                ) / 2.0
                 end_lines = []
                 for position, cap_index in ((start_position, start_cap), (end_position, end_cap)):
                     if cap_index is not None:
@@ -120,8 +136,9 @@ def build_line_quadrilateral_hypotheses(
                 ]
                 if any(corner is None for corner in corners):
                     continue
-                hypotheses.append(order_corners_clockwise(np.array(corners)))
-    return deduplicate_hypotheses(hypotheses)
+                hypotheses.append((support, order_corners_clockwise(np.array(corners))))
+    hypotheses.sort(key=lambda item: item[0], reverse=True)
+    return deduplicate_hypotheses([corners for _, corners in hypotheses])[: config.line_maximum_hypotheses]
 
 
 def deduplicate_hypotheses(hypotheses: list[np.ndarray]) -> list[np.ndarray]:

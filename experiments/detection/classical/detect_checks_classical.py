@@ -105,7 +105,9 @@ def verify_fitted_quadrilateral(
         score=evidence.score,
         rectangularity=fitted_quad.rectangularity,
         side_supports=evidence.side_supports,
+        side_strengths=evidence.side_strengths,
         source_name=fitted_quad.source_name,
+        weakest_side_strength_rank_weight=config.weakest_side_strength_rank_weight,
     )
 
 

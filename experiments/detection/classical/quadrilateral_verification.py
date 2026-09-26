@@ -43,6 +43,7 @@ GRADIENT_SEARCH_OFFSETS_PIXELS = (-2.0, -1.0, 0.0, 1.0, 2.0)
 COLOR_SAMPLE_OFFSET_PIXELS = 4.0
 MEAN_SUPPORT_WEIGHT = 0.6
 SECOND_WEAKEST_SUPPORT_WEIGHT = 0.4
+MAXIMUM_STRENGTH_RATIO = 3.0
 
 
 @dataclass
@@ -50,6 +51,7 @@ class QuadrilateralEvidence:
     """Per-side border support and the combined verification score."""
 
     side_supports: np.ndarray  # (4,) fraction of samples on a border
+    side_strengths: np.ndarray  # (4,) mean border-signal ratio to its threshold, clipped at 3
     score: float
 
 
@@ -95,8 +97,14 @@ def measure_side_border_support(
     inward_normal: np.ndarray,
     channels: WorkingImageChannels,
     config: ClassicalDetectorConfig,
-) -> float:
-    """Fraction of samples along one side where at least one border signal fires."""
+) -> tuple[float, float]:
+    """(support, strength) of one side.
+
+    support: fraction of samples where at least one border signal fires.
+    strength: mean over samples of the strongest signal's ratio to its threshold, clipped at
+    `MAXIMUM_STRENGTH_RATIO`; out-of-frame samples count as exactly 1 (threshold level), so a
+    side resting on the image border never outranks a real, strong border.
+    """
     image_height, image_width = channels.lightness.shape
     fractions = np.linspace(SIDE_END_EXCLUSION_FRACTION, 1.0 - SIDE_END_EXCLUSION_FRACTION, config.boundary_samples_per_side)
     sample_points = side_start + fractions[:, None] * (side_end - side_start)
@@ -126,13 +134,16 @@ def measure_side_border_support(
         channels.texture_std, sample_points - texture_offset * inward_normal
     ) - sample_map_at_points(channels.texture_std, sample_points + texture_offset * inward_normal)
 
-    on_border = (
-        (normal_gradient > config.edge_support_gradient_threshold)
-        | (color_distance > config.edge_support_color_threshold)
-        | (texture_contrast > config.edge_support_texture_threshold)
-        | out_of_frame
+    signal_ratio = np.maximum.reduce(
+        [
+            normal_gradient / config.edge_support_gradient_threshold,
+            color_distance / config.edge_support_color_threshold,
+            texture_contrast / config.edge_support_texture_threshold,
+        ]
     )
-    return float(on_border.mean())
+    signal_ratio = np.where(out_of_frame, 1.0, np.minimum(signal_ratio, MAXIMUM_STRENGTH_RATIO))
+    on_border = (signal_ratio > 1.0) | out_of_frame
+    return float(on_border.mean()), float(signal_ratio.mean())
 
 
 def measure_quadrilateral_evidence(
@@ -140,15 +151,17 @@ def measure_quadrilateral_evidence(
 ) -> QuadrilateralEvidence:
     """Border support of all four sides and the combined score."""
     centroid = corners.mean(axis=0)
-    side_supports = []
+    side_supports, side_strengths = [], []
     for side_index in range(4):
         side_start, side_end = corners[side_index], corners[(side_index + 1) % 4]
         side_vector = side_end - side_start
         normal = np.array([-side_vector[1], side_vector[0]]) / max(float(np.linalg.norm(side_vector)), 1e-9)
         side_midpoint = (side_start + side_end) / 2.0
         inward_normal = normal if float((centroid - side_midpoint) @ normal) > 0 else -normal
-        side_supports.append(measure_side_border_support(side_start, side_end, inward_normal, channels, config))
+        support, strength = measure_side_border_support(side_start, side_end, inward_normal, channels, config)
+        side_supports.append(support)
+        side_strengths.append(strength)
     side_supports = np.array(side_supports)
     second_weakest_support = float(np.sort(side_supports)[1])
     score = MEAN_SUPPORT_WEIGHT * float(side_supports.mean()) + SECOND_WEAKEST_SUPPORT_WEIGHT * second_weakest_support
-    return QuadrilateralEvidence(side_supports, score)
+    return QuadrilateralEvidence(side_supports, np.array(side_strengths), score)

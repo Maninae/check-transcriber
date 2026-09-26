@@ -10,6 +10,10 @@ rectangularity), with two suppression rules:
 - coverage: most of the candidate's area is already covered by the union of kept quads
   (a line-built quad spanning two found checks and the gap between them).
 
+Finally, a scene-level size prior: checks in one photo share the camera distance, so a
+kept quad smaller than `relative_area_floor` x the median kept area is a fragment (a
+printed box or a shadow-split piece of a check) and is dropped.
+
 Genuinely overlapping checks (a stack in `loose_overlap`) share far less than the
 duplicate threshold, so both survive.
 """
@@ -37,12 +41,24 @@ class VerifiedCandidate:
     score: float
     rectangularity: float
     side_supports: np.ndarray
+    side_strengths: np.ndarray
     source_name: str
+    weakest_side_strength_rank_weight: float = 0.0
 
     @property
     def rank_value(self) -> float:
-        """Sort key: edge evidence first, rectangularity as a softer tie-breaker."""
-        return self.score + RECTANGULARITY_RANK_WEIGHT * min(self.rectangularity, 1.0)
+        """Sort key: edge evidence, then border strength and rectangularity as tie-breakers.
+
+        The weakest side's strength matters most: a quad overshooting a check's end along a
+        collinear background line has one weak, borrowed side (or an image-border side,
+        which only scores the threshold level) and loses to the tight quad.
+        """
+        weakest_side_strength = float(np.min(self.side_strengths))
+        return (
+            self.score
+            + RECTANGULARITY_RANK_WEIGHT * min(self.rectangularity, 1.0)
+            + self.weakest_side_strength_rank_weight * weakest_side_strength
+        )
 
 
 def is_suppressed_by_kept(
@@ -83,4 +99,12 @@ def select_non_overlapping_candidates(
             continue
         kept_candidates.append(candidate)
         cv2.fillConvexPoly(kept_union_mask, np.rint(candidate.corners).astype(np.int32), 1)
-    return kept_candidates
+    return drop_fragments_by_relative_area(kept_candidates, config.relative_area_floor)
+
+
+def drop_fragments_by_relative_area(candidates: list[VerifiedCandidate], relative_area_floor: float) -> list[VerifiedCandidate]:
+    """Remove quads much smaller than the scene's median kept quad (needs 2+ candidates)."""
+    if len(candidates) < 2:
+        return candidates
+    median_area = float(np.median([quadrilateral_area(candidate.corners) for candidate in candidates]))
+    return [candidate for candidate in candidates if quadrilateral_area(candidate.corners) >= relative_area_floor * median_area]
