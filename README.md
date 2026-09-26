@@ -59,7 +59,7 @@ python -m synth.dataset.ocr_crop_grid DIR --out /tmp/ocr_grid.png --split val
 python -m synth.dataset.showcase_images DIR --out /tmp/showcase --print-page PRINT_DIR/print_sheet__page=02.png
 ```
 
-Backgrounds are read recursively from the accepted subfolders of `/Volumes/vega/datasets/check-transcriber/backgrounds/` (`flux/` generated, `photos/` real; `rejected/` and anything else is ignored). A background's id is its path relative to that root, and ids are what the split assigns.
+Backgrounds are read recursively from the accepted subfolders of `/Volumes/vega/datasets/check-transcriber/backgrounds/` (`flux/` generated, `photos/` own real photos, `web/` CC0 / public-domain downloads; `rejected/` and anything else is ignored). A background's id is its path relative to that root, and ids are what the split assigns.
 
 Generating backgrounds (local FLUX.1-schnell 4-bit via mflux, one process at a time, ~100 s per 1024x768 image on the 16 GB Mac mini, resumable):
 
@@ -71,6 +71,20 @@ Generating backgrounds (local FLUX.1-schnell 4-bit via mflux, one process at a t
 ```
 
 FLUX paints every noun it reads, so the prompt vocabulary (`synth/backgrounds/background_prompts.py`) never names a device, a light source, furniture, a room, "household" or "indoor", and never asks for tilt. Screen each image by eye; move failures to `backgrounds/rejected/` with a line in `REJECTED.md`.
+
+Downloading backgrounds (keyless; Poly Haven and ambientCG textures, Openverse and Wikimedia Commons photos; resumable, ~1 h for a full pass):
+
+```
+CHECK_SYNTH_FETCH_CONTACT="you@example.org" \
+/Volumes/vega/datasets/check-transcriber/venv/bin/python -m synth.backgrounds.fetch_web_backgrounds \
+  --output /Volumes/vega/datasets/check-transcriber/backgrounds/web
+```
+
+- License: CC0 or public domain only (these images train a model that ships publicly). Openverse and Commons are checked per image from their own metadata; Poly Haven and ambientCG are CC0 site-wide. No CC BY, no "free with attribution", no unknown. Pexels, Pixabay and Unsplash are not used (keys or license terms).
+- `web/SOURCES.jsonl` has one row per kept file: source, page and image URL, author, license and where it was read, title, category, fetch date, and how the texture was scaled. `web/FETCH_SKIPS.jsonl` logs every candidate dropped automatically (license, too small, flat, oversaturated, near-duplicate, download error) so reruns skip it.
+- Textures with a known physical size are tiled 2x2 or centre-cropped towards ~600 mm across, so weave and grain match a phone photo of a few checks on a table.
+- Near-duplicates (against everything under `backgrounds/`, rejected included) are caught by a two-band perceptual signature (`synth/backgrounds/perceptual_duplicate_index.py`).
+- Then screen by eye: reject text, logos, watermarks, people, hands, objects on the surface, room or side views, extreme perspective, and non-surfaces (bark, gravel, walls); move them to `backgrounds/rejected/web/` with a line in `rejected/REJECTED.md`. Their file names stay known, so a rerun never fetches them again.
 
 ## Output layout
 
