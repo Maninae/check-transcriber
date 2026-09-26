@@ -29,7 +29,7 @@ class ClassicalDetectorConfig:
     canny_threshold_pairs: tuple[tuple[float, float], ...] = ((20.0, 50.0), (40.0, 100.0))
     canny_dilation_pixels: int = 2
     use_chroma_edges: bool = True  # OR Canny of amplified Lab a/b into every Canny edge map
-    chroma_edge_gain: float = 4.0
+    chroma_edge_gain: float = 6.0  # tuned (sweep_v2)
     use_hole_filled_edges: bool = True  # also offer each Canny map with enclosed holes filled
     # Textured masks (for plain white sheets, where the check's security print is the texture).
     textured_std_thresholds: tuple[float, ...] = (3.0,)
@@ -79,7 +79,7 @@ class ClassicalDetectorConfig:
     edge_support_texture_threshold: float = 4.0  # outer minus inner local std
     edge_support_seam_residue_threshold: float = 30.0  # thin dark line on the side (print residue)
     minimum_edge_support: float = 0.45
-    minimum_verification_score: float = 0.65  # tuned (sweep_v1)
+    minimum_verification_score: float = 0.75  # tuned (sweep_v2)
 
     # Interior appearance gate (a check has print on smooth, bright, near-neutral paper).
     print_residue_threshold: float = 20.0
@@ -90,7 +90,7 @@ class ClassicalDetectorConfig:
 
     # Interior seam gate: a straight strong border across the interior means a spanning quad.
     seam_gradient_threshold: float = 16.0
-    maximum_interior_seam_strength: float = 0.55  # tuned (sweep_v1)
+    maximum_interior_seam_strength: float = 0.45  # tuned (sweep_v2)
     minimum_line_hypothesis_score: float = 0.9  # line-only quads need stronger borders, tuned (sweep_v1)
 
     # Selection rank = score + 0.25 * rectangularity + this * weakest side's border strength.
