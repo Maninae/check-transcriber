@@ -2,3 +2,23 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+/out/
+
+# Generated media and fonts belong on the data drive, never in the Python packages (app/ assets are unaffected).
+/synthetic_checks/**/*.jpg
+/synthetic_checks/**/*.png
+/synthetic_checks/**/*.pdf
+/synthetic_checks/**/*.ttf
+/synthetic_backgrounds/**/*.jpg
+/synthetic_backgrounds/**/*.png
+/synthetic_backgrounds/**/*.pdf
+/synthetic_backgrounds/**/*.ttf
+/scene_composer/**/*.jpg
+/scene_composer/**/*.png
+/scene_composer/**/*.pdf
+/scene_composer/**/*.ttf
+/dataset_builder/**/*.jpg
+/dataset_builder/**/*.png
+/dataset_builder/**/*.pdf
+/dataset_builder/**/*.ttf
