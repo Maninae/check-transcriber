@@ -8,6 +8,8 @@ tight box in check pixels. Layers, each multiplied into the one below (print_mod
 3. pen: handwritten fields via the Writer contract (C1), drawn on a transparent layer, then multiplied.
 `simulate_print_texture=False` gives the clean version for print sheets (a real printer and paper
 add their own toner and fibre): flat paper, crisp text, no misregistration, full rectangle alpha.
+`leave_handwriting_blank=True` is the hand-fill print mode: every field a person would write stays
+empty (no pen layer, no legal-line dash), and its label box is the blank's writing region, not ink.
 """
 
 import dataclasses
@@ -34,14 +36,20 @@ HANDWRITING_EM_RANGE_INCHES = (0.13, 0.18)
 LEGAL_DASH_MIN_GAP_INCHES = 0.35       # draw the trailing dash only when this much line is left
 LEGAL_DASH_PROBABILITY = 0.7
 LEFT_PERFORATION_PROBABILITY = 0.85
+BLANK_REGION_ABOVE_BASELINE_EM = 1.0   # hand-fill: where a person's writing is expected, relative to the slot
+BLANK_REGION_BELOW_BASELINE_EM = 0.3
+SERIAL_FONT_ID = "courier_prime"
+SERIAL_MICR_CLEARANCE_INCHES = 0.06    # hand-fill's longer serial (S-0007-B) slides left to keep this gap to the MICR
+SERIAL_MIN_LEFT_INCHES = 0.12          # ...but no closer than this to the check's left edge
 
 
 class CheckFiller:
     """Writes one check's content onto a copy of its stock: laser text into `image`, pen strokes into `pen_layer`."""
 
     def __init__(self, template: TemplateDesign, content: CheckContent, image: np.ndarray, writer: Writer,
-                 rng: np.random.Generator, dpi: int, textured: bool):
+                 rng: np.random.Generator, dpi: int, textured: bool, leave_handwriting_blank: bool = False):
         self.template, self.content, self.writer, self.rng, self.dpi = template, content, writer, rng, dpi
+        self.leave_handwriting_blank = leave_handwriting_blank
         self.laser = LaserPrinter(image, rng, textured)
         self.pen_layer = Image.new("RGBA", (image.shape[1], image.shape[0]), (0, 0, 0, 0))
         self.fields: list[FieldLabel] = []
@@ -53,9 +61,11 @@ class CheckFiller:
             self.fields.append(FieldLabel(field_name.value, text, tuple(int(v) for v in box), handwritten))
 
     def handwrite(self, text: str, slot: TextSlot, is_signature: bool = False):
-        """Write `text` in the slot with this check's writer (C1); return the ink box or None."""
+        """Write `text` in the slot with this check's writer (C1); return the ink box, or the blank region in hand-fill."""
         low, high = (inches_to_px(bound, self.dpi) for bound in HANDWRITING_EM_RANGE_INCHES)
         em = slot.em_px if is_signature else int(np.clip(slot.em_px, low, high))
+        if self.leave_handwriting_blank:
+            return blank_writing_region(slot, em, self.pen_layer.size) if text.strip() else None
         return draw_handwritten_field(self.pen_layer, text, self.writer, em, (slot.x, slot.baseline_y), slot.max_width,
                                       self.rng, is_signature=is_signature)
 
@@ -140,7 +150,7 @@ class CheckFiller:
         self.fill(FieldName.PAYEE, content.payee_text, slots.payee)
         self.fill(FieldName.AMOUNT_NUMERIC, content.amount_numeric_text, slots.amount_numeric)
         words_box = self.fill(FieldName.AMOUNT_WORDS, content.amount_words_text, slots.amount_words)
-        if words_box is not None and "amount_words" in content.handwritten_fields:
+        if words_box is not None and "amount_words" in content.handwritten_fields and not self.leave_handwriting_blank:
             self.legal_line_dash(words_box, slots.amount_words)
         self.fill(FieldName.MEMO, content.memo_text, slots.memo)
         self.add_field(FieldName.SIGNATURE, content.signature_text, self.handwrite(content.signature_text, slots.signature, True), True)
@@ -149,8 +159,10 @@ class CheckFiller:
         self.add_field(FieldName.MICR, content.micr_readable_text,
                        self.laser.print_in_slot(content.micr_font_text, "gnu_micr", slots.micr, TONER_RGB, micr_em), False)
         if content.serial:
+            serial_slot = serial_slot_clear_of_micr(slots.serial, slots.micr, content.serial, self.dpi) \
+                if self.leave_handwriting_blank else slots.serial
             self.add_field(FieldName.SERIAL, content.serial,
-                           self.laser.print_in_slot(content.serial, "courier_prime", slots.serial, PRINTED_INK_RGB), False)
+                           self.laser.print_in_slot(content.serial, SERIAL_FONT_ID, serial_slot, PRINTED_INK_RGB), False)
 
     def multiply_pen_layer(self) -> None:
         """Multiply the pen strokes into the image (only the region that has ink)."""
@@ -159,6 +171,26 @@ class CheckFiller:
             return
         x0, y0, x1, y1 = ink_region
         multiply_rgba_layer(self.laser.image, np.asarray(self.pen_layer.crop(ink_region)), x0, y0)
+
+
+def blank_writing_region(slot: TextSlot, em_px: int, image_size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """The area a person writes in for this slot: its full width, about one em above to 0.3 em below the line."""
+    x0 = max(0, int(slot.x))
+    y0 = max(0, int(slot.baseline_y - BLANK_REGION_ABOVE_BASELINE_EM * em_px))
+    x1 = min(image_size[0], int(slot.x + slot.max_width))
+    y1 = min(image_size[1], int(slot.baseline_y + BLANK_REGION_BELOW_BASELINE_EM * em_px))
+    return x0, y0, x1, y1
+
+
+def serial_slot_clear_of_micr(serial: TextSlot, micr: TextSlot, text: str, dpi: int) -> TextSlot:
+    """Move a serial that shares the MICR row left until it clears the MICR line; shrink it only if that is not enough."""
+    clearance = inches_to_px(SERIAL_MICR_CLEARANCE_INCHES, dpi)
+    same_row = abs(serial.baseline_y - micr.baseline_y) < 2 * serial.em_px and serial.x < micr.x
+    text_width = load_font(SERIAL_FONT_ID, serial.em_px).getlength(text)
+    if not same_row or serial.x + text_width + clearance <= micr.x:
+        return serial
+    left = max(min(serial.x, inches_to_px(SERIAL_MIN_LEFT_INCHES, dpi)), micr.x - clearance - text_width)
+    return dataclasses.replace(serial, x=left, max_width=min(serial.max_width, micr.x - clearance - left))
 
 
 def fractional_routing_text(routing_number: str) -> str:
@@ -174,6 +206,7 @@ def render_check(
     handwriting_font_ids: list[str] | None = None,
     signature_font_ids: list[str] | None = None,
     simulate_print_texture: bool = True,
+    leave_handwriting_blank: bool = False,
 ) -> tuple[Image.Image, CheckLabel]:
     """Render `content` onto `template`. Returns (RGBA image, label with tight field boxes); see module docstring.
 
@@ -184,7 +217,7 @@ def render_check(
     height, width = stock.rgb.shape[:2]
     image = stock.rgb.astype(np.float32) * (1.0 / 255.0)
     writer = sample_writer(rng, content.ink_rgb, handwriting_font_ids, signature_font_ids)
-    filler = CheckFiller(template, content, image, writer, rng, dpi, simulate_print_texture)
+    filler = CheckFiller(template, content, image, writer, rng, dpi, simulate_print_texture, leave_handwriting_blank)
     filler.fill_all(stock.slots)
     filler.multiply_pen_layer()
 
@@ -220,4 +253,7 @@ def render_check(
             "perforated_side": perforated_side,
         },
     )
+    if leave_handwriting_blank:  # no pen touched this check: drop the writer, record the mode
+        label.canonical.update(handwriting_font_id=None, signature_font_id=None, pen_width_px=None, writer=None,
+                               handwriting_left_blank=True)
     return Image.fromarray(rgba, "RGBA"), label
