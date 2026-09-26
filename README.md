@@ -54,9 +54,23 @@ python -m synth.dataset.contact_sheet DIR --out /tmp/sheet.png
 
 # visual QA: OCR field crops with their ground-truth text underneath
 python -m synth.dataset.ocr_crop_grid DIR --out /tmp/ocr_grid.png --split val
+
+# presentation: contact sheet, full scene, 3x crop beside a real photo, flat check, print page (JPEGs under 5 MB)
+python -m synth.dataset.showcase_images DIR --out /tmp/showcase --print-page PRINT_DIR/print_sheet__page=02.png
 ```
 
 Backgrounds are read recursively from the accepted subfolders of `/Volumes/vega/datasets/check-transcriber/backgrounds/` (`flux/` generated, `photos/` real; `rejected/` and anything else is ignored). A background's id is its path relative to that root, and ids are what the split assigns.
+
+Generating backgrounds (local FLUX.1-schnell 4-bit via mflux, one process at a time, ~100 s per 1024x768 image on the 16 GB Mac mini, resumable):
+
+```
+~/.claude/skills/flux-image-gen/.venv/bin/python -m synth.backgrounds.generate_flux_backgrounds \
+  --start 0 \
+  --count 300 \
+  --out /Volumes/vega/datasets/check-transcriber/backgrounds/flux
+```
+
+FLUX paints every noun it reads, so the prompt vocabulary (`synth/backgrounds/background_prompts.py`) never names a device, a light source, furniture, a room, "household" or "indoor", and never asks for tilt. Screen each image by eye; move failures to `backgrounds/rejected/` with a line in `REJECTED.md`.
 
 ## Output layout
 
