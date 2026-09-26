@@ -32,4 +32,20 @@ Numbering in reading order, the count header, and the confidence cues in spec 4.
 
 ## Licensing (settled 2026-09-26: the app repo is AGPL-3.0, so option (a) applies)
 
-The ONNX file is derived from Ultralytics' AGPL-3.0 code and pretrained weights. Shipping it inside the public app means either (a) licensing the app repo AGPL-3.0-compatible: the repo is public and serves its own source, so the source-availability duty is already met in practice, (b) buying an Ultralytics Enterprise licence, or (c) swapping in the permissively licensed CenterNet detector in `learned/centernet/`: built and tested, not yet trained, about 2.5 GPU hours, 13.1 MB ONNX, with the same JS post-processing minus NMS.
+The ONNX file is derived from Ultralytics' AGPL-3.0 code and pretrained weights. Shipping it inside the public app means either (a) licensing the app repo AGPL-3.0-compatible: the repo is public and serves its own source, so the source-availability duty is already met in practice, (b) buying an Ultralytics Enterprise licence, or (c) swapping in the permissively licensed CenterNet detector in `learned/centernet/`, which is now the recommended 2b detector (next section).
+
+## The recommended 2b detector: CenterNet (permissive)
+
+- **File:** `centernet-mnv3l__imgsz=768.onnx`, 13.8 MB fp32, opset 17, static 1x3x768x768, sigmoid inside the graph. Native 1-thread forward is 82 ms; expect 150-300 ms single-thread in WASM. Parity with PyTorch: 0.0002 px on 20 scenes.
+- **Pre-processing:** downscale to a long side of 1280 px, letterbox to 768 px square, RGB, ImageNet mean/std normalization. See `learned/centernet/scene_augmentation.py` (`letterbox_scene_for_evaluation`) and `check_scene_dataset.normalize_image_to_tensor`.
+- **Outputs:** `center_heatmap` (1, 1, 192, 192) and `corner_offsets` (1, 8, 192, 192).
+- **Decoding (port `centernet_decoding.py`):**
+  1. Take 3x3 local maxima on the heatmap above the score threshold, top-K.
+  2. For each peak, compute `corner = (cell + 0.5 + offset) * 4` for TL, TR, BR, BL.
+  3. Undo the letterbox and the 1280 downscale.
+- **Then, in order:**
+  1. Duplicate suppression (quad IoU 0.5).
+  2. The count step, which can render now.
+  3. The classical fit inside each detection (`CENTERNET_HYBRID_CONFIG`).
+  4. Corner refinement.
+  5. The orientation classifier, only for replaced quads. CenterNet's own corners are already ordered.

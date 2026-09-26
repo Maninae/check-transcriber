@@ -93,3 +93,15 @@ def apply_hybrid_close_up_fitting(
             replacement = fit_classical_inside_detection(image_bgr, detection, config, classical_config)
         hybrid_detections.append(replacement or detection)
     return hybrid_detections
+
+
+# Tuned on v1 val (250 photos) + close-up val for the CenterNet pipeline, whose corners are
+# coarse everywhere: the classical fitter places the corners of EVERY detection, with a wider
+# crop around CenterNet's looser quads. The dataclass defaults above are the YOLO setting.
+CENTERNET_HYBRID_CONFIG = HybridCloseUpConfig(
+    minimum_frame_fraction=0.0,
+    crop_margin_fraction=0.35,
+    minimum_agreement_iou=0.5,
+    relaxed_maximum_area_fraction=0.97,
+    relaxed_minimum_interior_angle_degrees=35.0,
+)

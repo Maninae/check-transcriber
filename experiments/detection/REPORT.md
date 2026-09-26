@@ -112,24 +112,54 @@ Notes:
 | Artifact | Size | 1 thread | 4 threads | Parity vs PyTorch |
 | :--- | ---: | ---: | ---: | :--- |
 | YOLO fine-tune ONNX at 1024 | 10.2 MB | 90 ms | 67 ms | 0.03 px |
-| CenterNet ONNX at 768 | 13.1 MB | 81 ms | 50 ms | 0.0002 px; the same detections on 20 scenes |
+| CenterNet ONNX at 768 | 13.8 MB | 81 ms | 50 ms | 0.0002 px; the same detections on 20 scenes |
 
 - **Hybrid cost.** It adds about 1 s of classical fitting per frame-filling check. It only fires on checks covering at least 20% of the photo, so single-check photos pay about 1 s and wide shots pay nothing.
 
+## Final: a fully permissive pipeline (CenterNet counts, the classical fitter places every corner)
+
+Takeaway: CenterNet with duplicate suppression, followed by the classical fitter inside EVERY detection (`CENTERNET_HYBRID_CONFIG`), then refinement and the orientation classifier, **gets the count right more often than YOLO in every regime**. Its median corners are equal to YOLO's. Its corner tail is about 2x worse on wide and close shots, and it costs about 2 s more CPU per photo. Every part of it is ours or BSD/MIT/Apache, so the app can drop AGPL.
+
+The settings were chosen on val: margin 0.35, agreement IoU 0.5, frame threshold 0. Each pipeline was scored once on eval.
+
+| Eval set | Pipeline | Precision | Recall | Recall@0.9 | Photos all-correct | Corner median px | p90 | < 5 px % | Orientation |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v1 (750, wide) | YOLO fine-tune + hybrid + refine + orient | 99.2 | 100.0 | **98.9** | 97.9 | **1.24** | **7.4** | 85 | 99.6 |
+| v1 | **CenterNet + dedup + hybrid (every check) + refine + orient** | **99.9** | 99.8 | 92.1 | **99.1** | 1.45 | 17.3 | 75 | 99.6 |
+| close (450) | YOLO fine-tune + hybrid + refine + orient | 99.1 | 100.0 | **98.4** | 97.3 | 3.56 | **18.5** | 57 | 99.2 |
+| close | **CenterNet + dedup + hybrid (every check) + refine + orient** | **99.9** | 100.0 | 92.8 | **99.6** | **3.22** | 31.0 | 58 | 99.0 |
+| single (150) | YOLO fine-tune + hybrid + refine + orient | 93.8 | 100.0 | 94.0 | 96.0 | 2.89 | **31.2** | 64 | 95.3 |
+| single | **CenterNet + dedup + hybrid (every check) + refine + orient** | **100.0** | 100.0 | 93.3 | **100.0** | **2.73** | 32.7 | 64 | 97.3 |
+
+Cost, per photo:
+
+| | YOLO fine-tune pipeline | CenterNet pipeline |
+| :--- | ---: | ---: |
+| Model download (fp32 ONNX) | 10.2 MB | 13.8 MB |
+| Model forward, native, 1 thread (clean) | 65 ms | 82 ms |
+| Post-processing in Python (classical fits, refine, orient) | 0.2-0.3 s | 1.9-2.3 s |
+| Orientation classifier | 1.9 MB | 1.9 MB |
+| Licence of shipped weights | AGPL-3.0 | ours (torchvision BSD code, ImageNet-pretrained backbone) |
+
+- In the browser, the count step needs only the model and duplicate suppression (about 0.2-0.3 s in WASM). The per-check classical fits (about 0.3-0.4 s each in Python, likely more in OpenCV.js) can run while the operator reviews the count, before rectification. That keeps the spec's 3 s paste-to-count budget.
+
 ## Recommendation
 
-Updated 2026-09-26, after the close-up round.
+Final, 2026-09-26.
 
 1. **Milestone 2 (now): classical + refine + orient.**
-   - Unchanged: the count step's add/remove flow covers its misses.
-   - Expect it to be weakest exactly where the operator shoots: one frame-filling check (82% of such photos entirely right), and 4-6 close checks (69%).
-2. **Milestone 2b (the real detector): YOLO + hybrid + refine + orient.**
-   - Ship the fine-tuned checkpoint (selected on val): 97-98% of photos entirely right in every regime, and single-check corners at a median of about 2.9 px.
-   - The repo is AGPL-3.0, so shipping it is allowed.
-   - The hybrid needs the classical detector in the browser anyway, and milestone 2 ships it.
-3. **Permissive fallback: CenterNet + dedup + hybrid + refine.**
-   - Built and trained. It is the best counter and fully ours, but its corners need more training before it can replace YOLO.
-   - A cheap, strong combination to test next: CenterNet decides how many checks there are and roughly where, and the hybrid/refine stages place the corners.
+   - Unchanged, and the permissive baseline.
+   - It is weakest exactly where the operator shoots (69% / 82% of close / single photos all-correct), and the count step's add/remove flow covers that.
+2. **Milestone 2b: ship the permissive pipeline, CenterNet + dedup + hybrid (every check) + refine + orient, and drop AGPL.** Why:
+   - **It is the best counter.** 99.1-100% of photos entirely right in every regime, vs 96.0-97.9% for YOLO. The spec calls a wrong count the costliest error, and this closes most of it.
+   - **Median corners match YOLO** (1.45 / 3.22 / 2.73 px vs 1.24 / 3.56 / 2.89 px).
+   - **It is fully ours.** Owen prefers dropping AGPL.
+   - **It reuses what milestone 2 already ships** (the classical fitter and OpenCV.js). The only new download is a 13.8 MB model.
+   - **What it gives up:**
+     - A worse corner tail: p90 17-31 px vs 7-18 px. About 1 check in 10 keeps CenterNet's coarse corners because the classical fit did not agree, and the operator may need to drag a corner.
+     - About 2 s more CPU per photo, spent after the count step.
+   - **Fixing the tail is a training job, not a new design:** a longer run at 1024 px, or a per-corner heatmap head. Either should make CenterNet's own corners good enough that the classical fit matters less.
+3. **Keep YOLO fine-tune + hybrid as the reference, not the shipped model.** It has the tightest corners (p90 7-31 px), but it is AGPL and gets fewer photos entirely right.
 4. **Before trusting any of this: the printed mock-check photo set (spec section 8).** All numbers here are synthetic.
 
 ## AGPL note
@@ -137,7 +167,7 @@ Updated 2026-09-26, after the close-up round.
 Ultralytics (the training code and the `yolo26n-obb.pt` pretrained weights) is AGPL-3.0, so the trained model and its ONNX export carry AGPL obligations. Training and evaluating here is fine. Shipping it in the public app needs one of three things:
 - (a) the app repo licensed AGPL-compatible. It is already a public static site serving its own source, so the practical cost is the licence choice itself.
 - (b) an Ultralytics Enterprise licence.
-- (c) the permissively licensed CenterNet detector we built (`learned/centernet/`: MobileNetV3 with BSD-3 code, ordered corners, no NMS, 13.1 MB ONNX with verified parity).
+- (c) the permissively licensed CenterNet detector we built (`learned/centernet/`: MobileNetV3 with BSD-3 code, ordered corners, no NMS, 13.8 MB ONNX with verified parity; trained and scored 2026-09-26, and now the recommended 2b detector).
   - Trained 2026-09-26; results in the close-up round section.
   - Its ordered-corner regression can also predict a corner hidden under another check, which a box cannot.
 

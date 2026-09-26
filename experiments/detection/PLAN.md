@@ -43,3 +43,4 @@ Goal: from a phone photo of several checks on a household surface, return every 
   - CenterNet (12 epochs, 768 px) is the best counter (99.5-100% of photos all-correct, orientation 100%) but its corners are coarse; duplicate suppression at 0.5 is needed.
   - Bug found and fixed: pooled validation over two datasets collided on scene ids.
   - Artifacts: YOLO fine-tune ONNX 10.2 MB; CenterNet ONNX 13.1 MB.
+- 2026-09-26: final permissive pipeline: CenterNet + dedup + classical fit inside every detection (`CENTERNET_HYBRID_CONFIG`, tuned on val) + refine + orient. Best count in every regime (99.1-100% of photos all-correct); median corners match YOLO; p90 about 2x worse; about 2 s/photo of CPU post-processing. Recommended for 2b so the repo can drop AGPL (REPORT.md, Recommendation). Owner work complete.
