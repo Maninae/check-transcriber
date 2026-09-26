@@ -41,10 +41,20 @@ def predict_scenes_from_downscaled_copies(
 
 
 def run_quick_validation(model: torch.nn.Module, scenes: list[SceneAnnotation], input_size_pixels: int, device: str) -> tuple[float, str]:
-    """(selection metric, headline line) on the given val scenes; restores train mode."""
+    """(selection metric, headline line) on the given val scenes; restores train mode.
+
+    Scene ids repeat across datasets (every set has a `val_000000`), so scenes are scored
+    per dataset and the selection metric is the mean over datasets; pooling them in one
+    scene-id-keyed dict would silently score scenes against another dataset's predictions.
+    """
     model.eval()
-    predictions_by_scene_id = predict_scenes_from_downscaled_copies(model, scenes, input_size_pixels, device)
+    selection_metrics, headlines = [], []
+    for dataset_name in sorted({scene.dataset_name for scene in scenes}):
+        dataset_scenes = [scene for scene in scenes if scene.dataset_name == dataset_name]
+        predictions_by_scene_id = predict_scenes_from_downscaled_copies(model, dataset_scenes, input_size_pixels, device)
+        metrics = score_predictions_against_split(predictions_by_scene_id, dataset_scenes, include_records=False)
+        selection_metric = metrics["detection"][SELECTION_IOU_KEY]["f1"]
+        selection_metrics.append(float(np.nan_to_num(selection_metric if selection_metric is not None else 0.0)))
+        headlines.append(f"{dataset_name}: {headline_summary_line(metrics)}")
     model.train()
-    metrics = score_predictions_against_split(predictions_by_scene_id, scenes, include_records=False)
-    selection_metric = metrics["detection"][SELECTION_IOU_KEY]["f1"]
-    return float(np.nan_to_num(selection_metric if selection_metric is not None else 0.0)), headline_summary_line(metrics)
+    return float(np.mean(selection_metrics)), " || ".join(headlines)
