@@ -27,6 +27,10 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | `js/cdn_config.js` | Every third-party URL, pinned (jsDelivr libraries; the opt-in handwriting reader's Hub files at one revision), plus first-visit transfer sizes. |
 | `models/` | Our own models, all fp32 ONNX: `upside_down_classifier.onnx` (1.9 MB, orientation), and the field readers from `experiments/field_reading/`: `segnet_mobilenetv3l_768.onnx` (12.8 MB, field boxes), `crnn_general_h32.onnx` (8.3 MB), `crnn_amount_h32.onnx` (8.2 MB), `style_classifier_h32.onnx` (0.75 MB). |
 | `sw.js` | Service worker: app-shell + CDN cache-first, offline after first visit. |
+| `favicon.svg`, `favicon.ico`, `icons/` | The app icon (a check on the lavender tile with the yellow underline). `favicon.svg` is the source; the ICO (16+32), the 192/512 PNGs, the opaque 180 px Apple touch icon and the maskable 512 are rendered from it by `docs/images/render_app_icons_and_link_preview.py`. |
+| `manifest.webmanifest` | Install manifest (name, "Checks", standalone, lavender theme, icons), so Chrome/Edge offer "Install" as a desktop app. Needs `manifest-src 'self'` in the CSP. |
+| `preview.png`, `preview-square.png` | Link-preview cards (og:image 1200x630, and 1080x1080), rendered from `docs/images/link_preview_card.html` by the same script. The og:/twitter: tags in `index.html` use absolute `https://maninae.github.io/check-transcriber/` URLs. |
+| `404.html`, `styles/not-found.css` | GitHub Pages' page for bad paths. Served at any wrong path, so its URLs are rooted at `/check-transcriber/`, never relative. No scripts. |
 | `styles/` | One stylesheet per screen; `base.css` holds every colour token (the only hex values), type and shared buttons. |
 | `fonts/` | Poppins Regular and Medium (latin subset woff2, SIL OFL 1.1, licence in `Poppins-OFL.txt`), self-hosted and precached; only Medium is on screen. |
 
@@ -57,6 +61,7 @@ Worker side `js/pipeline/fields/` (reads), main-thread `js/fields/` (gate), `js/
 The Content-Security-Policy is `default-src 'none'` plus a short allow-list. Every directive is commented in place in `index.html` with why it exists; the two non-obvious ones:
 
 - **`'unsafe-eval'` in `script-src` is required, not optional.** The pinned OpenCV.js build's Emscripten embind layer uses `new Function(...)` to build dynamic-call trampolines at load time. `'wasm-unsafe-eval'` alone is not enough — confirmed by testing the exact pinned build under both. If a future OpenCV.js version drops this requirement, you can tighten the CSP then, but verify against the real build first.
+- **`manifest-src 'self'`** exists because `default-src 'none'` would otherwise block `manifest.webmanifest` (verified: Chromium logs a CSP violation and loads no manifest without it). Same-origin only.
 - **`data:` in `connect-src`** is for OpenCV.js's own WASM binary, which is embedded inline as a base64 `data:` URI and loaded via `fetch()` — not for anything this app's own code does.
 - **The CSP covers the pipeline worker only because it starts from a blob: bootstrap** (see `js/pipeline/CLAUDE.md`). A worker loaded from its own URL would get no CSP on GitHub Pages.
 

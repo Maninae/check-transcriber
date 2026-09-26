@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Check Transcriber icon: a check (green outline, payee line, amount box, signature line)
+       over a second check, with the app's yellow hand-drawn underline, on the lavender page.
+       Source of every PNG/ICO icon: docs/images/render_app_icons_and_link_preview.py. -->
+  <rect id="tile" width="64" height="64" rx="14" fill="#edeef8"/>
+  <g id="glyph">
+    <rect x="11" y="14" width="46" height="21" rx="3" transform="rotate(-7 34 24.5)" fill="#dfe1ee" stroke="#8d97a6" stroke-width="2.5"/>
+    <rect x="5" y="24" width="54" height="25" rx="3.5" fill="#ffffff" stroke="#3f6f5b" stroke-width="3.6"/>
+    <rect x="42" y="29.5" width="11" height="6.5" rx="1.2" fill="none" stroke="#3f6f5b" stroke-width="2.6"/>
+    <path d="M11.5 32.8H33" fill="none" stroke="#8d97a6" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M11.5 42.2C18 40.9 24 42.8 31 41.7S45 41 52.5 42" fill="none" stroke="#1d1f24" stroke-width="3" stroke-linecap="round"/>
+    <path d="M8 56.8C20 54.4 32 57.8 44 55.5S54 55 56.5 54.5" fill="none" stroke="#eae085" stroke-width="4.5" stroke-linecap="round"/>
+  </g>
+</svg>

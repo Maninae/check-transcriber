@@ -4,7 +4,26 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Check Transcriber</title>
-<meta name="description" content="Reads printed check fields from a photo, entirely in your browser." />
+<meta name="description" content="Paste a photo of checks. Get them straightened and read. Nothing leaves your computer." />
+<meta name="color-scheme" content="light" />
+<meta name="theme-color" content="#edeef8" />
+<link rel="canonical" href="https://maninae.github.io/check-transcriber/" />
+<!-- Link previews (iMessage, Slack, Threads, etc.): absolute URLs, because crawlers do not resolve relative ones. Images are rendered by docs/images/render_app_icons_and_link_preview.py. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Check Transcriber" />
+<meta property="og:title" content="Check Transcriber" />
+<meta property="og:description" content="Paste a photo of checks. Get them straightened and read. Nothing leaves your computer." />
+<meta property="og:url" content="https://maninae.github.io/check-transcriber/" />
+<meta property="og:image" content="https://maninae.github.io/check-transcriber/preview.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="A photo of five checks on a table, each outlined and numbered, next to the title Check Transcriber." />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Check Transcriber" />
+<meta name="twitter:description" content="Paste a photo of checks. Get them straightened and read. Nothing leaves your computer." />
+<meta name="twitter:image" content="https://maninae.github.io/check-transcriber/preview.png" />
+<meta name="twitter:image:alt" content="A photo of five checks on a table, each outlined and numbered, next to the title Check Transcriber." />
 <!--
   Content-Security-Policy: default-deny, then allow exactly what this app needs.
   The point of locking this down is the trust sentence below ("nothing is
@@ -39,11 +58,13 @@
     from HTTP headers, which GitHub Pages cannot send (verified: a URL-loaded
     worker could fetch any origin; the blob-bootstrapped one is blocked).
   - style-src 'self': every style lives in styles/*.css, no inline styles.
-  - img-src 'self' data:: the favicon below and the small UI icons in
-    styles/*.css (toast tick, copy icon) are data: URIs; every photo and
+  - img-src 'self' data:: the app icons (favicon.svg/.ico, icons/) are same-origin; the
+    small UI icons in styles/*.css (toast tick, copy icon) are data: URIs; every photo and
     check crop is drawn to <canvas>, never <img>, so no other image source is
     needed (and no blob:/object URL of a photo ever exists).
   - font-src 'self': Poppins is self-hosted in fonts/ (OFL); no font request leaves this origin.
+  - manifest-src 'self': the install manifest (manifest.webmanifest). Without it the
+    manifest falls back to default-src 'none' and is blocked; same-origin only.
   - base-uri 'none', form-action 'none', object-src 'none',
     frame-ancestors 'none': no injected <base>, no form ever submits anywhere
     (there is no <form> at all), no plugin embeds, page is never framed.
@@ -56,13 +77,17 @@
   style-src 'self';
   img-src 'self' data:;
   font-src 'self';
+  manifest-src 'self';
   base-uri 'none';
   form-action 'none';
   object-src 'none';
   frame-ancestors 'none';
 " />
-<!-- Empty data-URI favicon: suppresses the browser's automatic /favicon.ico request (which img-src would otherwise have to allow) rather than shipping an icon file this milestone doesn't need. -->
-<link rel="icon" href="data:," />
+<!-- Icons and the install manifest, all same-origin and precached (sw.js). favicon.ico is for browsers that ignore SVG icons. -->
+<link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+<link rel="icon" sizes="32x32" href="./favicon.ico" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<link rel="manifest" href="./manifest.webmanifest" />
 <!-- Poppins Medium is the only weight on screen (title, headings, buttons); preload it so they do not flash the fallback. -->
 <link rel="preload" href="./fonts/poppins-latin-medium.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="./styles/base.css" />

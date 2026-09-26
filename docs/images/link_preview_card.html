@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!-- The link-preview card (og:image). Rendered to app/preview.png (1200x630) and
+     app/preview-square.png (1080x1080) by render_app_icons_and_link_preview.py, which
+     fills PHOTO_DATA_URI with a crop of count-step.png and sets <body class>. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  @font-face { font-family: "Poppins"; font-weight: 500; src: url("../../app/fonts/poppins-latin-medium.woff2") format("woff2"); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: #edeef8; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #1d1f24; overflow: hidden; }
+  .card { display: flex; align-items: center; gap: 44px; }
+  .wide .card { width: 1200px; height: 630px; padding: 0 44px 0 64px; }
+  .square .card { width: 1080px; height: 1080px; padding: 64px 72px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 48px; }
+  .text { flex: 0 0 auto; }
+  .wide .text { width: 404px; }
+  .title { font-family: "Poppins", sans-serif; font-weight: 500; font-size: 64px; line-height: 1.08; letter-spacing: -0.01em; }
+  .square .title { font-size: 76px; }
+  .square .title br { display: none; }
+  .title span { display: inline-block; padding-bottom: 0.1em;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6.5C28 4 52 7.5 80 5.6S134 3.4 160 5.2 190 6.8 198 4.6' fill='none' stroke='%23eae085' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E") left bottom 0.02em / 100% 0.3em no-repeat; }
+  .line { margin-top: 30px; font-size: 27px; line-height: 1.4; color: #5b6b71; }
+  .line b { display: block; font-weight: 400; }
+  .line b:last-child { color: #3f6f5b; font-weight: 600; }
+  .square .line { font-size: 34px; margin-top: 36px; }
+  .square .line b { display: inline; }
+  .photo { flex: 1 1 auto; min-width: 0; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(28,30,40,.10), 0 18px 40px -12px rgba(28,30,40,.28); }
+  .photo img { display: block; width: 100%; }
+  .square .photo { width: 100%; flex: 0 0 auto; }
+</style>
+</head>
+<body class="wide">
+  <div class="card">
+    <div class="text">
+      <h1 class="title">Check <br /><span>Transcriber</span></h1>
+      <p class="line"><b>Paste a photo of checks.</b> <b>Get them straightened and read.</b> <b>Nothing leaves your computer.</b></p>
+    </div>
+    <div class="photo"><img alt="" src="PHOTO_DATA_URI" /></div>
+  </div>
+</body>
+</html>
