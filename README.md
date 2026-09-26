@@ -9,7 +9,7 @@ Live site (once deployed): `https://maninae.github.io/check-transcriber/`
 This repo holds three areas:
 
 - **`app/`** — the static site itself (HTML/CSS/JS, no build step), deployed to GitHub Pages. This is the only area that exists yet; see `app/CLAUDE.md` for its architecture and `app/README.md`-equivalent details.
-- **`synth/`** — Python synthetic-check-data generation pipeline (mock checks for the regression suite described in the product spec, section 8). Added separately from the app build.
+- **`synth/`** — Python synthetic-check-data generation pipeline: renders fake checks, composites them onto household-surface photos as phone-photo scenes with exact labels, builds held-out train/val/eval splits with COCO/YOLO exports and a per-field OCR manifest, and prints true-size mock checks for a real-photo eval set. See `synth/README.md` and `synth/CLAUDE.md`. Datasets and backgrounds live outside the repo.
 - **`experiments/`** — ML inference/evaluation work for later processing-pipeline milestones. Not started yet.
 
 ## Running the app locally
