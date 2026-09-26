@@ -5,7 +5,7 @@
 
 The service worker precaches this list so the app works with no network after the
 first visit; a module missing from it would load online and 404 offline. Shipped files
-are index.html plus everything under js/, styles/ and models/ (tests/ is not shipped).
+are index.html plus everything under js/, styles/, fonts/ and models/ (tests/ is not shipped).
 """
 
 import argparse
@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parent.parent
-SHIPPED_DIRECTORIES = ("styles", "js", "models")
-SHIPPED_SUFFIXES = {".js", ".css", ".onnx"}
+SHIPPED_DIRECTORIES = ("styles", "fonts", "js", "models")
+SHIPPED_SUFFIXES = {".js", ".css", ".woff2", ".onnx"}
 LIST_PATTERN = re.compile(r"const APP_SHELL_PATHS = \[\n(.*?)\n\];", re.DOTALL)
 
 

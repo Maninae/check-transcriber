@@ -18,7 +18,7 @@
  * copies of everything on their next visit.
  */
 
-const SW_VERSION = "v4";
+const SW_VERSION = "v5";
 const SHELL_CACHE_NAME = `check-transcriber-shell-${SW_VERSION}`;
 const CDN_CACHE_NAME = `check-transcriber-cdn-${SW_VERSION}`;
 // The opt-in handwriting reader's files (Hugging Face Hub, ~132 MB, pinned revision; see
@@ -47,6 +47,8 @@ const APP_SHELL_PATHS = [
   "./styles/settings-panel.css",
   "./styles/status-line.css",
   "./styles/step-indicator.css",
+  "./fonts/poppins-latin-medium.woff2",
+  "./fonts/poppins-latin-regular.woff2",
   "./js/batch_flow.js",
   "./js/cdn_config.js",
   "./js/count/count_header_text.js",

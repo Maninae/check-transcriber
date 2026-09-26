@@ -16,10 +16,10 @@
   position: sticky;
   top: calc(var(--spacing-unit) * 1.5);
   z-index: 12;
-  background: rgba(255, 255, 255, 0.97);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 6px 20px rgba(43, 39, 35, 0.08);
+  box-shadow: 0 6px 20px rgba(var(--shadow-color), 0.08);
   overflow: hidden;
   animation: panel-in 200ms var(--ease-out);
 }
@@ -64,7 +64,7 @@
   border-radius: 4px;
   background:
     linear-gradient(var(--color-accent), var(--color-accent)) 5px 6px / 11px 2px no-repeat,
-    linear-gradient(#b9cbbf, #b9cbbf) 5px 12px / 18px 2px no-repeat,
+    linear-gradient(var(--color-accent-line), var(--color-accent-line)) 5px 12px / 18px 2px no-repeat,
     var(--color-accent-soft);
   overflow: hidden;
 }
@@ -87,7 +87,7 @@
 .progress-track {
   position: relative;
   height: 4px;
-  background: #ece6da;
+  background: var(--color-sunken);
   overflow: hidden;
 }
 
@@ -124,13 +124,13 @@
 }
 
 .progress-panel[data-tone="error"] {
-  border-color: #e3c2b6;
+  border-color: var(--color-error-line);
   background: var(--color-error-soft);
 }
 
 .progress-panel[data-tone="error"] .progress-glyph {
   border-color: var(--color-error);
-  background: #ffffff;
+  background: var(--color-surface);
 }
 
 .progress-panel[data-tone="error"] .progress-glyph::after {
@@ -174,7 +174,7 @@
 .notice--error {
   background: var(--color-error-soft);
   color: var(--color-error);
-  border: 1px solid #ecd0c6;
+  border: 1px solid var(--color-error-line);
 }
 
 /* The hint line's own background (base.css) is now the notice's job. */
@@ -207,7 +207,7 @@
   justify-content: center;
   background: var(--color-success-soft);
   color: var(--color-accent);
-  border: 1px solid #cfdfd4;
+  border: 1px solid var(--color-success-line);
 }
 
 .notice--success .notice-text {
@@ -278,12 +278,14 @@
   text-decoration: none;
 }
 
+/* An open hint is a rounded, boxed card like the land trust's own: white, a drawn edge,
+   generous corners. The edge stays lighter than the drop zone's so the drop zone leads.
+   Padding keeps the text where it sat (within a pixel). */
 .hint[open] {
-  padding: 12px calc(var(--spacing-unit) * 2) 14px;
-  background: #fffdf8;
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-accent);
-  border-radius: 10px;
+  padding: 12px calc(var(--spacing-unit) * 2) 14px calc(var(--spacing-unit) * 2 + 2px);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 16px;
 }
 
 .hint-body {
@@ -331,12 +333,13 @@
 
 .hint-dismiss {
   flex: none;
-  font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.8rem;
   color: var(--color-accent);
   background: var(--color-surface);
-  border: 1px solid #b9cbbf;
-  border-radius: 8px;
+  border: 1px solid var(--color-accent-line);
+  border-radius: 999px;
   padding: 5px 14px;
   cursor: pointer;
 }
@@ -368,12 +371,12 @@ kbd {
 }
 
 .legend-swatch--green {
-  border-color: #3f9a6f;
+  border-color: var(--color-outline-confident);
   margin-left: 0;
 }
 
 .legend-swatch--amber {
-  border-color: #d99a2b;
+  border-color: var(--color-outline-unsure);
 }
 
 /* Miniature field examples in the review legend, styled exactly like the real ones. */
@@ -384,7 +387,7 @@ kbd {
   padding: 1px 8px;
   border: 1px solid var(--color-border);
   border-radius: 5px;
-  background: #fffdf8;
+  background: var(--color-field);
   font-size: 0.85rem;
 }
 
@@ -425,7 +428,7 @@ kbd {
   padding: 28px 44px;
   background: var(--color-surface);
   border-radius: 16px;
-  box-shadow: 0 12px 36px rgba(43, 39, 35, 0.14);
+  box-shadow: 0 12px 36px rgba(var(--shadow-color), 0.14);
 }
 
 .drop-overlay-glyph {
@@ -459,7 +462,7 @@ kbd {
   width: auto;
   border-radius: 4px;
   border: 1px solid var(--color-border);
-  background: #ece6da;
+  background: var(--color-sunken);
   animation: thumbnail-in 350ms var(--ease-out);
 }
 
@@ -513,7 +516,7 @@ kbd {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #cfc4ad;
+  background: var(--color-dot-idle);
 }
 
 .review-summary[data-tone="working"]::before {
@@ -562,7 +565,7 @@ kbd {
 .engine-status--error {
   padding: 12px calc(var(--spacing-unit) * 2);
   background: var(--color-error-soft);
-  border: 1px solid #ecd0c6;
+  border: 1px solid var(--color-error-line);
   border-radius: 10px;
 }
 

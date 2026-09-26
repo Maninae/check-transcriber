@@ -24,9 +24,25 @@
   padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 2.5);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 16px;
   font-size: 0.85rem;
   color: var(--color-text);
+}
+
+/* The same hand-drawn slate rule, in the gap between the page header and the panel. */
+.settings-panel {
+  position: relative;
+}
+
+.settings-panel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--spacing-unit) * -1.25 - 3px);
+  height: 6px;
+  background: var(--rule-hand-drawn) center / 100% 100% no-repeat;
+  pointer-events: none;
 }
 
 .settings-group {
@@ -96,7 +112,7 @@
   padding: 3px 8px 3px 4px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fffdf8;
+  background: var(--color-field);
   cursor: grab;
 }
 
@@ -105,7 +121,7 @@
 }
 
 .copy-column-handle {
-  color: #b8ae9f;
+  color: var(--color-drag-handle);
   font-size: 0.9rem;
   line-height: 1;
 }
@@ -116,7 +132,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 1px 0;
-  border-bottom: 1px solid #efe8da;
+  border-bottom: 1px solid var(--color-border-soft);
   overflow-wrap: anywhere;
 }
 
@@ -149,7 +165,7 @@
   padding: 4px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fffdf8;
+  background: var(--color-field);
 }
 
 .settings-text-input:focus {
@@ -178,7 +194,7 @@
   height: 18px;
   margin: 0;
   border-radius: 999px;
-  background: #d6cfc2;
+  background: var(--color-control-off);
   cursor: pointer;
   transition: background-color 120ms ease;
 }
@@ -191,7 +207,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--color-surface);
   transition: transform 120ms ease;
 }
 
@@ -225,7 +241,7 @@
   align-items: baseline;
   gap: calc(var(--spacing-unit) * 1.5);
   padding-bottom: 10px;
-  border-bottom: 1px solid #efe8da;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
 .settings-panel-title {
@@ -258,7 +274,7 @@
 .settings-progress-track {
   height: 6px;
   border-radius: 3px;
-  background: #ece6da;
+  background: var(--color-sunken);
   overflow: hidden;
 }
 

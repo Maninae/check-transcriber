@@ -70,13 +70,13 @@
 
 .count-outline {
   fill: rgba(63, 111, 91, 0.06);
-  stroke: #3f9a6f;
+  stroke: var(--color-outline-confident);
   stroke-width: 2.5;
   cursor: pointer;
 }
 
 .count-outline--unsure {
-  stroke: #d99a2b;
+  stroke: var(--color-outline-unsure);
   fill: rgba(217, 154, 43, 0.06);
 }
 

@@ -1,46 +1,95 @@
 /**
  * Color palette, type system, and page-level layout. The drop zone (styled in
  * drop-zone.css) is the one thing this page wants the eye to land on, so everything
- * here is deliberately quiet: a calm warm-paper background, one accent color used
- * sparingly, and a type system that pairs a serif display face (for the one heading)
- * with a plain system sans for every working piece of text.
+ * here is deliberately quiet. The look borrows from the land trust's own site: a pale
+ * lavender page, white cards, slate for chrome, Poppins for headings and buttons, black
+ * pill buttons for the one thing to do next, and a hand-drawn yellow underline as the
+ * single decorative accent. Every color lives in this block; the other stylesheets only
+ * reference these names.
  */
 
-:root {
-  /* Warm, calm, paper-like — the opposite of a stark white "app" background. */
-  --color-background: #f6f2ea;
-  --color-surface: #ffffff;
-  --color-text: #2b2723;
-  --color-text-muted: #6f675d;
-  --color-border: #ddd3bf;
+/* Poppins (SIL OFL 1.1, licence beside the files in fonts/), latin subset, self-hosted:
+   no font request ever leaves this origin. */
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/poppins-latin-regular.woff2") format("woff2");
+}
 
-  /* One accent, used only for the drop zone's active/ready states. A muted
-     forest green: calm and a little bank-note, without being literal about it. */
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/poppins-latin-medium.woff2") format("woff2");
+}
+
+:root {
+  /* Page and cards: the land trust's pale lavender behind white cards. */
+  --color-background: #edeef8;
+  --color-surface: #ffffff;
+  --color-field: #fcfcfe; /* plain inputs and hint cards, a hair off white */
+  --color-sunken: #e4e6f1; /* crop wells, progress tracks, shimmer base */
+  --color-sunken-highlight: #f2f3f9; /* the light band in a shimmer */
+  --color-done-row: #f7f8fc;
+  --color-text: #1d1f24; /* 14.3:1 on the page */
+  --color-text-muted: #5b6b71; /* their slate: 4.8:1 on the page, 5.6:1 on white */
+  --color-border: #d5d8e8;
+  --color-border-soft: #e6e8f2;
+  --color-border-strong: #b9bdd2; /* drop zone hover, drawn glyph edges */
+  --color-control-off: #c9ccda; /* the handwriting switch when off */
+  --color-drag-handle: #a3a8b8;
+  --color-dot-idle: #c3c7d6;
+
+  /* Chrome and decoration, from their site. Slate draws the hand-drawn rules; the pale
+     yellow is ONLY the hand-drawn underline under headings, never a fill or a state. */
+  --color-slate: #5b6b71;
+  --color-underline-yellow: #eae085;
+
+  /* The primary action: a black pill with white text (21:1). */
+  --color-action: #000000;
+  --color-action-hover: #2a2c33;
+  --color-on-action: #ffffff;
+
+  /* One accent green for focus, selection, done and progress. Their mint (#2bc9a0) is
+     1.8:1 on the lavender, too faint for a focus ring, so the green stays (5.0:1). */
   --color-accent: #3f6f5b;
   --color-accent-soft: #e8efe9;
+  --color-accent-line: #b9cbbf; /* soft green edges (hint button, glyph lines) */
 
   /* Amber: the one "look here" signal (unsure and blank fields, a duplicate warning),
-     matching the count step's amber outlines. */
-  --color-attention: #8a5a10; /* 5.2:1 on the page and on attention-soft (AA text) */
-  --color-attention-line: #b07a1a; /* 3.3:1 on white and attention-soft (AA for UI outlines) */
+     matching the count step's amber outlines. Hues unchanged by the theme. */
+  --color-attention: #8a5a10; /* 5.1:1 on the page, 5.2:1 on attention-soft (AA text) */
+  --color-attention-line: #b07a1a; /* 3.7:1 on white, 3.2:1 on the page (AA for UI outlines) */
   --color-attention-soft: #fcefd6;
   --color-attention-placeholder: #7d5f2a; /* "read from the check": 5.2:1 on attention-soft */
-  --color-icon-quiet: #857c70; /* small icons on white: 4.1:1 */
+  --color-icon-quiet: #767c8a; /* small icons on white: 4.2:1 */
   --color-success: #3f6f5b;
   --color-success-soft: #e8efe9;
+  --color-success-line: #cfdfd4;
+  --color-toast-tick: #6fb391;
+  --color-toast-info: #aab0c2;
+  --color-toast-text: #f7f8fc;
+
+  /* Outline colours drawn over her photo (count step) and their legend swatches. */
+  --color-outline-confident: #3f9a6f;
+  --color-outline-unsure: #d99a2b;
+  --color-payer-hover: #f3f6f3;
+  --color-on-dark-muted: #d5d8e2; /* lightbox caption over the dimmed page */
 
   --color-error: #96402b;
   --color-error-soft: #f6e7e1;
+  --color-error-line: #ecd0c6;
 
-  /* A serif display face for the one heading on the page, so it reads as
-     deliberately chosen rather than left at the browser default (which would be
-     Times New Roman at default weight/size). Falls back gracefully across
-     platforms; every browser in scope (current Chrome/Edge on Windows) has at
-     least one of these installed. */
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+  --shadow-color: 28, 30, 40; /* rgb triplet for rgba() shadows, cool to match the page */
 
-  /* A plain system sans for every working piece of UI text — legible at small
-     sizes, and it matches what the rest of the operator's Windows desktop looks like. */
+  /* Poppins, weight 500, for the page title, step headings, panel titles and buttons. */
+  --font-display: "Poppins", "Segoe UI", -apple-system, system-ui, sans-serif;
+
+  /* A plain system sans for every working piece of UI text (fields, amounts, names,
+     prose) — legible at small sizes, and a humanist face that sits well under Poppins. */
   --font-body: "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, ui-sans-serif, system-ui, sans-serif;
 
   --spacing-unit: 8px;
@@ -48,6 +97,11 @@
   /* One focus ring for every control, keyboard only (:focus-visible). */
   --focus-ring: 0 0 0 3px rgba(63, 111, 91, 0.35);
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* The hand-drawn yellow underline under the title and step headings, and the
+     hand-drawn slate rule between sections. Slightly wobbly strokes, stretched to width. */
+  --underline-hand-drawn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6.5C28 4 52 7.5 80 5.6S134 3.4 160 5.2 190 6.8 198 4.6' fill='none' stroke='%23eae085' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --rule-hand-drawn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 6' preserveAspectRatio='none'%3E%3Cpath d='M1 3.4C60 2.2 118 4.1 190 3S320 1.9 400 3.3 540 4.2 599 2.6' fill='none' stroke='%235b6b71' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 * {
@@ -91,8 +145,17 @@ body {
   font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 500;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   margin: 0;
+}
+
+/* The hand-drawn yellow underline, sized to the heading's own text. Background only, so
+   the heading keeps its box and nothing around it moves. */
+.app-title,
+.count-step-heading,
+.review-heading {
+  width: fit-content;
+  background: var(--underline-hand-drawn) left bottom 0.04em / 100% 0.36em no-repeat;
 }
 
 .page-main {
@@ -125,28 +188,32 @@ body {
 
 .primary-button,
 .quiet-button {
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  border-radius: 8px;
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.875rem;
+  border-radius: 999px;
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2.25);
   cursor: pointer;
   white-space: nowrap;
 }
 
+/* The one thing to do next: a black pill that lifts a little on hover. */
 .primary-button {
-  color: #ffffff;
-  background: var(--color-accent);
-  border: 1px solid var(--color-accent);
+  color: var(--color-on-action);
+  background: var(--color-action);
+  border: 1px solid var(--color-action);
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out), background-color 150ms ease;
 }
 
-.primary-button:hover {
-  filter: brightness(1.08);
+.primary-button:hover:not(:disabled) {
+  background: var(--color-action-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.22);
 }
 
 .primary-button:disabled {
   opacity: 0.45;
   cursor: default;
-  filter: none;
 }
 
 .quiet-button {
@@ -194,9 +261,9 @@ body {
   margin: 0;
   padding: 10px calc(var(--spacing-unit) * 2.5) 10px 12px;
   background: var(--color-text);
-  color: #fbf8f2;
+  color: var(--color-toast-text);
   border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(43, 39, 35, 0.22);
+  box-shadow: 0 8px 24px rgba(var(--shadow-color), 0.22);
   font-size: 0.95rem;
   z-index: 30;
   animation: toast-in 220ms var(--ease-out);
@@ -208,11 +275,11 @@ body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #6fb391 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+  background: var(--color-toast-tick) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
 }
 
 .toast[data-tone="info"]::before {
-  background: #c9b99a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 9v5M10 6.2v.1' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+  background: var(--color-toast-info) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 9v5M10 6.2v.1' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
 }
 
 @keyframes toast-in {
