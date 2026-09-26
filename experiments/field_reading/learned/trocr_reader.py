@@ -4,8 +4,10 @@ Confidence = exp(mean token log-prob) over the greedy-decoded tokens including E
 (`compute_transition_scores` with normalized logits; pad positions after EOS are excluded).
 Greedy decoding (num_beams=1) keeps latency and the confidence definition simple.
 
-Model ids resolve through TROCR_MODEL_REGISTRY: hub checkpoints (cached under HF_HOME on vega)
-or fine-tuned directories under RECOGNIZER_CHECKPOINT_ROOT.
+Model ids resolve through TROCR_MODEL_REGISTRY (hub checkpoints cached under HF_HOME on vega) or
+any local checkpoint directory (e.g. a finetune_trocr output).
+Zero-shot trocr-small-handwritten needs `grey_input=True` on real crops: with RGB input it
+hallucinates on SSBI (amount exact 0.09 vs 0.82 grey).
 """
 
 import logging
@@ -25,7 +27,6 @@ logger = logging.getLogger(__name__)
 TROCR_MODEL_REGISTRY: dict[str, str] = {
     "trocr_small_handwritten": "microsoft/trocr-small-handwritten",
     "trocr_small_printed": "microsoft/trocr-small-printed",
-    "trocr_small_handwritten_ft": str(FIELD_READING_MODEL_ROOT / "recognizers" / "trocr_small_handwritten_ft" / "best"),
 }
 TROCR_READ_BATCH_SIZE = 24
 TROCR_MAX_NEW_TOKENS = 48

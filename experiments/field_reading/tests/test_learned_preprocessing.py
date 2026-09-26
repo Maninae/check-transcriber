@@ -42,3 +42,10 @@ def test_ssbi_comparison_rules():
     assert comparable_text("amount_numeric", "35, 000") == "35,000"
     assert comparable_text("payee", "Dr.  Sheldon COOPER") == "dr. sheldon cooper"
     assert pad_tight_crop(np.zeros((30, 50, 3), np.uint8)).shape == (42, 62, 3)
+
+
+def test_ssbi_date_digits_ignore_day_month_order():
+    from experiments.field_reading.learned.real_ssbi_scoring import date_digits_match_any_order
+    assert date_digits_match_any_order("06/04/2016", "06/04/2016")
+    assert date_digits_match_any_order("04-06-2016", "06/04/2016")
+    assert not date_digits_match_any_order("06/04/2018", "06/04/2016")

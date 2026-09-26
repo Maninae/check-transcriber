@@ -4,6 +4,8 @@ Every base reader is run once per split with `predict`; routers are row-wise sel
 - `route_oraclehw`: GT handwritten rows from --handwritten-file, others from --printed-file
   (ORACLE: the app has no handwritten flag; the output method id must end in `_oraclehw`).
 - `route_field`: rows of --fields from --field-file, the rest from --default-file.
+- `route_style`: rows the style classifier (--style-file, {row_key, p_handwritten}) calls
+  handwritten go to --handwritten-file, the rest to --printed-file (non-oracle).
 - `maxconf`: per row the higher-confidence answer of the --inputs files.
 - `cascade`: --primary answer unless its confidence < --threshold, then --fallback.
 latency_ms is the sum over readers that had to run for the row (both for maxconf, primary +
@@ -48,7 +50,7 @@ def main() -> None:
     """Build one combined prediction file."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--split", required=True)
-    parser.add_argument("--combine", required=True, choices=["route_oraclehw", "route_field", "maxconf", "cascade"])
+    parser.add_argument("--combine", required=True, choices=["route_oraclehw", "route_field", "route_style", "maxconf", "cascade"])
     parser.add_argument("--method-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--inputs", nargs="*", type=Path, default=[])
@@ -60,11 +62,14 @@ def main() -> None:
     parser.add_argument("--primary", type=Path)
     parser.add_argument("--fallback", type=Path)
     parser.add_argument("--threshold", type=float, default=0.9)
+    parser.add_argument("--style-file", type=Path)
+    parser.add_argument("--style-threshold", type=float, default=0.5)
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if arguments.combine == "route_oraclehw" and not arguments.method_id.endswith("_oraclehw"):
         raise ValueError("routes on the ground-truth handwritten flag must be labelled *_oraclehw")
     paths = {"route_oraclehw": [arguments.handwritten_file, arguments.printed_file],
+             "route_style": [arguments.handwritten_file, arguments.printed_file],
              "route_field": [arguments.field_file, arguments.default_file],
              "maxconf": arguments.inputs, "cascade": [arguments.primary, arguments.fallback]}[arguments.combine]
     frames = [load_predictions(path) for path in paths]
@@ -77,6 +82,10 @@ def main() -> None:
     if arguments.combine == "route_oraclehw":
         handwritten = load_field_rows(arguments.split).set_index("row_key").handwritten.reindex(common_keys).fillna(False)
         pick = np.where(handwritten.to_numpy(bool), 0, 1)
+        latency = latencies[pick, np.arange(len(pick))]
+    elif arguments.combine == "route_style":
+        style = pd.read_json(arguments.style_file, lines=True).set_index("row_key").p_handwritten.reindex(common_keys)
+        pick = np.where(style.fillna(0).to_numpy(float) > arguments.style_threshold, 0, 1)
         latency = latencies[pick, np.arange(len(pick))]
     elif arguments.combine == "route_field":
         pick = np.where(frames[0].field_name.isin(arguments.fields).to_numpy(), 0, 1)

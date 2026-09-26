@@ -1,5 +1,9 @@
 """Fine-tune TrOCR-small-handwritten on check field crops within a wall-clock budget.
 
+NOT used for the shipped results: the coordinator ruled out fine-tuning on synth v1 handwriting
+(its 24 fonts are font recall, not handwriting; see the U4 report). Kept for a future run on
+better synthetic or real handwriting, where the SSBI score logged per checkpoint is the criterion.
+
 Run (from the worktree root):
     python -m experiments.field_reading.learned.finetune_trocr --max-minutes 150
 

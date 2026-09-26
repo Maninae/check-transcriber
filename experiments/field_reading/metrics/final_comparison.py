@@ -3,6 +3,8 @@
 Tables written to `reports/final/final_comparison.md` (+ JSON):
 - accuracy (and CER) per method x field on eval subsets: all ok rows, hard, handwritten, too_small;
 - oracle gating on eval: max coverage at >= 95 / 98% accuracy (threshold chosen on eval itself, optimistic);
+- agreement rule (methods with `+xcheck`): fill the courtesy amount only when it agrees with the words line;
+  no tuned threshold, so it is immune to val->eval calibration shift;
 - frozen gating: threshold chosen on VAL (max coverage with val accuracy >= target), applied unchanged to
   eval; reports eval coverage and eval accuracy at that threshold. This is what the app would ship.
 
@@ -18,6 +20,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from experiments.field_reading.field_gating.amount_cross_check import AGREEMENT_CONFIDENCE_FLOOR
 from experiments.field_reading.config import PREDICTIONS_ROOT, REPORTS_ROOT, TARGET_FIELD_NAMES
 from experiments.field_reading.metrics.breakdowns import summarize_per_field_with_total
 from experiments.field_reading.metrics.confidence_gating import build_gating_operating_points
@@ -86,6 +89,19 @@ def frozen_gating_markdown(table: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def agreement_rule_markdown(eval_scored: pd.DataFrame) -> str:
+    """Courtesy-amount coverage / accuracy on eval when filling only numeric-words agreements (+xcheck methods)."""
+    ok_rows = select_headline_rows(eval_scored, "all")
+    amount_rows = ok_rows[(ok_rows.field_name == "amount_numeric") & ok_rows.method_label.str.contains(r"\+xcheck", regex=True)]
+    lines = ["| method | rows | coverage% | accuracy% |", "| :-- | :-- | --: | --: |"]
+    for method_label, group in amount_rows.groupby("method_label", sort=True):
+        for label, rows in (("all", group), ("handwritten", group[group.handwritten.astype(bool)]), ("printed", group[~group.handwritten.astype(bool)])):
+            agreeing = rows.confidence.astype(float) >= AGREEMENT_CONFIDENCE_FLOOR
+            accuracy = f"{100 * rows.field_correct[agreeing].mean():.2f}" if agreeing.any() else "-"
+            lines.append(f"| {method_label} | {label} | {100 * agreeing.mean():.1f} | {accuracy} |")
+    return "\n".join(lines)
+
+
 def main() -> None:
     """Score all methods on val and eval once and write the final comparison."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -109,6 +125,8 @@ def main() -> None:
         frozen = frozen_gating_table(val_scored, eval_scored, handwritten_only)
         sections.append(f"\n## Confidence gating with thresholds frozen on val, {label}\n" + frozen_gating_markdown(frozen))
         payload[f"frozen_gating__{'handwritten' if handwritten_only else 'all'}"] = frozen.to_dict("records")
+    if any("+xcheck" in method for method in arguments.methods):
+        sections.append("\n## Courtesy amount, agreement rule (fill only when numeric and words agree), eval ok rows\n\n" + agreement_rule_markdown(eval_scored))
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     (OUTPUT_DIRECTORY / f"{arguments.run_name}.md").write_text("\n".join(sections) + "\n")
     (OUTPUT_DIRECTORY / f"{arguments.run_name}.json").write_text(json.dumps(payload, indent=1, default=str))

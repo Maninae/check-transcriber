@@ -7,6 +7,9 @@ Not a benchmark (78 crops, CC BY-NC 4.0: crops never leave vega). Rules from the
 - date and amount compare the literal string with whitespace removed (dates are DD/MM/YYYY, so
   no parsing); amount_words and payee compare casefolded, whitespace-collapsed text; CER on the
   same normalized strings.
+- dates also get `date_digits_any_order`: the prediction's digits equal the truth's DD MM YYYY
+  digits or the swapped MM DD YYYY (SSBI is day-first, US checks month-first; the order is a
+  formatting fact, not a reading error).
 
 Run: python -m experiments.field_reading.learned.real_ssbi_scoring --methods crnn_general trocr_small_hw_ft
 """
@@ -14,6 +17,7 @@ Run: python -m experiments.field_reading.learned.real_ssbi_scoring --methods crn
 import argparse
 import json
 import logging
+import re
 
 import cv2
 import numpy as np
@@ -31,6 +35,13 @@ logger = logging.getLogger(__name__)
 SSBI_ROOT = FIELD_READING_OUTPUT_ROOT / "real_ssbi"
 SSBI_FIELD_TO_OUR_FIELD = {"amount": "amount_numeric", "amount_words": "amount_words", "date": "date", "payee": "payee"}
 WHITESPACE_FREE_FIELDS = {"amount_numeric", "date"}
+NON_DIGIT = re.compile(r"\D")
+
+
+def date_digits_match_any_order(predicted_text: str, truth_text: str) -> bool:
+    """Digits of the prediction equal day-month-year or month-day-year digits of a DD/MM/YYYY truth."""
+    day, month, year = truth_text.strip().split("/")
+    return NON_DIGIT.sub("", predicted_text) in {day + month + year, month + day + year}
 
 
 def load_ssbi_rows() -> pd.DataFrame:
@@ -63,9 +74,10 @@ def score_method_on_ssbi(method_id: str, rows: pd.DataFrame, crops: list[np.ndar
     for row, (text, confidence, _) in zip(rows.itertuples(), results):
         truth = comparable_text(row.field_name, row.text)
         predicted = comparable_text(row.field_name, text)
-        records.append({"method": method_id, "field": row.field_name, "truth": row.text, "pred": text,
+        records.append({"method": method_id, "row_key": row.row_key, "field": row.field_name, "truth": row.text, "pred": text,
                         "confidence": confidence, "exact": predicted == truth,
-                        "cer": Levenshtein.distance(predicted, truth) / max(1, len(truth))})
+                        "cer": Levenshtein.distance(predicted, truth) / max(1, len(truth)),
+                        "date_digits_any_order": date_digits_match_any_order(text, row.text) if row.field_name == "date" else None})
     return pd.DataFrame.from_records(records)
 
 
@@ -83,6 +95,9 @@ def main() -> None:
     table = scored.groupby(["method", "field"]).agg(n=("exact", "size"), exact=("exact", "mean"), cer=("cer", "mean")).round(3)
     print(f"real handwriting (SSBI, n={len(rows)})")
     print(table.unstack("field").to_string())
+    dates = scored[scored.field == "date"].groupby("method").agg(cer=("cer", "mean"), digits_any_order=("date_digits_any_order", "mean")).round(3)
+    print("SSBI dates: CER and digits correct ignoring day/month order")
+    print(dates.to_string())
     output_directory = REPORTS_ROOT / "learned"
     output_directory.mkdir(parents=True, exist_ok=True)
     output_path = output_directory / f"real_ssbi__methods={'+'.join(arguments.methods)}.csv"

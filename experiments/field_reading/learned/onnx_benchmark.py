@@ -1,11 +1,12 @@
-"""Check exported ONNX recognizers against PyTorch and time them on CPU with onnxruntime.
+"""Check exported ONNX CRNNs against PyTorch and time them on CPU with onnxruntime.
 
+Shared helpers (val crop sample, CPU sessions, median latency) are reused by trocr_onnx_benchmark.
 For each model: identical decoded text on EQUIVALENCE_CROP_COUNT val crops (fp32 and int8),
 max abs difference of the outputs (CRNN log-probs; TrOCR encoder states + first-step logits),
 file size in MB, and batch-1 CPU latency per crop (median over LATENCY_CROP_COUNT crops,
 preprocessing excluded) with 1 intra-op thread and with onnxruntime's default thread count.
 
-Run: python -m experiments.field_reading.learned.onnx_benchmark --crnn crnn_general_h32 crnn_amount_h32 [--trocr <id>]
+Run: python -m experiments.field_reading.learned.onnx_benchmark --crnn crnn_general_h32 crnn_amount_h32
 """
 
 import argparse
@@ -16,7 +17,6 @@ import time
 import numpy as np
 import onnxruntime
 import pandas as pd
-import torch
 
 from experiments.field_reading.config import REPORTS_ROOT
 from experiments.field_reading.data_access.field_manifest import load_field_rows
@@ -26,8 +26,6 @@ from experiments.field_reading.learned.ctc_decoding import decode_ctc_batch
 from experiments.field_reading.learned.line_crop_dataset import read_rgb_image
 from experiments.field_reading.learned.onnx_export import ONNX_ROOT
 from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
-from experiments.field_reading.learned.trocr_reader import TROCR_MAX_NEW_TOKENS, TrocrCropReader, trocr_pixel_values
-from experiments.field_reading.learned.trocr_tokenizer import EOS_ID
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +50,15 @@ def ort_session(path, threads: int | None) -> onnxruntime.InferenceSession:
     if threads is not None:
         options.intra_op_num_threads = threads
     return onnxruntime.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+
+
+def merge_into_benchmark_report(reports: list[dict]) -> None:
+    """Add/replace entries (keyed by model) in reports/learned/onnx_benchmark.json."""
+    output_path = REPORTS_ROOT / "learned" / "onnx_benchmark.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = json.loads(output_path.read_text()) if output_path.exists() else {}
+    existing.update({report["model"]: report for report in reports})
+    output_path.write_text(json.dumps(existing, indent=1))
 
 
 def median_latency_ms(run_once, inputs: list) -> float:
@@ -88,64 +95,14 @@ def benchmark_crnn(run_name: str, field_names: list[str] | None) -> dict:
     return report
 
 
-def onnx_trocr_greedy(encoder: onnxruntime.InferenceSession, decoder: onnxruntime.InferenceSession,
-                      pixel_values: np.ndarray) -> tuple[list[int], np.ndarray, np.ndarray]:
-    """Greedy decode one image with the two ONNX graphs; returns tokens, encoder states, first logits."""
-    hidden_states = encoder.run(None, {"pixel_values": pixel_values})[0]
-    tokens, first_logits = [EOS_ID], None
-    for _ in range(TROCR_MAX_NEW_TOKENS):
-        logits = decoder.run(None, {"input_ids": np.array([tokens], dtype=np.int64), "encoder_hidden_states": hidden_states})[0]
-        first_logits = logits[0, -1] if first_logits is None else first_logits
-        tokens.append(int(logits[0, -1].argmax()))
-        if tokens[-1] == EOS_ID:
-            break
-    return tokens, hidden_states, first_logits
-
-
-def benchmark_trocr(model_id: str) -> dict:
-    """Equivalence (text + encoder/first-logit diffs), size and latency for one TrOCR export."""
-    reader = TrocrCropReader(model_id, "cpu")
-    rows, crops = sample_val_crops(EQUIVALENCE_CROP_COUNT, None)
-    torch_texts = [text for text, _ in reader.read_crops(crops)]
-    pixel_batches = [trocr_pixel_values([crop]).numpy() for crop in crops]
-    report = {"model": model_id}
-    for precision, suffix in [("fp32", ".onnx"), ("int8", ".int8.onnx")]:
-        encoder_path, decoder_path = ONNX_ROOT / f"{model_id}.encoder{suffix}", ONNX_ROOT / f"{model_id}.decoder{suffix}"
-        encoder, decoder = ort_session(encoder_path, None), ort_session(decoder_path, None)
-        identical, encoder_difference, logit_difference = 0, 0.0, 0.0
-        for pixel_values, torch_text in zip(pixel_batches, torch_texts):
-            tokens, hidden_states, first_logits = onnx_trocr_greedy(encoder, decoder, pixel_values)
-            identical += reader.codec.decode(tokens) == torch_text
-            torch_hidden = reader.model.encoder(pixel_values=torch.from_numpy(pixel_values)).last_hidden_state.detach().numpy()
-            encoder_difference = max(encoder_difference, float(np.abs(torch_hidden - hidden_states).max()))
-            torch_logits = reader.model.decoder(input_ids=torch.tensor([[EOS_ID]]),
-                                                encoder_hidden_states=torch.from_numpy(torch_hidden)).logits[0, -1].detach().numpy()
-            logit_difference = max(logit_difference, float(np.abs(torch_logits - first_logits).max()))
-        size_mb = (encoder_path.stat().st_size + decoder_path.stat().st_size) / 1e6
-        report[precision] = {"size_mb": round(size_mb, 2), "identical_text": f"{identical}/{EQUIVALENCE_CROP_COUNT}",
-                             "max_abs_diff_encoder_states": round(encoder_difference, 5),
-                             "max_abs_diff_first_step_logits": round(logit_difference, 5)}
-        for threads, label in [(1, "latency_ms_1thread"), (None, "latency_ms_default_threads")]:
-            timed_encoder, timed_decoder = ort_session(encoder_path, threads), ort_session(decoder_path, threads)
-            report[precision][label] = round(median_latency_ms(lambda pixels: onnx_trocr_greedy(timed_encoder, timed_decoder, pixels),
-                                                               pixel_batches), 1)
-    return report
-
-
 def main() -> None:
     """Benchmark the requested exports and write a JSON report."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--crnn", nargs="*", default=[])
-    parser.add_argument("--trocr", nargs="*", default=[])
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     reports = [benchmark_crnn(run, ["amount_numeric"] if "amount" in run else None) for run in arguments.crnn]
-    reports += [benchmark_trocr(model_id) for model_id in arguments.trocr]
-    output_path = REPORTS_ROOT / "learned" / "onnx_benchmark.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = json.loads(output_path.read_text()) if output_path.exists() else {}
-    existing.update({report["model"]: report for report in reports})
-    output_path.write_text(json.dumps(existing, indent=1))
+    merge_into_benchmark_report(reports)
     print(json.dumps(reports, indent=1))
 
 

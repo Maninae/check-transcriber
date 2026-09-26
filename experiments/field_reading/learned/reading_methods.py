@@ -32,7 +32,7 @@ CRNN_CHECKPOINTS = {
     "crnn_amount": RECOGNIZER_ROOT / "crnn_amount_h32" / "best.pt",
 }
 AMOUNT_FIELD_NAME = "amount_numeric"
-# CRNN confidence below which the cascade asks TrOCR-ft instead (selected on val, see the U4 report).
+# CRNN confidence below which the cascade asks TrOCR-hw instead (not tuned: synth val would mis-tune it, see report).
 CASCADE_CRNN_CONFIDENCE_THRESHOLD = 0.9
 
 
@@ -154,8 +154,7 @@ READING_METHOD_REGISTRY: dict[str, MethodRunner] = {
     "crnn_general": single_reader("crnn_general"),
     "crnn_general_amountmask": route_by_mask(is_amount_field, "crnn_general_amountmask", "crnn_general"),
     "crnn_amount_route": route_by_mask(is_amount_field, "crnn_amount", "crnn_general"),
-    "trocr_small_hw_ft": single_reader("trocr_small_handwritten_ft"),
-    "trocr_ft_crnn_route_oraclehw": route_by_mask(is_handwritten, "trocr_small_handwritten_ft", "crnn_general"),
-    "trocr_ft_crnn_maxconf": higher_confidence("trocr_small_handwritten_ft", "crnn_general"),
-    "crnn_trocr_ft_cascade": confidence_cascade("crnn_general", "trocr_small_handwritten_ft", CASCADE_CRNN_CONFIDENCE_THRESHOLD),
+    "trocr_hwgrey_crnn_route_oraclehw": route_by_mask(is_handwritten, "trocr_small_handwritten:grey", "crnn_general"),
+    "trocr_hwgrey_crnn_maxconf": higher_confidence("trocr_small_handwritten:grey", "crnn_general"),
+    "crnn_trocr_hwgrey_cascade": confidence_cascade("crnn_general", "trocr_small_handwritten:grey", CASCADE_CRNN_CONFIDENCE_THRESHOLD),
 }
