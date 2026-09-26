@@ -1,0 +1,616 @@
+/**
+ * Feedback and guidance: everything that tells the operator what is happening and what
+ * to do next, so the page never looks stuck or mysterious.
+ * - the progress panel (progress_panel.js): scan glyph, stage text, a moving bar; sticky
+ *   at the top of the viewport while work runs,
+ * - notices: the error line (bad file, HEIC), the "N checks recorded" success line,
+ * - first-run hints (first_run_hints.js): folded <details> cards with "Got it",
+ * - the page-wide drop overlay, the photo thumbnail, the review summary line, the
+ *   engine-readiness bar.
+ * Every animation here stops under prefers-reduced-motion (base.css).
+ */
+
+/* ---------- Progress panel ---------- */
+
+.progress-panel {
+  position: sticky;
+  top: calc(var(--spacing-unit) * 1.5);
+  z-index: 12;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(43, 39, 35, 0.08);
+  overflow: hidden;
+  animation: panel-in 200ms var(--ease-out);
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.progress-panel-body {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 1.75);
+  padding: 12px calc(var(--spacing-unit) * 2);
+}
+
+.progress-panel-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.progress-headline {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.progress-detail {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+/* The scan glyph: a little check with a light sweeping across it, top to bottom. */
+.progress-glyph {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 22px;
+  border: 2px solid var(--color-accent);
+  border-radius: 4px;
+  background:
+    linear-gradient(var(--color-accent), var(--color-accent)) 5px 6px / 11px 2px no-repeat,
+    linear-gradient(#b9cbbf, #b9cbbf) 5px 12px / 18px 2px no-repeat,
+    var(--color-accent-soft);
+  overflow: hidden;
+}
+
+.progress-glyph-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -40%;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(63, 111, 91, 0), rgba(63, 111, 91, 0.45), rgba(63, 111, 91, 0));
+  animation: glyph-scan 1.3s ease-in-out infinite;
+}
+
+@keyframes glyph-scan {
+  from { top: -40%; }
+  to { top: 100%; }
+}
+
+.progress-track {
+  position: relative;
+  height: 4px;
+  background: #ece6da;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 4%;
+  background: var(--color-accent);
+  border-radius: 0 2px 2px 0;
+  transition: width 350ms var(--ease-out);
+}
+
+/* Not countable yet: a segment glides across, calm rather than frantic. */
+.progress-track--indeterminate .progress-bar {
+  position: absolute;
+  width: 32%;
+  border-radius: 2px;
+  animation: bar-glide 1.6s ease-in-out infinite;
+}
+
+@keyframes bar-glide {
+  from { left: -32%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-track--indeterminate .progress-bar {
+    left: 0;
+    width: 100%;
+    opacity: 0.35;
+  }
+  .progress-glyph-scan {
+    display: none;
+  }
+}
+
+.progress-panel[data-tone="error"] {
+  border-color: #e3c2b6;
+  background: var(--color-error-soft);
+}
+
+.progress-panel[data-tone="error"] .progress-glyph {
+  border-color: var(--color-error);
+  background: #ffffff;
+}
+
+.progress-panel[data-tone="error"] .progress-glyph::after {
+  content: "!";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--color-error);
+}
+
+.progress-panel[data-tone="error"] .progress-glyph-scan,
+.progress-panel[data-tone="error"] .progress-track {
+  display: none;
+}
+
+.progress-panel[data-tone="error"] .progress-headline {
+  color: var(--color-error);
+  font-weight: 500;
+}
+
+/* ---------- Notices (error and success lines) ---------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--spacing-unit) * 1.5);
+  padding: 12px calc(var(--spacing-unit) * 2);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  animation: panel-in 200ms var(--ease-out);
+}
+
+.notice-text {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.notice--error {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+  border: 1px solid #ecd0c6;
+}
+
+/* The hint line's own background (base.css) is now the notice's job. */
+.notice .input-hint-line {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+
+.notice-dismiss {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -3px -6px -3px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notice-dismiss:hover {
+  background: rgba(150, 64, 43, 0.1);
+}
+
+.notice--success {
+  align-items: center;
+  justify-content: center;
+  background: var(--color-success-soft);
+  color: var(--color-accent);
+  border: 1px solid #cfdfd4;
+}
+
+.notice--success .notice-text {
+  flex: 0 1 auto;
+}
+
+.batch-recorded-line {
+  font-weight: 600;
+}
+
+.batch-recorded-next {
+  color: var(--color-text-muted);
+}
+
+.notice-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 22px 22px no-repeat;
+}
+
+/* ---------- First-run hints ---------- */
+
+.hint {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.hint-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  list-style: none;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 3px;
+  font-size: 0.875rem;
+}
+
+.hint-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A small "?" disc before the summary, so a folded hint reads as help, not as content. */
+.hint-summary::before {
+  content: "?";
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.hint-summary:hover {
+  color: var(--color-accent);
+}
+
+.hint[open] .hint-summary {
+  color: var(--color-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hint[open] {
+  padding: 12px calc(var(--spacing-unit) * 2) 14px;
+  background: #fffdf8;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 10px;
+}
+
+.hint-body {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(var(--spacing-unit) * 2);
+  margin-top: 8px;
+}
+
+.hint-steps,
+.hint-list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding-left: 1.3em;
+  line-height: 1.55;
+}
+
+.hint-steps li + li,
+.hint-list li + li {
+  margin-top: 3px;
+}
+
+.hint-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.hint-note {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+}
+
+.hint--compact .hint-body {
+  flex-wrap: wrap;
+}
+
+.hint--compact .hint-list,
+.hint--compact .hint-note {
+  flex-basis: calc(100% - 110px);
+}
+
+.hint--compact .hint-note {
+  margin-top: 4px;
+}
+
+.hint-dismiss {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid #b9cbbf;
+  border-radius: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.hint-dismiss:hover {
+  background: var(--color-accent-soft);
+}
+
+kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 11px;
+  margin: 0 3px 0 6px;
+  border: 2.5px solid;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.legend-swatch--green {
+  border-color: #3f9a6f;
+  margin-left: 0;
+}
+
+.legend-swatch--amber {
+  border-color: #d99a2b;
+}
+
+/* Miniature field examples in the review legend, styled exactly like the real ones. */
+.legend-field {
+  display: inline-block;
+  min-width: 9.5em;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: #fffdf8;
+  font-size: 0.85rem;
+}
+
+.legend-field--amber {
+  background: var(--color-attention-soft);
+  border-color: var(--color-attention-line);
+}
+
+.legend-field--blank {
+  color: var(--color-attention-placeholder);
+  font-style: italic;
+}
+
+/* ---------- Drop overlay (whole page) ---------- */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(232, 239, 233, 0.82);
+  border: 3px dashed var(--color-accent);
+  pointer-events: none;
+  animation: overlay-in 140ms ease-out;
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drop-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 44px;
+  background: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(43, 39, 35, 0.14);
+}
+
+.drop-overlay-glyph {
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: drop-bob 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes drop-bob {
+  from { transform: translateY(-3px); }
+  to { transform: translateY(3px); }
+}
+
+.drop-overlay-text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: var(--color-accent);
+}
+
+/* ---------- Photo received: thumbnail + text ---------- */
+
+.photo-thumbnail {
+  flex: none;
+  height: 44px;
+  width: auto;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: #ece6da;
+  animation: thumbnail-in 350ms var(--ease-out);
+}
+
+@keyframes thumbnail-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+
+.photo-received-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.photo-received-line {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.photo-received-subline {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.photo-received-subline:empty {
+  display: none;
+}
+
+/* ---------- Review summary line ---------- */
+
+.review-heading-group {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--spacing-unit) * 2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.review-summary {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.review-summary::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #cfc4ad;
+}
+
+.review-summary[data-tone="working"]::before {
+  background: var(--color-accent);
+  animation: dot-pulse 1s ease-in-out infinite alternate;
+}
+
+.review-summary[data-tone="attention"]::before {
+  background: var(--color-attention-line);
+}
+
+.review-summary[data-tone="done"]::before {
+  background: var(--color-accent);
+}
+
+.review-summary:empty {
+  display: none;
+}
+
+@keyframes dot-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+/* ---------- Engine readiness ---------- */
+
+.engine-status {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.engine-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--spacing-unit) * 1.5);
+  flex-wrap: wrap;
+}
+
+.progress-track--quiet {
+  width: 180px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.engine-status--error {
+  padding: 12px calc(var(--spacing-unit) * 2);
+  background: var(--color-error-soft);
+  border: 1px solid #ecd0c6;
+  border-radius: 10px;
+}
+
+.engine-status--error .engine-status-text {
+  color: var(--color-error);
+  font-size: 0.95rem;
+}
+
+.engine-status--error .progress-track {
+  display: none;
+}
+
+.progress-panel[data-tone="done"] .progress-glyph-scan {
+  display: none;
+}
+
+.progress-panel[data-tone="done"] .progress-glyph {
+  background: var(--color-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 22'%3E%3Cpath d='M11 11.5l4 4 8-9' fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* Compact hint layouts: the count tips side by side, the review legend on one line. */
+.hint-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px calc(var(--spacing-unit) * 3);
+}
+
+.hint-columns li + li {
+  margin-top: 0;
+}
+
+.hint-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px calc(var(--spacing-unit) * 3);
+}
+
+.hint-legend li + li {
+  margin-top: 0;
+}
+
+.hint-legend .legend-field {
+  min-width: 0;
+  margin-right: 6px;
+}
+
+@media (max-width: 760px) {
+  .hint-columns {
+    grid-template-columns: 1fr;
+  }
+}

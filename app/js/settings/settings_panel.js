@@ -7,7 +7,8 @@
  *
  * Sections: date display, copy columns (column_order_list.js), the remembered payer names
  * (remove one, clear all), the co-op payee list (add, remove), the "Read handwriting"
- * switch, and "Clear everything this page remembers".
+ * switch (with a download bar), and "Clear everything this page remembers". Close (or Esc
+ * inside the panel) folds it away and returns focus to the Settings link.
  *
  * The handwriting switch is off by default and never turns itself on. Turning it on saves
  * the choice and calls `enableHandwritingReader(enabled, onProgress)`; a failure turns it
@@ -27,6 +28,7 @@ const HANDWRITING_NOT_DOWNLOADED_MESSAGE = "On, but the handwriting reader is no
 const HANDWRITING_REMOVED_MESSAGE = "The download was removed from this computer.";
 const HANDWRITING_FAILED_MESSAGE = "The handwriting reader could not be downloaded, so this is off again. Check the internet connection and try again.";
 const REMOVE_GLYPH = "×";
+const DOWNLOAD_PROGRESS_PATTERN = /(\d+(?:\.\d+)?) of (\d+(?:\.\d+)?) MB/;
 
 function createRemovableNameItem(name, removeLabel, onRemove) {
   const item = document.createElement("li");
@@ -60,6 +62,10 @@ export class SettingsPanel {
       this.columnOrderList.render(this.settings.getCopyColumns(), keyToRefocus);
     });
     this.toggleButton.addEventListener("click", () => this.setOpen(this.panelElement.hidden));
+    this.closeButton.addEventListener("click", () => this.setOpen(false));
+    this.panelElement.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") this.setOpen(false);
+    });
     for (const radio of this.dateFormatRadios) {
       radio.addEventListener("change", () => { if (radio.checked) this.settings.setDateDisplayFormat(radio.value); });
     }
@@ -83,9 +89,11 @@ export class SettingsPanel {
   }
 
   setOpen(isOpen) {
+    const wasOpen = !this.panelElement.hidden;
     this.panelElement.hidden = !isOpen;
     this.toggleButton.setAttribute("aria-expanded", String(isOpen));
     if (isOpen) this.renderAll(); // names may have been added by Finish batch since last time
+    if (wasOpen && !isOpen && this.panelElement.contains(document.activeElement)) this.toggleButton.focus();
   }
 
   renderAll() {
@@ -109,15 +117,26 @@ export class SettingsPanel {
   }
 
   renderPayeeNames() {
-    this.payeeNamesList.replaceChildren(...this.settings.getPayeeNames().map((name) => createRemovableNameItem(name, "Remove this payee", (removed) => {
+    const payeeNames = this.settings.getPayeeNames();
+    this.payeeNamesList.replaceChildren(...payeeNames.map((name) => createRemovableNameItem(name, "Remove this payee", (removed) => {
       this.settings.removePayeeName(removed);
       this.renderPayeeNames();
     })));
+    this.payeeNamesEmptyLine.hidden = payeeNames.length > 0;
   }
 
-  showHandwritingStatus(text) {
+  /** Status text under the switch; "12 of 128 MB" also drives the download bar. */
+  showHandwritingStatus(text, tone = "normal") {
     this.handwritingStatusLine.textContent = text || "";
+    this.handwritingStatusLine.dataset.tone = tone;
     this.handwritingStatusLine.hidden = !text;
+    const downloadMatch = (text || "").match(DOWNLOAD_PROGRESS_PATTERN);
+    this.handwritingProgress.hidden = !downloadMatch;
+    if (downloadMatch) {
+      const percent = Math.round((Number(downloadMatch[1]) / Number(downloadMatch[2])) * 100);
+      this.handwritingProgressBar.style.setProperty("width", `${percent}%`);
+      this.handwritingProgressTrack.setAttribute("aria-valuenow", String(percent));
+    }
   }
 
   /** The switch was flipped (or the page loaded with it on): tell the reader, report inline. */
@@ -141,7 +160,7 @@ export class SettingsPanel {
         if (!isCurrent() || !enabled) return;
         this.settings.setHandwritingReaderEnabled(false);
         this.handwritingSwitch.checked = false;
-        this.showHandwritingStatus(HANDWRITING_FAILED_MESSAGE);
+        this.showHandwritingStatus(HANDWRITING_FAILED_MESSAGE, "error");
       });
   }
 

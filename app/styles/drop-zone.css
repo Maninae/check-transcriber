@@ -90,3 +90,53 @@
   flex-direction: row;
   justify-content: space-between;
 }
+
+/* The empty drop zone invites a click: it lifts slightly on hover and shows a focus ring. */
+.drop-zone:not(.drop-zone--compact):hover {
+  border-color: #c9bda4;
+  background: #fffefb;
+}
+
+.drop-zone-prompt {
+  border-radius: 12px;
+  padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 3);
+}
+
+.drop-zone-glyph {
+  display: block;
+  width: 72px;
+  height: 54px;
+  margin: 0 auto calc(var(--spacing-unit) * 2);
+}
+
+.drop-zone-glyph-back {
+  fill: #f1ece1;
+  stroke: #c9bda4;
+  stroke-width: 1.5;
+}
+
+.drop-zone-glyph-front {
+  fill: #ffffff;
+  stroke: var(--color-accent);
+  stroke-width: 1.8;
+}
+
+.drop-zone-glyph-line {
+  stroke: #b9cbbf;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.drop-zone-glyph-box {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+}
+
+.drop-zone--drag-active .drop-zone-glyph {
+  animation: drop-bob 1.2s ease-in-out infinite alternate;
+}
+
+.drop-zone--compact .photo-preview-container {
+  gap: calc(var(--spacing-unit) * 2);
+}

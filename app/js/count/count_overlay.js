@@ -9,15 +9,14 @@
  * Every interactive element carries data attributes that count_step.js dispatches on.
  */
 
-import { computeQuadCentre } from "../pipeline/quadrilateral_math.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const HANDLE_RADIUS_SCREEN_PX = 6;
 const SELECTED_HANDLE_RADIUS_SCREEN_PX = 8;
-const BADGE_RADIUS_SCREEN_PX = 15;
-const BADGE_FONT_SCREEN_PX = 16;
+const BADGE_RADIUS_SCREEN_PX = 16;
+const BADGE_FONT_SCREEN_PX = 17;
 const REMOVE_BUTTON_RADIUS_SCREEN_PX = 12;
-const BADGE_INSET_FRACTION = 0.18; // from the top-left corner toward the centre
+const BADGE_ALONG_EDGE_RADII = 2.2; // badge centre's distance from the top-left corner, in badge radii
 
 function createSvgElement(tagName, attributes) {
   const element = document.createElementNS(SVG_NAMESPACE, tagName);
@@ -39,12 +38,18 @@ function findTopRightCorner(corners) {
 }
 
 function drawNumberBadge(svgElement, quad, number, pixelsPerScreenPx, imageWidth, imageHeight) {
-  const [centreX, centreY] = computeQuadCentre(quad.corners);
-  const [cornerX, cornerY] = findTopLeftCorner(quad.corners);
+  const [leftX, leftY] = findTopLeftCorner(quad.corners);
+  const [rightX, rightY] = findTopRightCorner(quad.corners);
   const radius = BADGE_RADIUS_SCREEN_PX * pixelsPerScreenPx;
+  // On the top edge, a little in from the top-left corner: over the check's blank top
+  // margin (not the payer name) and clear of the corner handle.
+  const edgeLength = Math.hypot(rightX - leftX, rightY - leftY) || 1;
+  const along = Math.min(radius * BADGE_ALONG_EDGE_RADII, edgeLength / 2);
+  const edgeX = leftX + ((rightX - leftX) / edgeLength) * along;
+  const edgeY = leftY + ((rightY - leftY) / edgeLength) * along;
   // Kept fully inside the photo, so a check cut off by the frame edge still shows its number.
-  const badgeX = Math.min(Math.max(cornerX + (centreX - cornerX) * BADGE_INSET_FRACTION, radius), imageWidth - radius);
-  const badgeY = Math.min(Math.max(cornerY + (centreY - cornerY) * BADGE_INSET_FRACTION, radius), imageHeight - radius);
+  const badgeX = Math.min(Math.max(edgeX, radius), imageWidth - radius);
+  const badgeY = Math.min(Math.max(edgeY, radius), imageHeight - radius);
   svgElement.append(
     createSvgElement("circle", { class: "count-number-badge", cx: badgeX, cy: badgeY, r: radius, "pointer-events": "none" }),
   );

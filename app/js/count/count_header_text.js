@@ -18,9 +18,11 @@ function pluralizeChecks(count) {
 export function describeCountHeader(quads, wasEdited) {
   if (quads.length === 0) {
     return {
-      heading: wasEdited ? "No checks outlined" : "I could not find any checks in this photo",
-      note: "Photos work best with the checks on a plain sheet and all four corners of each check in frame. "
-        + "Drag a box around each check to outline it yourself.",
+      heading: wasEdited ? "No checks outlined yet" : "I couldn't find any checks",
+      note: wasEdited
+        ? "Click Add a check, then drag a box around each check on the photo."
+        : "Try a photo on a plainer background with all four corners of each check showing, "
+          + "or add them by hand: drag a box around each one on the photo below.",
     };
   }
   const heading = wasEdited ? pluralizeChecks(quads.length) : `Found ${pluralizeChecks(quads.length)}`;
@@ -29,10 +31,10 @@ export function describeCountHeader(quads, wasEdited) {
     return { heading, note: "This photo is too small to read; ask for the original attachment." };
   }
   if (quads.every(({ confident }) => confident)) {
-    return { heading, note: "Every outline looks solid. Check the count against the photo, then Continue." };
+    return { heading, note: "Every outline looks solid. Count the checks on the photo; if they match, press Continue." };
   }
   return {
     heading,
-    note: "Look over the outlines in amber. Add a missed check, click an outline to remove it, or drag a corner to adjust.",
+    note: "Give the amber outlines a second look. Add a missed check, click an outline to remove it, or drag a corner to adjust. Then press Continue.",
   };
 }

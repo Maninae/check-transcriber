@@ -21,9 +21,13 @@
 
   /* Amber: the one "look here" signal (unsure and blank fields, a duplicate warning),
      matching the count step's amber outlines. */
-  --color-attention: #9a6414;
-  --color-attention-line: #d99a2b;
+  --color-attention: #8a5a10; /* 5.2:1 on the page and on attention-soft (AA text) */
+  --color-attention-line: #b07a1a; /* 3.3:1 on white and attention-soft (AA for UI outlines) */
   --color-attention-soft: #fcefd6;
+  --color-attention-placeholder: #7d5f2a; /* "read from the check": 5.2:1 on attention-soft */
+  --color-icon-quiet: #857c70; /* small icons on white: 4.1:1 */
+  --color-success: #3f6f5b;
+  --color-success-soft: #e8efe9;
 
   --color-error: #96402b;
   --color-error-soft: #f6e7e1;
@@ -40,6 +44,10 @@
   --font-body: "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, ui-sans-serif, system-ui, sans-serif;
 
   --spacing-unit: 8px;
+
+  /* One focus ring for every control, keyboard only (:focus-visible). */
+  --focus-ring: 0 0 0 3px rgba(63, 111, 91, 0.35);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 * {
@@ -152,6 +160,13 @@ body {
   color: var(--color-accent);
 }
 
+.quiet-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
 .quiet-button[aria-pressed="true"] {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
@@ -166,16 +181,64 @@ body {
   text-align: center;
 }
 
+/* The one toast, bottom centre: a check-mark disc (drawn in CSS, so it is never part of the
+   text) and one short sentence. Fades up on show; see toast.js. */
 .toast {
   position: fixed;
   left: 50%;
   bottom: calc(var(--spacing-unit) * 4);
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2.5);
+  padding: 10px calc(var(--spacing-unit) * 2.5) 10px 12px;
   background: var(--color-text);
-  color: var(--color-background);
+  color: #fbf8f2;
   border-radius: 999px;
-  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(43, 39, 35, 0.22);
+  font-size: 0.95rem;
   z-index: 30;
+  animation: toast-in 220ms var(--ease-out);
+}
+
+.toast::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #6fb391 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-7' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+}
+
+.toast[data-tone="info"]::before {
+  background: #c9b99a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 9v5M10 6.2v.1' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Keyboard focus, everywhere: one soft green ring. Mouse clicks do not show it. */
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Honour "reduce motion": no sliding bars, shimmer, fades or smooth scrolling. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

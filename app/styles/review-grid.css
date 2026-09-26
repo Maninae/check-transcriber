@@ -146,7 +146,7 @@
 
 /* Wide enough for "Copied", so the flash never shifts the row's fields. */
 .review-row-side .quiet-button {
-  min-width: 6.5em;
+  min-width: 7.5em;
 }
 
 .review-row-side {
@@ -169,4 +169,80 @@
   width: 18px;
   height: 18px;
   accent-color: var(--color-accent);
+}
+
+/* Waiting for its crop: a shimmering card the shape of a check, never an empty box. */
+.review-crop-placeholder {
+  background: linear-gradient(100deg, #ece6da 20%, #f5f1e8 40%, #ece6da 60%) 0 0 / 300% 100%;
+  animation: field-shimmer 1.4s linear infinite;
+}
+
+.review-crop-placeholder-text {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* The crop fades in once it arrives. */
+.review-crop-frame:not([hidden]) .review-crop-canvas {
+  animation: field-arrive 450ms var(--ease-out);
+}
+
+/* "Click to enlarge", shown on hover so the crop reads as clickable. */
+.review-crop-enlarge-hint {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(43, 39, 35, 0.72);
+  color: #ffffff;
+  font-size: 0.75rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.review-crop-frame:hover .review-crop-enlarge-hint {
+  opacity: 1;
+}
+
+.review-reread-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+
+.review-reread-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-pulse 0.8s ease-in-out infinite alternate;
+}
+
+.quiet-button.button--copied {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+/* Done rows step back, but the fields stay readable (text never below AA). */
+.review-row--done {
+  opacity: 1;
+  background: #fbf9f4;
+}
+
+.review-row--done .review-crop-column,
+.review-row--done .review-field-input {
+  opacity: 0.6;
+}
+
+.review-row--done .review-row-number::after {
+  content: " ✓ done";
+  font-weight: 500;
+  color: var(--color-accent);
 }

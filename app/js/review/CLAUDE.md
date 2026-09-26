@@ -20,4 +20,6 @@ Invariants:
 - A touched field (edited or confirmed) is never overwritten by a later read; it only takes the new box.
 - Boxes are in the DISPLAYED crop's full-resolution pixels. Rotate flips them at once; a re-read returns them in the rotated orientation.
 - The magnifier draws from `displayedCropCanvas` (MICR blurred), never from `uprightCropCanvas`.
+- `countFieldStates()` + `onFieldStatesChanged` feed the review summary line (batch_flow.js); `renderField` schedules it, once per task.
+- Only fields take Tab focus; anything added to a row (reread status, enlarge hint) must stay untabbable, or Tab stops crossing rows break.
 - Tab stops are fixed by the gate (unsure/blank and not-yet-read fields); confirming does not remove a stop, so Shift+Tab can come back.

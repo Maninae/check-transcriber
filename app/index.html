@@ -39,7 +39,8 @@
     from HTTP headers, which GitHub Pages cannot send (verified: a URL-loaded
     worker could fetch any origin; the blob-bootstrapped one is blocked).
   - style-src 'self': every style lives in styles/*.css, no inline styles.
-  - img-src 'self' data:: the favicon below is a data: URI; every photo and
+  - img-src 'self' data:: the favicon below and the small UI icons in
+    styles/*.css (toast tick, copy icon) are data: URIs; every photo and
     check crop is drawn to <canvas>, never <img>, so no other image source is
     needed (and no blob:/object URL of a photo ever exists).
   - font-src 'self': no webfont network dependency (system font stack only).
@@ -69,13 +70,14 @@
 <link rel="stylesheet" href="./styles/count-step.css" />
 <link rel="stylesheet" href="./styles/review-grid.css" />
 <link rel="stylesheet" href="./styles/lightbox.css" />
+<link rel="stylesheet" href="./styles/feedback.css" />
 </head>
 <body>
 <div class="page">
   <header class="page-header">
     <h1 class="app-title">Check Transcriber</h1>
     <div class="page-header-end">
-      <ol id="step-indicator" class="step-indicator" hidden>
+      <ol id="step-indicator" class="step-indicator" aria-label="Steps" hidden>
         <li class="step-indicator-step" data-step="photo">Photo</li>
         <li class="step-indicator-step" data-step="count">Count</li>
         <li class="step-indicator-step" data-step="review">Review</li>
@@ -85,28 +87,36 @@
   </header>
 
   <section id="settings-panel" class="settings-panel" aria-label="Settings" hidden>
+    <div class="settings-panel-header">
+      <h2 class="settings-panel-title">Settings</h2>
+      <p class="settings-panel-subtitle">Saved on this computer only.</p>
+      <button id="settings-close-button" type="button" class="quiet-button settings-small-button">Close</button>
+    </div>
     <div class="settings-group">
       <h2 class="settings-heading">Show dates as</h2>
+      <p class="settings-help">How dates look on this page.</p>
       <label class="settings-choice"><input type="radio" name="date-display-format" value="iso" /> 2026-09-12</label>
       <label class="settings-choice"><input type="radio" name="date-display-format" value="m/d/yyyy" /> 9/12/2026</label>
-      <p class="settings-help">Copied dates are always <span class="settings-nowrap">2026-09-12</span>.</p>
+      <p class="settings-help">Copied dates are always <span class="settings-nowrap">2026-09-12</span>, which every spreadsheet understands.</p>
 
       <h2 class="settings-heading">Columns to copy</h2>
+      <p class="settings-help">Tick the columns your tracker has, and drag them into the same order.</p>
       <ol id="copy-columns-list" class="copy-columns-list"></ol>
-      <p class="settings-help">Drag to match the tracker's column order.</p>
     </div>
 
     <div class="settings-group">
       <h2 class="settings-heading">Payer names remembered</h2>
+      <p class="settings-help">Used to suggest and tidy names as you type.</p>
       <ul id="known-payers-list" class="settings-name-list"></ul>
-      <p id="known-payers-empty" class="settings-help">None yet. Names are added when you finish a batch.</p>
-      <button id="clear-known-payers-button" type="button" class="small-link-button">Clear all names</button>
+      <p id="known-payers-empty" class="settings-empty-line">None yet. Names are added when you finish a batch.</p>
+      <button id="clear-known-payers-button" type="button" class="small-link-button">Forget all names</button>
 
-      <h2 class="settings-heading">Payees (who the checks are written to)</h2>
+      <h2 class="settings-heading">Payees</h2>
+      <p class="settings-help">Who the checks are written to (your co-ops). A check made out to one of these shows it as the payee.</p>
       <ul id="payee-names-list" class="settings-name-list"></ul>
-      <p class="settings-help">A check written to one of these shows it as the payee.</p>
+      <p id="payee-names-empty" class="settings-empty-line">No payees yet. Add the names as they appear on checks, for example "Greenwillow Co-op".</p>
       <form id="add-payee-form" class="settings-add-form">
-        <input id="add-payee-input" class="settings-text-input" type="text" autocomplete="off" spellcheck="false" placeholder="Add a payee" aria-label="Payee name" />
+        <input id="add-payee-input" class="settings-text-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a payee name" aria-label="Payee name" />
         <button type="submit" class="quiet-button settings-small-button">Add</button>
       </form>
     </div>
@@ -117,7 +127,10 @@
         <input id="handwriting-switch" type="checkbox" role="switch" />
         <span>Read handwriting (one-time 128 MB download)</span>
       </label>
-      <p class="settings-help">The download happens once and then stays on this computer. Switching this off keeps the download; "Remove the download" deletes it. The handwriting reader is made by a third party: <a href="https://github.com/Maninae/check-transcriber/blob/main/README.md#license" target="_blank" rel="noopener noreferrer">licence note</a>.</p>
+      <p class="settings-help">Off: handwritten fields are left for you to read from the check. On: they are read too, a bit more slowly. The download stays on this computer; switching off keeps it, "Remove the download" deletes it. Made by a third party: <a href="https://github.com/Maninae/check-transcriber/blob/main/README.md#license" target="_blank" rel="noopener noreferrer">licence note</a>.</p>
+      <div id="handwriting-progress" class="settings-progress" hidden>
+        <div id="handwriting-progress-track" class="settings-progress-track" role="progressbar" aria-label="Handwriting download" aria-valuemin="0" aria-valuemax="100"><div id="handwriting-progress-bar" class="settings-progress-bar"></div></div>
+      </div>
       <p id="handwriting-status" class="settings-status" role="status" aria-live="polite" hidden></p>
       <div class="settings-button-row">
         <button id="handwriting-download-button" type="button" class="quiet-button settings-small-button" hidden>Download now (128 MB)</button>
@@ -126,28 +139,69 @@
 
       <h2 class="settings-heading">Remembered on this computer</h2>
       <p class="settings-help">Payer names, check numbers with their payer and date, and these settings. Never the photos.</p>
-      <button id="clear-everything-button" type="button" class="quiet-button settings-small-button">Clear everything this page remembers</button>
+      <button id="clear-everything-button" type="button" class="quiet-button settings-small-button settings-danger-button">Clear everything this page remembers</button>
     </div>
   </section>
 
   <main class="page-main">
     <div id="drop-zone" class="drop-zone">
-      <div id="drop-zone-prompt" class="drop-zone-prompt">
+      <div id="drop-zone-prompt" class="drop-zone-prompt" role="button" tabindex="0" aria-label="Choose a photo of the checks">
+        <svg class="drop-zone-glyph" viewBox="0 0 64 48" aria-hidden="true" focusable="false">
+          <rect class="drop-zone-glyph-back" x="10" y="4" width="46" height="24" rx="3" transform="rotate(-6 33 16)" />
+          <rect class="drop-zone-glyph-front" x="6" y="16" width="46" height="24" rx="3" />
+          <line class="drop-zone-glyph-line" x1="12" y1="24" x2="30" y2="24" />
+          <line class="drop-zone-glyph-line" x1="12" y1="31" x2="44" y2="31" />
+          <rect class="drop-zone-glyph-box" x="36" y="21" width="11" height="6" rx="1" />
+        </svg>
         <p class="drop-zone-instruction">Paste a photo of the checks (Ctrl+V), drag it here, or click to browse.</p>
-        <p class="drop-zone-subtext">JPEG, PNG, or WebP.</p>
+        <p class="drop-zone-subtext">JPEG, PNG, or WebP. Ctrl+V works anywhere on this page.</p>
       </div>
 
       <div id="photo-preview-container" class="photo-preview-container" hidden>
-        <p id="photo-received-line" class="photo-received-line"></p>
-        <button id="start-over-button" type="button" class="start-over-button">Start over</button>
+        <canvas id="photo-thumbnail" class="photo-thumbnail" aria-hidden="true"></canvas>
+        <div class="photo-received-text">
+          <p id="photo-received-line" class="photo-received-line"></p>
+          <p id="photo-received-subline" class="photo-received-subline"></p>
+        </div>
+        <button id="start-over-button" type="button" class="start-over-button" title="Clear this photo and its checks, and start again">Start over</button>
       </div>
     </div>
 
     <input type="file" id="file-input" accept="image/*" hidden />
 
-    <p id="input-hint-line" class="input-hint-line" hidden></p>
-    <p id="pipeline-progress-line" class="pipeline-progress-line" role="status" aria-live="polite" hidden></p>
-    <p id="batch-recorded-line" class="batch-recorded-line" hidden></p>
+    <div id="input-hint" class="notice notice--error" hidden>
+      <p id="input-hint-line" class="notice-text input-hint-line" role="alert" hidden></p>
+      <button id="input-hint-dismiss" type="button" class="notice-dismiss" aria-label="Dismiss this message">&times;</button>
+    </div>
+
+    <section id="progress-panel" class="progress-panel" hidden>
+      <div class="progress-panel-body">
+        <span class="progress-glyph" aria-hidden="true"><span class="progress-glyph-scan"></span></span>
+        <div class="progress-panel-text">
+          <p id="progress-headline" class="progress-headline" role="status" aria-live="polite"></p>
+          <p id="progress-detail" class="progress-detail" hidden></p>
+        </div>
+        <button id="progress-action" type="button" class="quiet-button" hidden></button>
+      </div>
+      <div id="progress-track" class="progress-track progress-track--indeterminate" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-bar" class="progress-bar"></div></div>
+    </section>
+
+    <div id="batch-recorded" class="notice notice--success" role="status" hidden>
+      <span class="notice-icon" aria-hidden="true"></span>
+      <p class="notice-text"><span id="batch-recorded-line" class="batch-recorded-line"></span><span class="batch-recorded-next">. Ready for the next photo.</span></p>
+    </div>
+
+    <details class="hint" data-hint-key="pasteFromGmail" hidden>
+      <summary class="hint-summary">How to paste the photo from Gmail</summary>
+      <div class="hint-body">
+        <ol class="hint-steps">
+          <li>In Gmail, click the photo attachment so it opens large.</li>
+          <li>Right-click the photo and choose <strong>Copy image</strong>.</li>
+          <li>Come back to this tab and press <kbd>Ctrl</kbd>+<kbd>V</kbd>.</li>
+        </ol>
+        <button type="button" class="hint-dismiss">Got it</button>
+      </div>
+    </details>
 
     <section id="count-step" class="count-step" hidden>
       <div class="count-step-header">
@@ -156,10 +210,21 @@
           <p id="count-step-note" class="count-step-note"></p>
         </div>
         <div id="count-step-actions" class="count-step-actions">
-          <button id="add-check-button" type="button" class="quiet-button">Add a check</button>
+          <button id="add-check-button" type="button" class="quiet-button" title="Then drag a box around a check the outlines missed">Add a check</button>
           <button id="count-continue-button" type="button" class="primary-button">Continue</button>
         </div>
       </div>
+      <details class="hint hint--compact" data-hint-key="fixOutlines" hidden>
+        <summary class="hint-summary">How to fix the outlines</summary>
+        <div class="hint-body">
+          <ul class="hint-list hint-columns">
+            <li><strong>Missed a check?</strong> Click Add a check, then drag a box around it. It snaps to the edges.</li>
+            <li><strong>Not a check?</strong> Click its outline, then the red &times; (or press Delete).</li>
+            <li><strong>A little off?</strong> Drag a corner. <span class="legend-swatch legend-swatch--amber" aria-hidden="true"></span>Amber outlines deserve a second look.</li>
+          </ul>
+          <button type="button" class="hint-dismiss">Got it</button>
+        </div>
+      </details>
       <div id="count-photo-frame" class="count-photo-frame">
         <canvas id="count-photo-canvas" class="count-photo-canvas"></canvas>
         <svg id="count-overlay" class="count-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -168,26 +233,51 @@
 
     <section id="review-step" class="review-step" hidden>
       <div class="review-toolbar">
-        <h2 id="review-heading" class="review-heading"></h2>
-        <label class="email-date-label">Email date
+        <div class="review-heading-group">
+          <h2 id="review-heading" class="review-heading"></h2>
+          <p id="review-summary" class="review-summary" role="status" aria-live="polite"></p>
+        </div>
+        <label class="email-date-label" title="If a check's date is blank, you can fill it with the email's date in one click">Email date
           <input id="email-date-input" class="email-date-input" type="text" autocomplete="off" spellcheck="false" placeholder="optional" />
         </label>
-        <button id="copy-all-top-button" type="button" class="primary-button">Copy all rows</button>
+        <button id="copy-all-top-button" type="button" class="primary-button" title="Copies every check, one spreadsheet row each">Copy all rows</button>
       </div>
+      <details class="hint hint--compact" data-hint-key="reviewGuide" hidden>
+        <summary class="hint-summary">What the colours mean, and shortcuts</summary>
+        <div class="hint-body">
+          <ul class="hint-list hint-legend">
+            <li><span class="legend-field">Plain</span> read confidently</li>
+            <li><span class="legend-field legend-field--amber">Amber</span> please check it</li>
+            <li><span class="legend-field legend-field--amber legend-field--blank">empty</span> read it from the check (click the field to see it up close)</li>
+          </ul>
+          <p class="hint-note"><kbd>Tab</kbd> jumps to the next amber field, <kbd>Enter</kbd> confirms it. <strong>Copy row</strong> copies one check; <strong>Copy all rows</strong> copies every check. Click a check to see it larger.</p>
+          <button type="button" class="hint-dismiss">Got it</button>
+        </div>
+      </details>
       <div id="review-rows" class="review-rows"></div>
       <div class="review-toolbar review-toolbar--bottom">
-        <button id="copy-all-bottom-button" type="button" class="primary-button">Copy all rows</button>
-        <button id="finish-batch-button" type="button" class="quiet-button">Finish batch</button>
+        <button id="copy-all-bottom-button" type="button" class="primary-button" title="Copies every check, one spreadsheet row each">Copy all rows</button>
+        <button id="finish-batch-button" type="button" class="quiet-button" title="Remembers these checks, clears the photo, and gets ready for the next one">Finish batch</button>
       </div>
     </section>
 
     <p class="trust-sentence">Photos stay on this computer. Nothing is uploaded.</p>
 
     <div id="engine-status" class="engine-status" role="status" aria-live="polite">
-      <p id="engine-status-text" class="engine-status-text"></p>
-      <button id="engine-status-retry" type="button" class="engine-status-retry" hidden>Retry</button>
+      <div class="engine-status-row">
+        <p id="engine-status-text" class="engine-status-text"></p>
+        <button id="engine-status-retry" type="button" class="primary-button engine-status-retry" hidden>Retry</button>
+      </div>
+      <div id="engine-status-track" class="progress-track progress-track--indeterminate progress-track--quiet" aria-hidden="true"><div class="progress-bar"></div></div>
     </div>
   </main>
+</div>
+
+<div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden>
+  <div class="drop-overlay-card">
+    <svg class="drop-overlay-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></svg>
+    <p class="drop-overlay-text">Drop the photo anywhere</p>
+  </div>
 </div>
 
 <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Check" hidden>
@@ -195,12 +285,13 @@
     <canvas id="lightbox-canvas" class="lightbox-canvas"></canvas>
   </div>
   <p id="lightbox-caption" class="lightbox-caption"></p>
+  <p class="lightbox-hint">Scroll to zoom, drag to move, arrow keys for the next check, Esc to close.</p>
   <div class="lightbox-controls">
-    <button id="lightbox-previous" type="button" class="lightbox-button" aria-label="Previous check">&larr;</button>
-    <button id="lightbox-rotate" type="button" class="lightbox-button">Rotate</button>
-    <button id="lightbox-next" type="button" class="lightbox-button" aria-label="Next check">&rarr;</button>
+    <button id="lightbox-previous" type="button" class="lightbox-button" aria-label="Previous check" title="Previous check">&larr;</button>
+    <button id="lightbox-rotate" type="button" class="lightbox-button" title="Turn this check upside down (the fields are read again)">Rotate</button>
+    <button id="lightbox-next" type="button" class="lightbox-button" aria-label="Next check" title="Next check">&rarr;</button>
   </div>
-  <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close">&times;</button>
+  <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close" title="Close (Esc)">&times;</button>
 </div>
 <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
 
