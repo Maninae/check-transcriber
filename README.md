@@ -52,4 +52,9 @@ The complete spec (goals, constraints, UX flow, processing pipeline, milestones)
 
 ## License
 
-AGPL-3.0. The learned check detector is trained with Ultralytics (AGPL-3.0), and this repository is licensed to match so that the trained model can ship inside the app. A permissively licensed detector is in progress under `experiments/detection/learned/centernet/`; if it reaches parity, the repository may be relicensed more permissively.
+MIT for everything in this repository: the app, the synthetic-data packages, the experiments, and the models we trained ourselves (the check detector, the field localizer, the readers, the orientation classifier).
+
+Two third-party notes:
+
+- The YOLO experiments under `experiments/detection/` were trained with Ultralytics (AGPL-3.0). Those weights are a research reference only and are not shipped in the app.
+- The optional handwriting reader is Microsoft's `trocr-small-handwritten`. Its code is MIT, its model card states no licence for the weights, and the weights were fine-tuned on the IAM dataset, whose terms are non-commercial research. The app offers it as a separate opt-in download for that reason; it is not part of the default bundle.
