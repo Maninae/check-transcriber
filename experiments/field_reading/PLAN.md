@@ -1,0 +1,32 @@
+# Field reading: plan and log
+
+Goal: from a rectified 1600 px check crop, locate and read payer name, payee, courtesy amount, legal (words) amount, date, memo and check number; fill confident fields, blank unsure ones (spec 4.3, 5 stages 5-7). MICR is never read. Handwriting is the hard part and gets its own report.
+
+## Data
+- val/eval: synth v1 `ocr/` export on vega (rectified crops from ground-truth corners, field crops, one row per field). Scored rows: `status == ok` (primary) and `too_small` (text under 14 px tall in the photo, reported separately). Occluded / out-of-frame rows are excluded and counted.
+- train: re-cut by `data_access/train_crop_export.py` into the identical schema under `/Volumes/vega/datasets/check-transcriber/field-reading/derived/` (verified: 138/138 boxes and statuses identical to synth's own val rows, pixel diff under 1.3/255 = JPEG noise).
+- Canonical ground truth (`amount_cents`, `date_iso`, `check_number`) is joined from annotations by `data_access/field_manifest.py`.
+- Held out by construction: eval templates, backgrounds, payees, banks and all 5 eval handwriting fonts never occur in train. Model selection uses val only; eval is scored once per final method.
+
+## Contracts (fixed before fan-out)
+- Row key: `<scene_id>__check=<i>__field=<name>` (`field_manifest.make_row_key`).
+- Reading predictions: `field-reading/predictions/<split>/<method>__loc=<localization>.jsonl`, one row per scored field row: `{row_key, scene_id, check_index, field_name, method, localization, pred_text, confidence, pred_box, latency_ms}`. `pred_text == ""` means blank. `confidence` in [0, 1] (null if the method has none). `localization` is `oracle` (synth's field crop) or a localizer id.
+- Localization predictions: `field-reading/predictions/localization/<split>/<method>.jsonl`, one row per (check, target field), present or not: `{row_key, scene_id, check_index, field_name, pred_box | null, confidence}` in 1600 px check-crop pixel-edge coordinates.
+- End-to-end readers crop with `data_access/field_crop.crop_field_from_check` (same margin rule as synth's crops).
+- MPS: one heavy job at a time for this whole area. Take `mkdir /Volumes/vega/datasets/check-transcriber/field-reading/logs/MPS_LOCK` before an MPS training or bulk inference run, remove it (`rmdir`) after; wait if it exists. Check `vm_stat` first; the detector owner trains concurrently.
+
+## Units
+| # | Unit | Owner | Verified means |
+|---|------|-------|----------------|
+| U0 | Data layer + train crop export | lead | export parity test vs synth val rows; train manifest row counts sane |
+| U1 | Metrics harness (`metrics/`) | Opus builder | pytest green; parsers recover canonical value from >= 99.5% of GT texts; a toy prediction file produces JSON + md with every breakdown and the gating table |
+| U2 | Field localization (`field_localization/`): layout prior (+ ink refinement), learned localizer | Opus builder | per-field IoU / hit rate on eval for each method, boxes drawn on 6 crops and read by eye |
+| U3 | Tesseract baselines (`ocr_baselines/`) | lead | config search on val subset logged; eval predictions scored |
+| U4 | Modern recognizers (`learned/`): TrOCR zero-shot and fine-tuned, printed recognizer, digit path for courtesy amount | Opus builder | val-selected, eval scored once, licences recorded |
+| U5 | Hard set + comparison + gating curves (`metrics/`) | lead | tables on eval and hard set, per field x method |
+| U6 | ONNX export, equivalence on 20 crops, size, CPU latency, browser note (`export/`) | lead or builder | max abs logit diff and identical decoded text on 20 crops |
+| U7 | Contact sheets + failure gallery (`gallery/`) | lead | read by eye, each sheet < 3 MB |
+| U8 | Recommendation + report to main | lead | |
+
+## Log
+- 2026-09-25 21:05 U0: data layer written; export parity verified; full train export launched (4 workers).
