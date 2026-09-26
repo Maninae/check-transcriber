@@ -1,6 +1,7 @@
 """Stage 3 invariants: split pools are disjoint and respected, the manifest round-trips, builds resume."""
 
 import json
+from collections import Counter
 from dataclasses import replace
 
 import numpy as np
@@ -11,6 +12,7 @@ from dataset_builder.build_plan import BuildPlan
 from dataset_builder.manifest import read_manifest
 from dataset_builder.scene_task_runner import run_scene_task
 from dataset_builder.tests.conftest import BUILD_SCENES
+from scene_composer.geometry.framing_regimes import framing_regime_of_label
 from scene_composer.on_demand import SyntheticSceneStream
 from synthetic_checks.check_templates import build_template_catalog, template_family_by_id
 from synthetic_checks.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_by_hash_rank, plan_split_pools, plan_template_pools
@@ -133,3 +135,33 @@ def test_stream_reproduces_the_dataset_builders_scenes(built_dataset, tmp_path):
         assert json.dumps(composed.label_record()) == (output_directory / "val" / "annotations" / f"{scene_id}.json").read_text()
         composed.write_jpeg(tmp_path / f"{scene_id}.jpg")
         assert (tmp_path / f"{scene_id}.jpg").read_bytes() == (output_directory / "val" / "images" / f"{scene_id}.jpg").read_bytes()
+
+
+def test_build_records_each_scenes_framing_regime(built_dataset):
+    """The default mix reaches the files: labels, manifest counts and OCR-by-regime rows agree with the plan."""
+    _, output_directory, manifest, _ = built_dataset
+    plan = BuildPlan(**json.loads((output_directory / "build_plan.json").read_text()))
+    seen = Counter()
+    for split_name in SPLIT_NAMES:
+        for path in (output_directory / split_name / "annotations").glob("*.json"):
+            regime = framing_regime_of_label(json.loads(path.read_text()))
+            assert regime == plan.framing_regime_for(split_name, int(path.stem.split("_")[1]))
+            seen[(split_name, regime)] += 1
+    assert len({regime for _, regime in seen}) >= 2
+    assert {(split, regime): count for split, counts in manifest.framing_regime_scene_counts.items()
+            for regime, count in counts.items()} == dict(seen)
+    for split_name, by_regime in manifest.ocr_rows_by_regime.items():
+        assert sum(counts["rows"] for counts in by_regime.values()) == manifest.ocr_row_counts[split_name]["rows"]
+
+
+def test_eval_only_build_reuses_recorded_pools(built_dataset):
+    root, output_directory, _, arguments = built_dataset
+    manifest = build_dataset(replace_argument(arguments, output=root / "eval_only", scenes=2, only_split="eval", seed=9,
+                                              pools_from=output_directory / "build_plan.json", ocr_splits="none",
+                                              framing_regime_mix={"single": 1.0}))
+    recorded = json.loads((output_directory / "build_plan.json").read_text())
+    assert manifest.scene_counts == {"train": 0, "val": 0, "eval": 2}
+    assert manifest.split_pools == recorded["split_pools"] and manifest.framing_regime_scene_counts["eval"] == {"single": 2}
+    for path in (root / "eval_only" / "eval" / "annotations").glob("*.json"):
+        label = json.loads(path.read_text())
+        assert label["background_id"] in recorded["split_pools"]["eval"]["background_ids"] and len(label["checks"]) == 1

@@ -189,9 +189,9 @@ def visible_fractions(sizes_inches: list[tuple[float, float]], placements: list[
     return fractions
 
 
-def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement],
-                         order: list[int]) -> list[CheckPlacement]:
-    """Push checks apart from the group center until each keeps >= 70% visible; returns them in paste order.
+def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement], order: list[int],
+                         min_visible_fraction: float = LOOSE_MIN_VISIBLE_FRACTION) -> list[CheckPlacement]:
+    """Push checks apart from the group center until each keeps `min_visible_fraction` visible; returns them in paste order.
 
     `placements[k]` belongs to check `order[k]`; the result is re-indexed so result[i] is check i,
     and paste order is the caller's check order, so the visibility check uses that order.
@@ -201,7 +201,7 @@ def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: li
         by_check[check_index] = placement
     identity = list(range(len(by_check)))
     for _ in range(SPREAD_MAX_STEPS):
-        if len(by_check) < 2 or min(visible_fractions(sizes_inches, by_check, identity)) >= LOOSE_MIN_VISIBLE_FRACTION:
+        if len(by_check) < 2 or min(visible_fractions(sizes_inches, by_check, identity)) >= min_visible_fraction:
             break
         center_x = np.mean([p.center_x_inches for p in by_check]); center_y = np.mean([p.center_y_inches for p in by_check])
         for placement in by_check:

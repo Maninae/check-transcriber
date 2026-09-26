@@ -6,6 +6,11 @@ Usage:
     python -m dataset_builder.build_dataset --output DIR --scenes 5000 --plan-only     # pools + counts, renders nothing
     python -m dataset_builder.build_dataset --output DIR --scenes 5000 --resume        # continue an interrupted build
     python -m dataset_builder.build_dataset --output DIR --print-sheets 4              # printable gold-set checks
+    python -m dataset_builder.build_dataset --output DIR --scenes 600 --only-split eval \
+        --pools-from synth/v1/build_plan.json --framing-regime-mix close=0.75,single=0.25  # close-up eval on v1's eval pools
+
+Framing regimes (scene_composer/geometry/framing_regimes.py) are assigned per scene from
+`--framing-regime-mix` (default wide 40 / close 45 / single 15); `--framing-regime-mix wide=1` builds as v1 did.
 
 Output layout (Ultralytics-compatible):
     DIR/manifest.json, DIR/build_plan.json, DIR/failures.jsonl (only if something failed)
@@ -20,6 +25,7 @@ Output layout (Ultralytics-compatible):
 
 import argparse
 import datetime
+import json
 import logging
 import multiprocessing
 import os
@@ -44,6 +50,8 @@ from dataset_builder.scene_task_runner import run_scene_task
 from dataset_builder.scene_worker import SceneTask, worker_initializer
 from scene_composer import GENERATOR_VERSION
 from scene_composer.compose_scene import SceneConfig
+from scene_composer.framing_regime_mix import DEFAULT_FRAMING_REGIME_MIX, parse_framing_regime_mix
+from scene_composer.geometry.framing_regimes import framing_regime_of_label
 from scene_composer.scene_ingredient_pools import ingredient_pools_for_split
 from synthetic_checks.check_templates import DEFAULT_TEMPLATE_COUNT
 from synthetic_checks.print_sheets import write_print_sheets
@@ -70,6 +78,13 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
                         help="use N procedural fabrics instead of --backgrounds (for tests or before real backgrounds exist)")
     parser.add_argument("--ocr-splits", default=DEFAULT_OCR_SPLITS,
                         help="comma-separated splits that get the per-field OCR manifest and crops ('none' to skip)")
+    parser.add_argument("--framing-regime-mix", type=parse_framing_regime_mix,
+                        default=",".join(f"{name}={share}" for name, share in DEFAULT_FRAMING_REGIME_MIX.items()),
+                        help="per-scene regime shares, e.g. 'wide=0.4,close=0.45,single=0.15' or 'wide=1'")
+    parser.add_argument("--only-split", choices=SPLIT_NAMES, default=None,
+                        help="put all --scenes in this split (the other splits stay empty)")
+    parser.add_argument("--pools-from", type=Path, default=None,
+                        help="reuse split pools, backgrounds and template count from an earlier build_plan.json")
     parser.add_argument("--plan-only", action="store_true", help="print split pools and counts, render nothing")
     parser.add_argument("--resume", action="store_true", help="continue a build in a non-empty --output with the same plan")
     parser.add_argument("--harmonize", action=argparse.BooleanOptionalAction, default=False,
@@ -111,22 +126,36 @@ def scene_tasks_for_plan(plan: BuildPlan, output_directory: Path) -> list[SceneT
         pools = ingredient_pools_for_split(plan.split_pools[split_name], Path(plan.background_root), plan.background_paths)
         for scene_index in range(plan.scene_counts[split_name]):
             tasks.append(SceneTask(plan.seed, split_name, scene_index, pools, str(output_directory / split_name),
-                                   plan.template_count, scene_config))
+                                   plan.template_count, scene_config, plan.framing_regime_for(split_name, scene_index)))
     return tasks
 
 
-def run_scene_stage(pool, tasks: list[SceneTask], output_directory: Path) -> tuple[dict[str, int], StageProgress]:
-    """Generate (or skip) every scene; returns check counts per split and the stage's progress record."""
+def run_scene_stage(pool, tasks: list[SceneTask], output_directory: Path) -> tuple[dict[str, int], dict, StageProgress]:
+    """Generate (or skip) every scene; returns check counts per split, scene counts per split and regime, and progress."""
     progress = StageProgress("scenes", len(tasks), output_directory)
     check_counts = {split_name: 0 for split_name in SPLIT_NAMES}
+    regime_scene_counts = {split_name: {} for split_name in SPLIT_NAMES}
     for summary in pool.imap_unordered(run_scene_task, tasks, chunksize=1):
         check_counts[summary["split"]] += summary["check_count"]
+        per_regime = regime_scene_counts[summary["split"]]
+        per_regime[summary["framing_regime"]] = per_regime.get(summary["framing_regime"], 0) + 1
         progress.record(summary["scene_id"], summary["status"],
                         {"error": summary.get("error"), "traceback": summary.get("traceback")})
-    return check_counts, progress
+    return check_counts, regime_scene_counts, progress
 
 
-def run_ocr_stage(pool, output_directory: Path, ocr_splits: list[str]) -> tuple[dict[str, dict[str, int]], StageProgress]:
+def count_ocr_rows_by_regime(rows: list[dict], regime_by_scene_id: dict[str, str]) -> dict[str, dict[str, int]]:
+    """Per framing regime: all rows, `ok` rows and `too_small` rows (ok + too_small = the fields legible if big enough)."""
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        regime_counts = counts.setdefault(regime_by_scene_id[row["scene_id"]], {"rows": 0, "ok": 0, "too_small": 0})
+        regime_counts["rows"] += 1
+        if row["status"] in ("ok", "too_small"):
+            regime_counts[row["status"]] += 1
+    return counts
+
+
+def run_ocr_stage(pool, output_directory: Path, ocr_splits: list[str]) -> tuple[dict[str, dict[str, int]], dict, StageProgress]:
     """Crop every field of every finished scene in the OCR splits and write one JSONL per split."""
     prepare_ocr_directories(output_directory, ocr_splits)
     jobs = [(str(output_directory), split_name, path.stem) for split_name in ocr_splits
@@ -137,11 +166,14 @@ def run_ocr_stage(pool, output_directory: Path, ocr_splits: list[str]) -> tuple[
         rows_by_split[job[1]].extend(result["rows"])
         progress.record(result["scene_id"], result["status"], {"error": result.get("error")})
     row_counts = {}
+    regime_by_scene_id = {path.stem: framing_regime_of_label(json.loads(path.read_text()))
+                          for split_name in ocr_splits for path in (output_directory / split_name / "annotations").glob("*.json")}
+    rows_by_regime = {split_name: count_ocr_rows_by_regime(rows, regime_by_scene_id) for split_name, rows in rows_by_split.items()}
     for split_name, rows in rows_by_split.items():
         write_split_ocr_manifest(output_directory, split_name, rows)
         row_counts[split_name] = {"rows": len(rows), "usable": sum(row["usable"] for row in rows),
                                   "handwritten_usable": sum(row["usable"] and row["handwritten"] for row in rows)}
-    return row_counts, progress
+    return row_counts, rows_by_regime, progress
 
 
 def build_dataset(arguments: argparse.Namespace) -> DatasetManifest | None:
@@ -150,7 +182,9 @@ def build_dataset(arguments: argparse.Namespace) -> DatasetManifest | None:
     plan = make_build_plan(arguments.seed, arguments.scenes, arguments.templates, arguments.backgrounds,
                            arguments.procedural_backgrounds,
                            SceneConfig(harmonize=arguments.harmonize, harmonize_blend=arguments.harmonize_blend),
-                           parse_ocr_splits(arguments.ocr_splits))
+                           parse_ocr_splits(arguments.ocr_splits),
+                           arguments.framing_regime_mix,
+                           arguments.only_split, arguments.pools_from)
     if arguments.plan_only:
         print(format_build_plan(plan))
         return None
@@ -158,8 +192,9 @@ def build_dataset(arguments: argparse.Namespace) -> DatasetManifest | None:
     start_time = time.time()
     context = multiprocessing.get_context("spawn")
     with context.Pool(arguments.workers, initializer=worker_initializer, initargs=(arguments.harmonize,)) as pool:
-        check_counts, scene_progress = run_scene_stage(pool, scene_tasks_for_plan(plan, output_directory), output_directory)
-        ocr_row_counts, ocr_progress = run_ocr_stage(pool, output_directory, plan.ocr_splits)
+        check_counts, regime_scene_counts, scene_progress = run_scene_stage(pool, scene_tasks_for_plan(plan, output_directory),
+                                                                             output_directory)
+        ocr_row_counts, ocr_rows_by_regime, ocr_progress = run_ocr_stage(pool, output_directory, plan.ocr_splits)
     export_start = time.time()
     for split_name in SPLIT_NAMES:
         write_coco_for_split(output_directory / split_name)
@@ -179,6 +214,8 @@ def build_dataset(arguments: argparse.Namespace) -> DatasetManifest | None:
         notes=[f"this run built {built} scenes, skipped {scene_progress.counts['skipped']} already built, "
                f"failed {scene_progress.counts['failed']}; {arguments.workers} workers",
                "all names, addresses, banks and routing numbers are fake; routing numbers fail the ABA checksum on purpose"],
+        framing_regime_mix=plan.framing_regime_mix, framing_regime_scene_counts=regime_scene_counts,
+        ocr_rows_by_regime=ocr_rows_by_regime, pools_source=plan.pools_source,
     )
     write_manifest(manifest, output_directory)
     print(f"done: {sum(plan.scene_counts.values())} scenes ({built} built now), {sum(check_counts.values())} checks, "

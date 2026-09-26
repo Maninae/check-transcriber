@@ -11,11 +11,15 @@ so a scene is addressable by (seed, split, scene_index) alone:
 - `generate_one.py` is the CLI over a single scene.
 
 Split pools (contract C4) are honoured: scenes draw only from their split's `SceneIngredientPools`.
+
+Framing regimes (geometry/framing_regimes.py): `compose_scene_on_demand(..., framing_regime="close")`
+picks one explicitly (default: `scene_config.framing_regime`, wide). A stream or a build assigns them per
+scene from a mix (framing_regime_mix.py); the stream defaults to the builder's default mix, so the two agree.
 """
 
 import functools
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import cv2
@@ -24,6 +28,8 @@ from PIL import Image
 
 from scene_composer import GENERATOR_VERSION
 from scene_composer.compose_scene import compose_scene, sample_check_count
+from scene_composer.framing_regime_mix import DEFAULT_FRAMING_REGIME_MIX, framing_regime_for_scene, normalize_framing_regime_mix
+from scene_composer.geometry.framing_regimes import parse_framing_regime
 from scene_composer.scene_config import SceneConfig
 from scene_composer.scene_ingredient_pools import SceneIngredientPools, library_ingredient_pools, require_known_split
 from scene_composer.scene_label import SceneLabel
@@ -98,7 +104,7 @@ def resolve_scene_config(scene_config: SceneConfig | None, harmonize: bool) -> S
 def compose_scene_on_demand(seed: int, split: str = "train", scene_index: int = 0, *,
                             pools: SceneIngredientPools | None = None, backgrounds: Path = BACKGROUND_DIR,
                             template_count: int = DEFAULT_TEMPLATE_COUNT, harmonize: bool = False,
-                            scene_config: SceneConfig | None = None) -> ComposedScene:
+                            scene_config: SceneConfig | None = None, framing_regime: str | None = None) -> ComposedScene:
     """Render and compose one scene in memory. Same arguments, same pixels and label, every time.
 
     Args:
@@ -110,15 +116,18 @@ def compose_scene_on_demand(seed: int, split: str = "train", scene_index: int = 
         template_count: size of the template catalog the template ids come from.
         harmonize: shorthand for `SceneConfig(harmonize=True)` (needs torch + PCT-Net).
         scene_config: every composition knob; default `SceneConfig()`.
+        framing_regime: `wide`, `close` or `single`; overrides `scene_config.framing_regime` when given.
     """
     require_known_split(split)
     config = resolve_scene_config(scene_config, harmonize)
+    if framing_regime is not None:
+        config = replace(config, framing_regime=parse_framing_regime(framing_regime).value)
     if pools is None:
         pools = library_ingredient_pools(seed, split, backgrounds, template_count)
     rng = np.random.default_rng([seed, SPLIT_NAMES.index(split), scene_index])
     catalog = template_catalog_by_id(template_count)
     rendered_checks = []
-    for _ in range(sample_check_count(rng)):
+    for _ in range(sample_check_count(rng, config.framing_regime)):
         template = catalog[pools.template_ids[int(rng.integers(len(pools.template_ids)))]]
         content = sample_check_content(template, rng, payee_names=pools.payee_names, bank_names=pools.bank_names)
         rendered_checks.append(render_check(template, content, rng, handwriting_font_ids=list(pools.handwriting_font_ids),
@@ -138,13 +147,17 @@ class SyntheticSceneStream:
     Iterating yields scenes `start_index`, `start_index + 1`, ... (endless unless `scene_count` is set);
     iterating again starts over and yields the same scenes. `scene(i)` gives random access.
     The split's pools are planned once, at construction, exactly as the dataset builder plans them.
+    Scene i's framing regime comes from `framing_regime_mix` (default: the builder's default mix);
+    pass `framing_regime_mix={"close": 1.0}` for one regime only.
     """
 
     def __init__(self, seed: int, split: str = "train", backgrounds: Path = BACKGROUND_DIR, harmonize: bool = False, *,
                  template_count: int = DEFAULT_TEMPLATE_COUNT, scene_config: SceneConfig | None = None,
-                 start_index: int = 0, scene_count: int | None = None):
+                 start_index: int = 0, scene_count: int | None = None,
+                 framing_regime_mix: dict[str, float] = DEFAULT_FRAMING_REGIME_MIX):
         require_known_split(split)
         self.seed, self.split = seed, split
+        self.framing_regime_mix = normalize_framing_regime_mix(framing_regime_mix)
         self.template_count = template_count
         self.scene_config = resolve_scene_config(scene_config, harmonize)
         self.start_index, self.scene_count = start_index, scene_count
@@ -153,7 +166,12 @@ class SyntheticSceneStream:
     def scene(self, scene_index: int) -> ComposedScene:
         """Scene `scene_index` of this split (independent of what was generated before)."""
         return compose_scene_on_demand(self.seed, self.split, scene_index, pools=self.pools,
-                                       template_count=self.template_count, scene_config=self.scene_config)
+                                       template_count=self.template_count, scene_config=self.scene_config,
+                                       framing_regime=self.framing_regime_for(scene_index))
+
+    def framing_regime_for(self, scene_index: int) -> str:
+        """The regime this stream's mix assigns to `scene_index` (the builder assigns the same)."""
+        return framing_regime_for_scene(self.seed, self.split, scene_index, self.framing_regime_mix)
 
     def __iter__(self) -> Iterator[ComposedScene]:
         scene_index = self.start_index
