@@ -4,6 +4,8 @@ Three mask families, each catching checks the others miss:
 
 - smooth-paper masks (`texture_std` below a threshold, not too dark): work on busy
   fabrics, carpet and crochet, even when the fabric is as bright as the paper.
+- textured masks (the complement, `texture_std` above a threshold): on a plain white
+  sheet the relation inverts, the check's fine security print is the textured thing.
 - paper-score Otsu mask (bright and neutral): works on wood, colored rugs and dark
   surfaces, where the background is smooth but saturated or darker.
 - edge-bounded cells (connected components of NOT-edge pixels, edges from a gradient
@@ -11,15 +13,22 @@ Three mask families, each catching checks the others miss:
   continuous): each check interior is a cell fenced off by its own border, which also
   separates touching checks whose seam shows as an edge even when both sides are
   equally bright paper.
+- hole-filled edge maps: the Canny edge map with every enclosed hole filled (external
+  contours drawn solid). A check whose outer border forms a closed loop becomes one solid
+  blob no matter how many print or shadow edges cross its interior, which is where
+  edge-bounded cells fragment.
 
 A region is returned as its external contour in working-image pixels.
 """
 
-from dataclasses import dataclass
-
 import cv2
 import numpy as np
 
+from experiments.detection.classical.adjacent_cell_merging import (
+    find_adjacent_cell_pairs,
+    merged_pair_regions,
+)
+from experiments.detection.classical.candidate_region import CandidateRegion
 from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
@@ -27,15 +36,6 @@ from experiments.detection.classical.classical_detector_config import (
 from experiments.detection.classical.working_image_channels import WorkingImageChannels
 
 DARK_FLOOR_PERCENTILE = 25.0  # smooth regions darker than this paper-score percentile are not paper
-
-
-@dataclass
-class CandidateRegion:
-    """One connected region that may be a check."""
-
-    contour: np.ndarray  # (N, 2) int32 external contour, working pixels
-    region_area: float  # pixel count of the region
-    source_name: str  # which mask produced it, for diagnostics and tuning
 
 
 def build_candidate_masks(channels: WorkingImageChannels, config: ClassicalDetectorConfig) -> dict[str, np.ndarray]:
@@ -46,6 +46,9 @@ def build_candidate_masks(channels: WorkingImageChannels, config: ClassicalDetec
     for texture_threshold in config.smooth_texture_std_thresholds:
         smooth_mask = (channels.texture_std < texture_threshold) & not_dark
         masks[f"smooth_std{texture_threshold:g}"] = smooth_mask.astype(np.uint8) * 255
+
+    for texture_threshold in config.textured_std_thresholds:
+        masks[f"textured_std{texture_threshold:g}"] = ((channels.texture_std > texture_threshold).astype(np.uint8)) * 255
 
     paper_score_uint8 = np.clip(paper_score, 0, 255).astype(np.uint8)
     otsu_threshold, _ = cv2.threshold(paper_score_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -64,8 +67,19 @@ def build_candidate_masks(channels: WorkingImageChannels, config: ClassicalDetec
     canny_dilation_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (canny_dilation_size, canny_dilation_size))
     for low_threshold, high_threshold in config.canny_threshold_pairs:
         canny_edges = cv2.Canny(lightness_uint8, low_threshold, high_threshold, L2gradient=True)
-        masks[f"canny_cells{low_threshold:g}"] = cv2.bitwise_not(cv2.dilate(canny_edges, canny_dilation_kernel))
+        dilated_edges = cv2.dilate(canny_edges, canny_dilation_kernel)
+        masks[f"canny_cells{low_threshold:g}"] = cv2.bitwise_not(dilated_edges)
+        if config.use_hole_filled_edges:
+            masks[f"canny_filled{low_threshold:g}"] = fill_enclosed_holes(dilated_edges)
     return masks
+
+
+def fill_enclosed_holes(binary_mask: np.ndarray) -> np.ndarray:
+    """The mask with every region it fully encloses filled in (external contours drawn solid)."""
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled_mask = np.zeros_like(binary_mask)
+    cv2.drawContours(filled_mask, contours, -1, 255, thickness=cv2.FILLED)
+    return filled_mask
 
 
 def extract_regions_from_mask(
@@ -74,7 +88,10 @@ def extract_regions_from_mask(
     channels: WorkingImageChannels,
     config: ClassicalDetectorConfig,
 ) -> list[CandidateRegion]:
-    """Open the mask to cut thin bridges, then return every check-sized component's contour."""
+    """Open the mask to cut thin bridges, then return every check-sized component's contour.
+
+    For edge-bounded cell masks, unions of adjacent cells are added (`adjacent_cell_merging`).
+    """
     opening_size = odd_kernel_size(config.mask_opening_fraction, channels.long_side_pixels)
     opening_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (opening_size, opening_size))
     opened_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, opening_kernel)
@@ -83,6 +100,17 @@ def extract_regions_from_mask(
     maximum_area = config.maximum_area_fraction * channels.area_pixels
     component_count, labels, stats, _ = cv2.connectedComponentsWithStats(opened_mask, connectivity=4)
     regions = []
+    if config.merge_adjacent_cells and "cells" in source_name:
+        piece_areas = stats[:, cv2.CC_STAT_AREA]
+        eligible_labels = np.flatnonzero(
+            (piece_areas >= config.minimum_cell_piece_fraction * channels.area_pixels) & (piece_areas <= maximum_area)
+        )
+        eligible_labels = eligible_labels[eligible_labels > 0]
+        separation_width = opening_size + 2 * max(config.edge_dilation_pixels, config.canny_dilation_pixels) + 2
+        cell_pairs = find_adjacent_cell_pairs(
+            labels, eligible_labels, separation_width, int(config.minimum_shared_boundary_fraction * channels.long_side_pixels)
+        )
+        regions.extend(merged_pair_regions(labels, stats, cell_pairs, separation_width, maximum_area, source_name))
     for component_index in range(1, component_count):
         left, top, width, height, area = stats[component_index]
         if area < minimum_area or area > maximum_area:

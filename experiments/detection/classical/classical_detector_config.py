@@ -28,15 +28,38 @@ class ClassicalDetectorConfig:
     # Canny edge-bounded cells: (low, high) hysteresis pairs on text-suppressed lightness.
     canny_threshold_pairs: tuple[tuple[float, float], ...] = ((20.0, 50.0), (40.0, 100.0))
     canny_dilation_pixels: int = 2
+    use_hole_filled_edges: bool = True  # also offer each Canny map with enclosed holes filled
+    # Textured masks (for plain white sheets, where the check's security print is the texture).
+    textured_std_thresholds: tuple[float, ...] = (3.0,)
+    # Unions of adjacent edge-bounded cells (a check cut in two by a shadow edge or a fold).
+    merge_adjacent_cells: bool = True
+    minimum_cell_piece_fraction: float = 0.0015  # of the image area, smaller pieces are ignored
+    minimum_shared_boundary_fraction: float = 0.03  # of the long side, in edge-band pixels
     # Otsu threshold on the paper score is always tried; this offsets it (in score units).
     paper_score_otsu_offsets: tuple[float, ...] = (0.0,)
     mask_opening_fraction: float = 0.006  # cuts thin bridges between touching blobs
+
+    # Line-based hypotheses (Hough segments -> parallel pairs + end caps -> rectangles).
+    use_line_hypotheses: bool = True
+    line_canny_low: float = 15.0
+    line_canny_high: float = 40.0
+    line_texture_suppression_std: float = 6.0  # edges whose smoothest neighbourhood is rougher are dropped
+    line_minimum_length_fraction: float = 0.04  # of the working long side
+    line_maximum_gap_fraction: float = 0.006  # HoughLinesP gap bridging
+    line_merge_gap_fraction: float = 0.03  # collinear pieces closer than this are fused
+    line_maximum_segments: int = 120
+    line_parallel_tolerance_degrees: float = 7.0
+    line_perpendicular_tolerance_degrees: float = 10.0
+    line_minimum_separation_fraction: float = 0.03
+    line_hypothesis_rectangularity: float = 0.9  # stand-in rank value (lines have no region)
 
     # Geometry gates on a candidate quadrilateral (working-image pixels / fractions).
     minimum_area_fraction: float = 0.004
     maximum_area_fraction: float = 0.8
     minimum_aspect_ratio: float = 1.5
     maximum_aspect_ratio: float = 3.4
+    # A quad with a side on the image border is truncated, so its aspect only needs this range.
+    border_truncated_aspect_range: tuple[float, float] = (1.0, 8.0)
     minimum_interior_angle_degrees: float = 55.0
     minimum_region_rectangularity: float = 0.80  # region area / fitted quad area
     approx_poly_epsilon_fraction: float = 0.02  # of the contour perimeter
@@ -60,9 +83,15 @@ class ClassicalDetectorConfig:
     minimum_interior_paper_score: float = 130.0
     maximum_interior_chroma: float = 35.0
 
+    # Interior seam gate: a straight strong border across the interior means a spanning quad.
+    seam_gradient_threshold: float = 16.0
+    maximum_interior_seam_strength: float = 0.7
+    minimum_line_hypothesis_score: float = 0.75  # line-only quads need stronger borders
+
     # Selection: duplicates above this IoU are suppressed; overlaps are resolved by score.
     duplicate_iou_threshold: float = 0.5
     maximum_contained_fraction: float = 0.75  # smaller quad mostly inside a larger kept one
+    maximum_covered_fraction: float = 0.6  # candidate area already covered by the union of kept quads
 
     # Full-resolution sub-pixel side refinement.
     refine_corners_at_full_resolution: bool = True

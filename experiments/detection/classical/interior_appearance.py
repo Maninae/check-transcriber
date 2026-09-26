@@ -20,6 +20,7 @@ from experiments.detection.classical.classical_detector_config import ClassicalD
 from experiments.detection.classical.working_image_channels import WorkingImageChannels
 
 INTERIOR_SHRINK_FACTOR = 0.9
+INTERIOR_SAMPLING_STRIDE = 2  # medians over every 2nd pixel in each direction (4x cheaper)
 
 
 @dataclass
@@ -47,12 +48,13 @@ def measure_interior_appearance(
         return None
     interior_mask = np.zeros((bottom - top, right - left), dtype=np.uint8)
     cv2.fillConvexPoly(interior_mask, np.rint(shrunk_corners - [left, top]).astype(np.int32), 1)
-    inside = interior_mask.astype(bool)
+    stride = INTERIOR_SAMPLING_STRIDE
+    inside = interior_mask[::stride, ::stride].astype(bool)
     if not inside.any():
         return None
 
     def interior_values(signal_map: np.ndarray) -> np.ndarray:
-        return signal_map[top:bottom, left:right][inside]
+        return signal_map[top:bottom:stride, left:right:stride][inside]
 
     return InteriorAppearance(
         print_fraction=float((interior_values(channels.print_residue) > config.print_residue_threshold).mean()),

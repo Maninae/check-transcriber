@@ -29,6 +29,7 @@ from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
+from experiments.detection.classical.edge_line_snapping import side_is_on_image_border
 from experiments.detection.classical.quadrilateral_geometry import (
     is_convex_quadrilateral,
     quadrilateral_area,
@@ -52,14 +53,31 @@ class QuadrilateralEvidence:
     score: float
 
 
-def passes_geometry_gates(corners: np.ndarray, image_area_pixels: float, config: ClassicalDetectorConfig) -> bool:
-    """Convex, check-sized, check-shaped (aspect in range, no needle corners)."""
+def quadrilateral_touches_image_border(corners: np.ndarray, image_size: tuple[int, int]) -> bool:
+    """True when any side lies along the image border (the check runs out of frame)."""
+    image_width, image_height = image_size
+    return any(
+        side_is_on_image_border(corners[index], corners[(index + 1) % 4], image_width, image_height) for index in range(4)
+    )
+
+
+def passes_geometry_gates(corners: np.ndarray, image_size: tuple[int, int], config: ClassicalDetectorConfig) -> bool:
+    """Convex, check-sized, check-shaped (aspect in range, no needle corners).
+
+    `image_size` is (width, height) of the working image. Quads cut by the image border
+    get the looser `border_truncated_aspect_range`, since one dimension is truncated.
+    """
     if not is_convex_quadrilateral(corners):
         return False
-    area_fraction = quadrilateral_area(corners) / image_area_pixels
+    area_fraction = quadrilateral_area(corners) / float(image_size[0] * image_size[1])
     if not config.minimum_area_fraction <= area_fraction <= config.maximum_area_fraction:
         return False
-    if not config.minimum_aspect_ratio <= quadrilateral_aspect_ratio(corners) <= config.maximum_aspect_ratio:
+    aspect_ratio = quadrilateral_aspect_ratio(corners)
+    if quadrilateral_touches_image_border(corners, image_size):
+        minimum_aspect, maximum_aspect = config.border_truncated_aspect_range
+    else:
+        minimum_aspect, maximum_aspect = config.minimum_aspect_ratio, config.maximum_aspect_ratio
+    if not minimum_aspect <= aspect_ratio <= maximum_aspect:
         return False
     return bool(np.min(quadrilateral_interior_angles_degrees(corners)) >= config.minimum_interior_angle_degrees)
 

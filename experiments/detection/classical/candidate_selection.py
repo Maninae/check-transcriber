@@ -6,7 +6,9 @@ rectangularity), with two suppression rules:
 
 - duplicate: IoU with an already-kept quad above `duplicate_iou_threshold`;
 - containment: most of the candidate's area lies inside a kept quad (a text box or an
-  inner printed border of a check that was already found).
+  inner printed border of a check that was already found);
+- coverage: most of the candidate's area is already covered by the union of kept quads
+  (a line-built quad spanning two found checks and the gap between them).
 
 Genuinely overlapping checks (a stack in `loose_overlap`) share far less than the
 duplicate threshold, so both survive.
@@ -14,6 +16,7 @@ duplicate threshold, so both survive.
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
@@ -57,12 +60,27 @@ def is_suppressed_by_kept(
     return False
 
 
+def fraction_covered_by_mask(corners: np.ndarray, kept_mask: np.ndarray) -> float:
+    """Share of a quad's rasterized pixels already set in the kept-union mask."""
+    candidate_mask = np.zeros_like(kept_mask)
+    cv2.fillConvexPoly(candidate_mask, np.rint(corners).astype(np.int32), 1)
+    candidate_pixel_count = int(candidate_mask.sum())
+    if candidate_pixel_count == 0:
+        return 1.0
+    return float((candidate_mask & kept_mask).sum()) / candidate_pixel_count
+
+
 def select_non_overlapping_candidates(
-    candidates: list[VerifiedCandidate], config: ClassicalDetectorConfig
+    candidates: list[VerifiedCandidate], config: ClassicalDetectorConfig, image_shape: tuple[int, int]
 ) -> list[VerifiedCandidate]:
-    """Greedy suppression in rank order."""
+    """Greedy suppression in rank order; `image_shape` is the working (height, width)."""
     kept_candidates: list[VerifiedCandidate] = []
+    kept_union_mask = np.zeros(image_shape[:2], dtype=np.uint8)
     for candidate in sorted(candidates, key=lambda item: item.rank_value, reverse=True):
-        if not is_suppressed_by_kept(candidate, kept_candidates, config):
-            kept_candidates.append(candidate)
+        if is_suppressed_by_kept(candidate, kept_candidates, config):
+            continue
+        if kept_candidates and fraction_covered_by_mask(candidate.corners, kept_union_mask) > config.maximum_covered_fraction:
+            continue
+        kept_candidates.append(candidate)
+        cv2.fillConvexPoly(kept_union_mask, np.rint(candidate.corners).astype(np.int32), 1)
     return kept_candidates
