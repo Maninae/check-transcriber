@@ -80,14 +80,15 @@ def clipped_normal(rng: np.random.Generator, sigma: float, limit: float) -> floa
     return float(np.clip(rng.normal(0, sigma), -limit, limit))
 
 
-def sample_rotations(count: int, rng: np.random.Generator, jitter_sigma: float, jitter_max: float) -> list[float]:
+def sample_rotations(count: int, rng: np.random.Generator, jitter_sigma: float, jitter_max: float,
+                     quarter_turn_probability: float = QUARTER_TURN_PROBABILITY) -> list[float]:
     """Mostly one shared orientation; some flipped 180 or quarter-turned; small angle jitter."""
     base = 90.0 * rng.choice([1, 3]) if rng.random() < PORTRAIT_CHECKS_PROBABILITY else 0.0
     rotations = []
     for _ in range(count):
         roll = rng.random()
         angle = base + (180 if roll < FLIP_180_PROBABILITY else 0)
-        if FLIP_180_PROBABILITY <= roll < FLIP_180_PROBABILITY + QUARTER_TURN_PROBABILITY:
+        if FLIP_180_PROBABILITY <= roll < FLIP_180_PROBABILITY + quarter_turn_probability:
             angle += 90 * rng.choice([1, 3])
         rotations.append(float(angle + clipped_normal(rng, jitter_sigma, jitter_max)))
     return rotations

@@ -1,7 +1,7 @@
 """Layouts for the close and single framing regimes (framing_regimes.py), built from placement.py's parts.
 
-- close: 2-6 checks laid out tightly for a close photo. Gapped grids use small gaps and often
-  zero gaps (edges touching); loose layouts overlap slightly (each check keeps >= 80% visible,
+- close: 2-6 checks laid out tightly for a close photo, rarely a lone sideways check. Gapped grids
+  use small gaps and often zero gaps (edges touching); loose layouts overlap slightly (each check keeps >= 80% visible,
   against 70% in the wide regime), or fan when there are at most 4 checks.
 - single: one check at any rotation. Mostly upright or flipped, sometimes quarter-turned, and a
   fifth of the time at an arbitrary angle, as someone photographing one check by hand holds it.
@@ -34,6 +34,7 @@ CLOSE_OVERLAP_GAP_RANGE_INCHES = (-0.45, 0.05)
 CLOSE_MIN_VISIBLE_FRACTION = 0.8
 CLOSE_GRID_JITTER_DEGREES = (1.5, 4.0)             # (sigma, max)
 CLOSE_LOOSE_JITTER_DEGREES = (3.0, 8.0)
+CLOSE_QUARTER_TURN_PROBABILITY = 0.02   # per check; a lone sideways check breaks the tight rows (v1 wide: 0.07)
 SINGLE_UPRIGHT_JITTER_DEGREES = (4.0, 10.0)
 SINGLE_ROTATION_SHARES = {
     "upright": 0.5,
@@ -45,7 +46,7 @@ SINGLE_ROTATION_SHARES = {
 
 def plan_close_grid_layout(sizes_inches: list[tuple[float, float]], rng: np.random.Generator) -> list[CheckPlacement]:
     """A tight grid: small gaps, or edges touching."""
-    rotations = sample_rotations(len(sizes_inches), rng, *CLOSE_GRID_JITTER_DEGREES)
+    rotations = sample_rotations(len(sizes_inches), rng, *CLOSE_GRID_JITTER_DEGREES, CLOSE_QUARTER_TURN_PROBABILITY)
     extents = [rotated_extent(w, h, angle) for (w, h), angle in zip(sizes_inches, rotations)]
     touching = rng.random() < CLOSE_TOUCHING_PROBABILITY
     gap_range = CLOSE_TOUCHING_GAP_RANGE_INCHES if touching else CLOSE_GAP_RANGE_INCHES
@@ -56,7 +57,7 @@ def plan_close_grid_layout(sizes_inches: list[tuple[float, float]], rng: np.rand
 
 def plan_close_overlap_layout(sizes_inches: list[tuple[float, float]], rng: np.random.Generator) -> list[CheckPlacement]:
     """Tight packing with slight overlaps both ways; spread until each check keeps 80% visible."""
-    rotations = sample_rotations(len(sizes_inches), rng, *CLOSE_LOOSE_JITTER_DEGREES)
+    rotations = sample_rotations(len(sizes_inches), rng, *CLOSE_LOOSE_JITTER_DEGREES, CLOSE_QUARTER_TURN_PROBABILITY)
     extents = [rotated_extent(w, h, angle) for (w, h), angle in zip(sizes_inches, rotations)]
     columns = choose_column_count(extents, 0.0, rng)
     order = rng.permutation(len(sizes_inches))  # paste order differs from reading order, so overlaps go both ways
