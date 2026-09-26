@@ -23,6 +23,7 @@ def search_outermost_strong_line(
     outermost_line_ratio: float,
     minimum_mean_score: float,
     absolute_score_clip: float,
+    keep_input_line_ratio: float = 0.0,
 ) -> tuple[float, float] | None:
     """Return (offset at the side's midpoint, slope d offset / d position) or None.
 
@@ -31,6 +32,11 @@ def search_outermost_strong_line(
     a moderate paper edge present at every sample, and "outermost" decides among them.
     Keeping the NEGATIVE half matters: over background texture the score is zero-mean
     noise and integrates to ~0, where a positive-only clip would turn it into a fake line.
+
+    Confidence gate: when `keep_input_line_ratio` > 0 and the INPUT side itself (angle 0,
+    offset 0) integrates to at least that fraction of the chosen line's score, the input
+    line is returned: a detector side already sitting on a real edge is not moved to a
+    marginally stronger candidate. A bad input side is not on an edge, so it still moves.
     """
     valid = np.isfinite(profiles.scores)
     valid_rows = valid.any(axis=1)
@@ -64,6 +70,13 @@ def search_outermost_strong_line(
     right = np.concatenate([best_score_per_offset[1:], [-np.inf]])
     qualifying = (best_score_per_offset >= left) & (best_score_per_offset >= right) & (best_score_per_offset >= outermost_line_ratio * global_best)
     chosen_offset_index = int(np.flatnonzero(qualifying)[-1])
+    chosen_score = best_score_per_offset[chosen_offset_index]
+    if keep_input_line_ratio > 0:
+        input_offset_index = int(np.argmin(np.abs(profiles.normal_offsets)))
+        input_slope_index = int(np.argmin(np.abs(slopes)))
+        input_score = line_scores[input_slope_index, input_offset_index]
+        if input_score > 0 and input_score >= keep_input_line_ratio * chosen_score:
+            return 0.0, 0.0
     return float(profiles.normal_offsets[chosen_offset_index]), float(slopes[best_slope_index_per_offset[chosen_offset_index]])
 
 

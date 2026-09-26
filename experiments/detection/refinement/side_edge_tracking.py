@@ -32,21 +32,20 @@ def track_edge_path(
     clipped = np.where(valid, np.clip(scores, -score_clip, score_clip), 0.0)
     path_scores = clipped - centre_cost_per_pixel * np.abs(profiles.normal_offsets)[None, :]
     number_of_samples, number_of_offsets = clipped.shape
+    # Viterbi: best predecessor = max over offset steps in [-k, k] of padded, shifted slices.
+    steps = np.arange(-maximum_step_offsets, maximum_step_offsets + 1)
+    step_penalties = step_cost * np.abs(steps)[:, None]
+    padding = maximum_step_offsets
     accumulated = path_scores[0].copy()
     back_pointers = np.zeros((number_of_samples, number_of_offsets), dtype=np.int64)
+    padded = np.full(number_of_offsets + 2 * padding, -np.inf)
     offset_indices = np.arange(number_of_offsets)
     for sample_index in range(1, number_of_samples):
-        best_previous = np.full(number_of_offsets, -np.inf)
-        best_previous_index = offset_indices.copy()
-        for step in range(-maximum_step_offsets, maximum_step_offsets + 1):
-            source = offset_indices + step
-            in_range = (source >= 0) & (source < number_of_offsets)
-            candidate = np.where(in_range, accumulated[np.clip(source, 0, number_of_offsets - 1)] - step_cost * abs(step), -np.inf)
-            better = candidate > best_previous
-            best_previous = np.where(better, candidate, best_previous)
-            best_previous_index = np.where(better, source, best_previous_index)
-        accumulated = path_scores[sample_index] + best_previous
-        back_pointers[sample_index] = best_previous_index
+        padded[padding : padding + number_of_offsets] = accumulated
+        candidates = np.stack([padded[padding + step : padding + step + number_of_offsets] for step in steps]) - step_penalties
+        best_step_index = np.argmax(candidates, axis=0)
+        accumulated = path_scores[sample_index] + candidates[best_step_index, offset_indices]
+        back_pointers[sample_index] = offset_indices + steps[best_step_index]
     path = np.empty(number_of_samples, dtype=np.int64)
     path[-1] = int(np.argmax(accumulated))
     for sample_index in range(number_of_samples - 1, 0, -1):

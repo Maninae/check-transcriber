@@ -30,6 +30,8 @@ class SideCurve:
     side_length: float
     coefficients: np.ndarray  # constant, linear, [quadratic] in normalised position
     inlier_count: int = 0
+    median_inlier_strength: float = 0.0  # edge score at the inliers (evidence quality)
+    inlier_residual_rms: float = 0.0  # px; how straight/consistent the inliers are
 
     def normalised(self, positions: np.ndarray) -> np.ndarray:
         """Map positions (px along the side) to [-1, 1]."""
@@ -102,13 +104,16 @@ def fit_robust_side_curve(
             break
         coefficients = fit_weighted_polynomial(normalised_positions, offsets, tukey_weights * weights, round_degree)
     residuals = offsets - (normalised_positions[:, None] ** np.arange(len(coefficients))[None, :]) @ coefficients
+    final_inliers = np.abs(residuals) < inlier_distance_pixels
     return SideCurve(
         side_start=curve_frame.side_start,
         unit_tangent=curve_frame.unit_tangent,
         unit_normal=curve_frame.unit_normal,
         side_length=curve_frame.side_length,
         coefficients=coefficients,
-        inlier_count=int((np.abs(residuals) < inlier_distance_pixels).sum()),
+        inlier_count=int(final_inliers.sum()),
+        median_inlier_strength=float(np.median(strengths[final_inliers])) if final_inliers.any() else 0.0,
+        inlier_residual_rms=float(np.sqrt(np.mean(residuals[final_inliers] ** 2))) if final_inliers.any() else 0.0,
     )
 
 

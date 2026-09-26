@@ -24,6 +24,7 @@ from experiments.detection.tests.refinement_test_scenes import (
     fill_quad_supersampled,
     make_textured_background,
     draw_check_with_distractors,
+    inset_quad_by_pixels,
     render_scene,
 )
 
@@ -99,3 +100,26 @@ def test_refine_detected_checks_keeps_score_and_orientation():
         assert refined_detection.score == 0.87 and refined_detection.orientation_known
         assert compute_corner_errors(refined_detection.corners, PERSPECTIVE_CHECK_CORNERS).max() < SUB_PIXEL_TOLERANCE_PIXELS
         assert "refinement" in refined_detection.extras
+
+
+def test_other_detection_over_a_corner_does_not_capture_the_side():
+    canvas = make_textured_background(SCENE_WIDTH, 480, 90, 18, seed=5)
+    canvas = draw_check_with_distractors(canvas, PERSPECTIVE_CHECK_CORNERS, (225, 232, 236), (60, 60, 70))
+    # A second check lies over the bottom-right corner; its detection is passed in.
+    covering_check = np.array([[520.0, 300.0], [740.0, 290.0], [750.0, 470.0], [530.0, 475.0]])
+    canvas = draw_check_with_distractors(canvas, covering_check, (215, 236, 222), (60, 60, 70))
+    image = np.clip(np.round(canvas), 0, 255).astype(np.uint8)
+    approximate = simulate_oriented_box_corners(PERSPECTIVE_CHECK_CORNERS)
+    refined, _ = refine_check_quadrilateral(image, approximate, other_check_quads=[covering_check])
+    # The hidden corner is extrapolated from the visible, straight stretches of its sides.
+    assert compute_corner_errors(refined, PERSPECTIVE_CHECK_CORNERS).max() < 1.0
+
+
+def test_white_on_white_with_only_a_contact_shadow():
+    canvas = make_textured_background(SCENE_WIDTH, 480, 232, 3, seed=6)
+    # The only cue: a ~2 px dark contact shadow straddling the paper edge.
+    canvas = fill_quad_supersampled(canvas, inset_quad_by_pixels(PERSPECTIVE_CHECK_CORNERS, -1.0), (200, 200, 200))
+    canvas = draw_check_with_distractors(canvas, inset_quad_by_pixels(PERSPECTIVE_CHECK_CORNERS, 1.0), (226, 228, 230), (60, 60, 70))
+    image = np.clip(np.round(canvas), 0, 255).astype(np.uint8)
+    refined, _ = refine_check_quadrilateral(image, simulate_jittered_corners(PERSPECTIVE_CHECK_CORNERS, 3.0, np.random.default_rng(6)))
+    assert compute_corner_errors(refined, PERSPECTIVE_CHECK_CORNERS).max() < 1.0

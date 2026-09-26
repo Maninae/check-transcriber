@@ -61,7 +61,7 @@ def box_window_means(values: np.ndarray, centre_indices: np.ndarray, inner_windo
 
 
 def compute_two_class_paperness(
-    profiles: np.ndarray, paper_colour: np.ndarray, background_window_pixels: int, minimum_contrast: float
+    profiles: np.ndarray, paper_colour: np.ndarray, background_window_pixels: int, minimum_contrast: float, tent_beyond_paper: bool = True
 ) -> np.ndarray:
     """Per-sample paperness in [0, 1]: 0 = this sample's background colour, 1 = paper.
 
@@ -69,15 +69,36 @@ def compute_two_class_paperness(
     `background_window_pixels` of its profile (outside the approximate side). Each pixel is
     projected onto the paper-minus-B direction and clipped, so a faint but real hue
     difference still spans the full 0-1 range while dark ink clips to 0 like background.
+    With `tent_beyond_paper`, colours beyond the paper along that axis fall off again
+    (1 - |t - 1|), so paperness peaks AT the paper colour.
     Samples whose B is within `minimum_contrast` of the paper colour get NaN (no evidence).
     """
     background_colours = profiles[:, -background_window_pixels:, :].mean(axis=1)  # (S, C)
     paper_minus_background = paper_colour[None, :] - background_colours
     contrast_squared = (paper_minus_background**2).sum(axis=1)
     paperness = ((profiles - background_colours[:, None, :]) * paper_minus_background[:, None, :]).sum(axis=2) / np.maximum(contrast_squared, 1e-9)[:, None]
+    if tent_beyond_paper:
+        # Past the paper colour (away from the background) is NOT more paper: a drop shadow
+        # beside a check darker than its sheet, or ink, would otherwise count as paper.
+        paperness = np.where(paperness > 1.0, 2.0 - paperness, paperness)
     paperness = np.clip(paperness, 0.0, 1.0)
     paperness[contrast_squared < minimum_contrast**2] = np.nan
     return paperness
+
+
+def compute_contact_line_scores(profiles: np.ndarray, centre_indices: np.ndarray, half_width: int, contrast_unit: float) -> np.ndarray:
+    """Valley depth in luminance at each centre: mean of the pixels `half_width` either side minus the centre.
+
+    White paper on a white sheet has almost no colour step, but the paper casts a thin
+    dark contact shadow exactly along its edge. Depth is divided by `contrast_unit` and
+    clipped to [0, 1] so it lives on the same scale as the two-class paperness step.
+    """
+    luminance = profiles.mean(axis=2)
+    last_index = luminance.shape[1] - 1
+    left = luminance[:, np.clip(centre_indices - half_width, 0, last_index)]
+    right = luminance[:, np.clip(centre_indices + half_width, 0, last_index)]
+    depth = (left + right) / 2 - luminance[:, centre_indices]
+    return np.clip(depth / contrast_unit, 0.0, 1.0)
 
 
 def score_side_edge_profiles(
@@ -96,6 +117,10 @@ def score_side_edge_profiles(
     score_mode: str = "paper_distance",
     background_window_pixels: int = 6,
     minimum_paper_background_contrast: float = 6.0,
+    tent_beyond_paper: bool = True,
+    contact_line_half_width_pixels: int = 0,
+    contact_line_contrast_unit: float = 20.0,
+    contact_line_below_contrast: float = 0.0,
 ) -> SideScoreProfiles:
     """Paper-boundary score for offsets in [-inward_band, +outward_band] at each sample.
 
@@ -107,6 +132,12 @@ def score_side_edge_profiles(
         score_mode: "paper_distance" (rise in distance to paper colour) or "two_class"
             (step in a per-sample paper-vs-background feature, see
             `compute_two_class_paperness`).
+        contact_line_half_width_pixels: when > 0 (two_class mode), samples whose
+            background colour is too close to the paper for a colour step instead score the
+            thin dark contact shadow a sheet of paper casts along its own edge (see
+            `compute_contact_line_scores`). Samples whose paper/background contrast is
+            below `contact_line_below_contrast` switch to it too: a soft contact-shadow
+            halo brightens back THROUGH the paper colour and fakes an outer colour edge.
     """
     unit_tangent, unit_normal, side_length = compute_side_frame(side_start, side_end, quad_centroid)
     margin = min(corner_margin_pixels, 0.3 * side_length)
@@ -135,7 +166,7 @@ def score_side_edge_profiles(
     if score_mode == "paper_distance":
         edge_feature = np.linalg.norm(profiles - paper_colour, axis=2)  # rises past the edge
     elif score_mode == "two_class":
-        edge_feature = -compute_two_class_paperness(profiles, paper_colour, background_window_pixels, minimum_paper_background_contrast)
+        edge_feature = -compute_two_class_paperness(profiles, paper_colour, background_window_pixels, minimum_paper_background_contrast, tent_beyond_paper)
     else:
         raise ValueError(f"unknown score_mode {score_mode!r}")
     centre_indices = np.arange(inner_window_pixels, len(sampled_offsets) - outside_reach)
@@ -144,6 +175,13 @@ def score_side_edge_profiles(
     window_valid = np.ones_like(scores, dtype=bool)
     for shift in range(-inner_window_pixels, outside_reach + 1):
         window_valid &= inside_image[:, centre_indices + shift]
+    if score_mode == "two_class" and contact_line_half_width_pixels > 0:
+        background_colours = profiles[:, -background_window_pixels:, :].mean(axis=1)
+        low_contrast = np.linalg.norm(background_colours - paper_colour[None, :], axis=1) < contact_line_below_contrast
+        no_colour_evidence = ~np.isfinite(scores).any(axis=1) | low_contrast
+        if no_colour_evidence.any():
+            contact_scores = compute_contact_line_scores(profiles[no_colour_evidence], centre_indices, contact_line_half_width_pixels, contact_line_contrast_unit)
+            scores[no_colour_evidence] = contact_scores
     window_valid &= np.isfinite(scores)
     return SideScoreProfiles(
         side_start=side_start.astype(np.float64),

@@ -21,6 +21,12 @@ import numpy as np
 
 from experiments.detection.predictions.detected_check import DetectedCheck
 from experiments.detection.refinement.edge_profile_sampling import score_side_edge_profiles
+from experiments.detection.refinement.overlap_masking import (
+    dilate_convex_quad,
+    mask_cells_inside_other_quads,
+    points_inside_convex_quad,
+    select_nearby_quads,
+)
 from experiments.detection.refinement.refinement_config import CornerRefinementConfig
 from experiments.detection.refinement.robust_side_curve_fitting import (
     SideCurve,
@@ -34,6 +40,7 @@ from experiments.detection.refinement.side_line_search import (
 )
 
 PAPER_COLOUR_GRID_SIZE = 24
+MINIMUM_PAPER_COLOUR_SAMPLES = 40
 
 
 def compute_short_side_length(corners: np.ndarray) -> float:
@@ -56,8 +63,11 @@ def is_convex_with_orientation(corners: np.ndarray, expected_sign: float) -> boo
     return bool(np.all(turn_cross_products * expected_sign > 0))
 
 
-def estimate_paper_colour(image: np.ndarray, corners: np.ndarray, inset_fraction: float) -> np.ndarray:
-    """Median colour over a bilinear grid spanning the quad's central region (ink is a minority)."""
+def estimate_paper_colour(image: np.ndarray, corners: np.ndarray, inset_fraction: float, other_quads: list[np.ndarray]) -> np.ndarray:
+    """Median colour over a bilinear grid spanning the quad's central region (ink is a minority).
+
+    Grid points inside another detection's quad are skipped (unless that leaves too few).
+    """
     grid_values = np.linspace(inset_fraction, 1 - inset_fraction, PAPER_COLOUR_GRID_SIZE)
     along_top, along_left = np.meshgrid(grid_values, grid_values)
     top = corners[0] * (1 - along_top[..., None]) + corners[1] * along_top[..., None]
@@ -67,7 +77,13 @@ def estimate_paper_colour(image: np.ndarray, corners: np.ndarray, inset_fraction
         image, grid_points[..., 0].astype(np.float32), grid_points[..., 1].astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
     )
     number_of_channels = image.shape[2] if image.ndim == 3 else 1
-    return np.median(sampled.reshape(-1, number_of_channels).astype(np.float64), axis=0)
+    colours = sampled.reshape(-1, number_of_channels).astype(np.float64)
+    covered = np.zeros(len(colours), dtype=bool)
+    for quad in other_quads:
+        covered |= points_inside_convex_quad(grid_points.reshape(-1, 2), quad)
+    if (~covered).sum() >= MINIMUM_PAPER_COLOUR_SAMPLES:
+        colours = colours[~covered]
+    return np.median(colours, axis=0)
 
 
 def band_pixels(fraction: float, short_side: float, config: CornerRefinementConfig) -> float:
@@ -75,8 +91,11 @@ def band_pixels(fraction: float, short_side: float, config: CornerRefinementConf
     return float(np.clip(fraction * short_side, config.minimum_band_pixels, config.maximum_band_pixels))
 
 
-def score_side(image, corners, side_index, pass_settings, paper_colour, config):
-    """Score grid for one side of the current quad; returns (profiles, number of samples)."""
+def score_side(image, corners, side_index, pass_settings, paper_colour, config, dilated_other_quads):
+    """Score grid for one side of the current quad, cells over other checks masked.
+
+    Returns (profiles, number of samples).
+    """
     side_start, side_end = corners[side_index], corners[(side_index + 1) % 4]
     side_length = float(np.hypot(*(side_end - side_start)))
     number_of_samples = int(np.clip(side_length / config.sample_spacing_pixels, config.minimum_samples_per_side, pass_settings["maximum_samples"]))
@@ -87,7 +106,10 @@ def score_side(image, corners, side_index, pass_settings, paper_colour, config):
         config.tangential_offsets_pixels, config.inner_window_pixels, config.outer_window_pixels,
         paper_colour,
         config.edge_score_mode, config.background_window_pixels, config.minimum_paper_background_contrast,
+        config.tent_beyond_paper, config.contact_line_half_width_pixels, config.contact_line_contrast_unit,
+        config.contact_line_below_contrast,
     )
+    mask_cells_inside_other_quads(profiles, dilated_other_quads)
     return profiles, number_of_samples
 
 
@@ -102,7 +124,7 @@ def refine_one_side(profiles, number_of_samples: int, pass_settings: dict, confi
         ))
         line = search_outermost_strong_line(
             profiles, maximum_angle, config.line_angle_step_degrees, config.outermost_line_ratio,
-            config.minimum_edge_score, config.line_score_clip,
+            config.minimum_edge_score, config.line_score_clip, config.keep_input_line_ratio,
         )
         if line is None:
             return current_curve
@@ -123,6 +145,25 @@ def refine_one_side(profiles, number_of_samples: int, pass_settings: dict, confi
             break
         fitted_curve = candidate
     return fitted_curve or current_curve
+
+
+def refine_side_narrow_first(image, corners, side_index, pass_settings, paper_colour, config, dilated_other_quads, random_generator, narrow_band):
+    """Search a small band around the input side first; widen only if it finds no well-supported edge.
+
+    A good detector side already sits within a few px of the paper edge, and the wide
+    band's outermost-line rule can only make it worse. The narrow band cannot fool itself
+    into printed rules when the side is deep inside the paper: its per-sample background
+    colour is then paper-coloured, those samples carry no evidence and support fails.
+    Returns ((profiles, count), curve, whether the narrow band was accepted).
+    """
+    if narrow_band is not None:
+        narrow_settings = {**pass_settings, "inward_band": narrow_band, "outward_band": narrow_band}
+        profiles, count = score_side(image, corners, side_index, narrow_settings, paper_colour, config, dilated_other_quads)
+        curve = refine_one_side(profiles, count, narrow_settings, config, random_generator)
+        if curve.inlier_count >= config.narrow_first_minimum_support * count:
+            return (profiles, count), curve, True
+    profiles, count = score_side(image, corners, side_index, pass_settings, paper_colour, config, dilated_other_quads)
+    return (profiles, count), refine_one_side(profiles, count, pass_settings, config, random_generator), False
 
 
 def track_side_points(profiles, config) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -156,8 +197,24 @@ def fit_corner_local_line(side_curve: SideCurve, points, near_start: bool, fract
     return local
 
 
+def describe_side_curve(curve: SideCurve, number_of_samples: int, short_side: float) -> dict:
+    """Evidence summary of one fitted side (what the acceptance gate looks at)."""
+    start_offset, end_offset = curve.offsets_at(np.array([0.0, curve.side_length]))
+    return {
+        "support_fraction": curve.inlier_count / max(number_of_samples, 1),
+        "median_strength": curve.median_inlier_strength,
+        "residual_rms": curve.inlier_residual_rms,
+        "move_fraction_of_short_side": float(max(abs(start_offset), abs(end_offset)) / max(short_side, 1e-9)),
+        "start_point": (curve.side_start + curve.unit_normal * start_offset).tolist(),
+        "end_point": (curve.side_start + curve.unit_tangent * curve.side_length + curve.unit_normal * end_offset).tolist(),
+    }
+
+
 def refine_check_quadrilateral(
-    image: np.ndarray, approximate_corners: np.ndarray, config: CornerRefinementConfig | None = None
+    image: np.ndarray,
+    approximate_corners: np.ndarray,
+    config: CornerRefinementConfig | None = None,
+    other_check_quads: list[np.ndarray] | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Move each corner of an approximate quad onto the paper's physical corner.
 
@@ -165,6 +222,8 @@ def refine_check_quadrilateral(
         image: full-resolution grey (H, W) or BGR (H, W, 3) uint8 image.
         approximate_corners: (4, 2) quad in either winding; the order is preserved.
         config: tuning knobs; defaults tuned on val.
+        other_check_quads: the other detections in the same image; score cells inside
+            them (dilated) are ignored so a side cannot lock onto another check's edge.
     Returns:
         (refined (4, 2) float64 corners, diagnostics: bands, which sides fell back per
         pass, which guard rails fired).
@@ -186,15 +245,25 @@ def refine_check_quadrilateral(
             config.maximum_samples_per_side_per_pass,
         ))
     ]
-    paper_colour = estimate_paper_colour(image, input_corners, config.paper_sample_inset_fraction)
+    largest_band = max(max(settings["inward_band"], settings["outward_band"]) for settings in pass_settings_list)
+    nearby_quads = select_nearby_quads(input_corners, [np.asarray(quad, dtype=np.float64) for quad in (other_check_quads or [])], 2 * largest_band)
+    dilated_other_quads = [dilate_convex_quad(quad, config.other_check_dilation_pixels) for quad in nearby_quads] if config.mask_other_checks else []
+    paper_colour = estimate_paper_colour(image, input_corners, config.paper_sample_inset_fraction, nearby_quads if config.mask_other_checks else [])
     diagnostics: dict = {"paper_colour": paper_colour.tolist(), "passes": []}
 
     current_corners = input_corners.copy()
     for pass_index, pass_settings in enumerate(pass_settings_list):
         tracking_pass = config.final_pass_mode == "track" and pass_index == len(pass_settings_list) - 1 and pass_index > 0
         new_corners = current_corners.copy()
-        scored_sides = [score_side(image, current_corners, side_index, pass_settings, paper_colour, config) for side_index in range(4)]
-        side_curves = [refine_one_side(profiles, count, pass_settings, config, random_generator) for profiles, count in scored_sides]
+        scored_sides, side_curves, narrow_accepted = [], [], []
+        for side_index in range(4):
+            scored, curve, accepted = refine_side_narrow_first(
+                image, current_corners, side_index, pass_settings, paper_colour, config, dilated_other_quads, random_generator,
+                narrow_band=band_pixels(config.narrow_first_band_fraction, short_side, config) if pass_index == 0 and config.narrow_first_band_fraction > 0 else None,
+            )
+            scored_sides.append(scored)
+            side_curves.append(curve)
+            narrow_accepted.append(accepted)
         corner_curve_pairs = [(side_curves[(corner_index - 1) % 4], side_curves[corner_index]) for corner_index in range(4)]
         local_corner_fits = [False] * 4
         if tracking_pass:
@@ -209,7 +278,13 @@ def refine_check_quadrilateral(
             intersection = intersect_side_curves(incoming_curve, outgoing_curve)
             if intersection is not None:
                 new_corners[corner_index] = intersection
-        diagnostics["passes"].append({**pass_settings, "local_corner_fits": local_corner_fits, "sides_without_support": [curve.inlier_count == 0 for curve in side_curves]})
+        diagnostics["passes"].append({
+            **pass_settings,
+            "local_corner_fits": local_corner_fits,
+            "sides_accepted_in_narrow_band": narrow_accepted,
+            "sides_without_support": [curve.inlier_count == 0 for curve in side_curves],
+            "side_statistics": [describe_side_curve(curve, count, short_side) for curve, (_, count) in zip(side_curves, scored_sides)],
+        })
         current_corners = new_corners
     refined_corners = apply_guard_rails(input_corners, current_corners, pass_settings_list[0]["inward_band"], config, diagnostics)
     return refined_corners, diagnostics
@@ -235,10 +310,14 @@ def apply_guard_rails(input_corners: np.ndarray, refined_corners: np.ndarray, fi
 def refine_detected_checks(
     image_bgr: np.ndarray, detected_checks: list[DetectedCheck], config: CornerRefinementConfig | None = None
 ) -> list[DetectedCheck]:
-    """Refine every detection's corners; score, orientation flag and corner order are kept."""
+    """Refine every detection's corners; score, orientation flag and corner order are kept.
+
+    Each check is refined knowing the others' (input) quads, see `overlap_masking`.
+    """
     refined_checks = []
-    for detected_check in detected_checks:
-        refined_corners, diagnostics = refine_check_quadrilateral(image_bgr, detected_check.corners, config)
+    for check_index, detected_check in enumerate(detected_checks):
+        other_quads = [other.corners for other_index, other in enumerate(detected_checks) if other_index != check_index]
+        refined_corners, diagnostics = refine_check_quadrilateral(image_bgr, detected_check.corners, config, other_quads)
         refined_checks.append(
             DetectedCheck(
                 corners=refined_corners,

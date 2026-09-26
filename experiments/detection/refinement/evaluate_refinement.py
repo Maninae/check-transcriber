@@ -45,13 +45,13 @@ def evaluate_scene_with_arguments(scene_and_detections, perturbation_kind, pertu
 
 def format_summary_table(groups: dict[str, list[dict]]) -> str:
     """Markdown table: one row per group, before -> after for each statistic."""
-    header = "| group | checks | mean px | median px | p90 px | p95 px | <2 px % | <5 px % |"
-    lines = [header, "|" + "---|" * 8]
+    header = "| group | checks | mean px | median px | p90 px | p95 px | check-mean median | check-mean p90 | check-mean p95 | <2 px % | <5 px % |"
+    lines = [header, "|" + "---|" * 11]
     for group_name, records in groups.items():
         before, after = summarize_corner_errors(records, "errors_before"), summarize_corner_errors(records, "errors_after")
         cells = [
             f"{before[key]:.2f} → {after[key]:.2f}" if "px_percent" not in key else f"{before[key]:.0f} → {after[key]:.0f}"
-            for key in ("mean", "median", "p90", "p95", "checks_below_2px_percent", "checks_below_5px_percent")
+            for key in ("mean", "median", "p90", "p95", "check_mean_median", "check_mean_p90", "check_mean_p95", "checks_below_2px_percent", "checks_below_5px_percent")
         ]
         lines.append(f"| {group_name} | {len(records)} | " + " | ".join(cells) + " |")
     return "\n".join(lines)

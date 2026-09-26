@@ -66,16 +66,27 @@ def evaluate_scene(
     image_bgr = cv2.imread(str(scene.image_path), cv2.IMREAD_COLOR)
     random_generator = np.random.default_rng(zlib.crc32(scene.scene_id.encode()))
     matched_detections = match_predictions_to_ground_truth(scene, scene_detections) if scene_detections is not None else None
+    # Every input quad of the scene first, so each check is refined knowing the others
+    # (unmatched real detections included: they are still checks-or-clutter on the photo).
+    if matched_detections is None:
+        input_quads_by_position = {
+            position: simulate_detector_corners(check.corners, perturbation_kind, perturbation_amount, random_generator)
+            for position, check in enumerate(scene.checks)
+        }
+        extra_quads = []
+    else:
+        input_quads_by_position = {position: detection.corners for position, detection in matched_detections.items()}
+        matched_ids = {id(detection) for detection in matched_detections.values()}
+        extra_quads = [detection.corners for detection in scene_detections if id(detection) not in matched_ids]
+    scene_input_quads = {**input_quads_by_position, **{("extra", index): quad for index, quad in enumerate(extra_quads)}}
     records = []
     for ground_truth_position, check in enumerate(scene.checks):
-        if matched_detections is None:
-            approximate_corners = simulate_detector_corners(check.corners, perturbation_kind, perturbation_amount, random_generator)
-        elif ground_truth_position in matched_detections:
-            approximate_corners = matched_detections[ground_truth_position].corners
-        else:
+        if ground_truth_position not in input_quads_by_position:
             continue
+        approximate_corners = input_quads_by_position[ground_truth_position]
         start_time = time.perf_counter()
-        refined_corners, diagnostics = refine_check_quadrilateral(image_bgr, approximate_corners, config)
+        other_quads = [quad for position, quad in scene_input_quads.items() if position != ground_truth_position]
+        refined_corners, diagnostics = refine_check_quadrilateral(image_bgr, approximate_corners, config, other_quads)
         elapsed_milliseconds = 1000 * (time.perf_counter() - start_time)
         # Real predictions start at an arbitrary corner: score in GT order.
         approximate_in_gt_order = align_corner_order_to_reference(approximate_corners, check.corners)
@@ -96,6 +107,7 @@ def evaluate_scene(
                 "errors_after": compute_corner_errors(refined_in_gt_order, check.corners).tolist(),
                 "milliseconds": elapsed_milliseconds,
                 "quad_reverted": diagnostics["quad_reverted"],
+                "pass_one_side_statistics": diagnostics["passes"][0]["side_statistics"],
             }
         )
     return records
@@ -115,6 +127,11 @@ def summarize_corner_errors(records: list[dict], error_key: str) -> dict:
         "p90": float(np.percentile(pooled, 90)),
         "p95": float(np.percentile(pooled, 95)),
     }
+    # The metrics CLI's headline: each check's MEAN corner error, then percentiles.
+    check_mean = per_check_errors.mean(axis=1)
+    summary["check_mean_median"] = float(np.median(check_mean))
+    summary["check_mean_p90"] = float(np.percentile(check_mean, 90))
+    summary["check_mean_p95"] = float(np.percentile(check_mean, 95))
     for threshold in SUCCESS_THRESHOLDS_PIXELS:
         summary[f"checks_below_{threshold:g}px_percent"] = float(100 * np.mean(worst_corner < threshold))
     return summary

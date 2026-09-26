@@ -17,9 +17,14 @@ class CornerRefinementConfig:
     # Per pass: search band inward / outward of the current side, as a fraction of the
     # short side, clamped to [minimum_band_pixels, maximum_band_pixels].
     inward_band_fraction_per_pass: tuple[float, ...] = (0.14, 0.03)
-    outward_band_fraction_per_pass: tuple[float, ...] = (0.01, 0.03)
+    outward_band_fraction_per_pass: tuple[float, ...] = (0.04, 0.03)
     minimum_band_pixels: float = 6.0
     maximum_band_pixels: float = 140.0
+    # Pass 1 first searches +-narrow_first_band_fraction around the input side and keeps
+    # the result when its inlier support reaches narrow_first_minimum_support; otherwise
+    # it widens to the full bands above (0 disables the narrow try).
+    narrow_first_band_fraction: float = 0.03
+    narrow_first_minimum_support: float = 0.6
     # Pass 1 finds the side with a Radon line search; later passes only grow the curve
     # from the previous result (a second search could jump to a second outward edge).
     # Search half-range = atan(2 * inward band / side length), clamped to this range, so
@@ -32,6 +37,9 @@ class CornerRefinementConfig:
     outermost_line_ratio: float = 0.65
     # Per-sample scores are capped at this contrast (colour units) before integration.
     line_score_clip: float = 0.6
+    # Confidence gate (0 = off): keep the input side when the evidence ALONG it reaches this
+    # fraction of the chosen line's evidence, i.e. the detector side already sits on an edge.
+    keep_input_line_ratio: float = 0.9
     # Curve degree per pass (1 straight, 2 captures curl), and grow iterations.
     curve_degree_per_pass: tuple[int, ...] = (1, 2)
     curve_grow_iterations: int = 3
@@ -39,7 +47,7 @@ class CornerRefinementConfig:
     # Viterbi path (bends near a corner included) and, where that path bends away from the
     # curve near a corner, takes the corner from local straight fits to the
     # `corner_local_fraction` of each side nearest it.
-    final_pass_mode: str = "curve"
+    final_pass_mode: str = "track"
     track_maximum_step_offsets: int = 1
     track_step_cost: float = 0.05
     track_centre_cost_per_pixel: float = 0.01
@@ -68,6 +76,14 @@ class CornerRefinementConfig:
     edge_score_mode: str = "two_class"
     background_window_pixels: int = 6
     minimum_paper_background_contrast: float = 6.0
+    # Paperness falls off again past the paper colour (shadows, ink on a check darker than its surface).
+    tent_beyond_paper: bool = True
+    # Samples with no paper/background colour contrast (white on white) score the paper's
+    # thin dark contact shadow instead: valley depth vs +-half width, in units of contrast_unit.
+    contact_line_half_width_pixels: int = 3
+    contact_line_contrast_unit: float = 20.0
+    # ...also for samples whose paper/background contrast is below this (colour units).
+    contact_line_below_contrast: float = 25.0
     # Paper colour = median over a grid spanning this central part of the input quad.
     paper_sample_inset_fraction: float = 0.15
 
@@ -82,6 +98,10 @@ class CornerRefinementConfig:
     # band, and max relative change of any side's length.
     maximum_corner_move_band_multiple: float = 1.5
     maximum_side_length_change_fraction: float = 0.35
+
+    # Overlaps: ignore score cells inside other detections' quads dilated by this much.
+    mask_other_checks: bool = True
+    other_check_dilation_pixels: float = 0.0
 
     random_seed: int = 0
 
