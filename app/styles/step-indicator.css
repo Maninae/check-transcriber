@@ -1,0 +1,27 @@
+/**
+ * The three-step line under the title (Photo, Count, Review) and the check count once
+ * known. Chrome, so it stays small and gray; only the current step is dark.
+ */
+
+.step-indicator {
+  display: flex;
+  gap: calc(var(--spacing-unit) * 2.5);
+  list-style: none;
+  margin: calc(var(--spacing-unit) * 0.5) 0 0;
+  padding: 0;
+  font-size: 0.85rem;
+  color: #aaa092;
+}
+
+.step-indicator-step[aria-current="step"] {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--spacing-unit) * 2);
+  flex-wrap: wrap;
+}

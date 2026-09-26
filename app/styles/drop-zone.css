@@ -77,3 +77,16 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
+
+/* Once a photo is in, the drop zone shrinks to one quiet line (still a drop and paste
+   target) so the count step's photo becomes the thing the eye lands on. */
+.drop-zone--compact {
+  min-height: 0;
+  padding: calc(var(--spacing-unit) * 1.25) calc(var(--spacing-unit) * 2);
+  border-width: 1px;
+}
+
+.drop-zone--compact .photo-preview-container {
+  flex-direction: row;
+  justify-content: space-between;
+}

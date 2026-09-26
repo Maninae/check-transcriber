@@ -1,31 +1,29 @@
 /**
- * Loads OpenCV.js and Tesseract.js from the CDN pinned in cdn_config.js, and proves
- * both are actually usable rather than just "downloaded": OpenCV by reading back a
- * real build string from the compiled WASM module, Tesseract by spinning up a worker
- * with the English language data loaded. Milestone 1 stops here — nothing in this
- * app calls into either engine yet. The next milestone's detection stage (contour
- * finding on the working canvas from image_decode.js) is what will actually call
- * `cv.Mat`, `cv.findContours`, etc., and will reuse the `cv` object this module hands
- * back rather than loading OpenCV a second time.
+ * Starts the check-processing engines and proves they are usable, not just downloaded:
+ * - the pipeline worker (js/pipeline/), which loads OpenCV.js and onnxruntime-web inside
+ *   itself, compiles OpenCV, creates the orientation classifier session, and reports
+ *   OpenCV's real build string back;
+ * - Tesseract.js on the main thread, with the English data loaded (field reading arrives
+ *   in milestone 4 and will reuse this worker).
+ * The page never touches OpenCV directly; all pixel work happens in the pipeline worker.
  *
  * CALLBACK STYLE IS LOAD-BEARING, NOT A STYLE CHOICE — READ BEFORE "CLEANING THIS UP":
  * every function below takes `(onReady, onError)` callbacks instead of returning a
- * Promise you `await`. This is because `await`-ing (or `Promise.all`-ing-and-awaiting)
- * anything whose resolution traces back to the pinned OpenCV.js build's `cv` global
- * pegs Chromium's main thread at 100% CPU forever — confirmed by bisection: `cv.then
- * (resolve, reject)` resolves in well under a second, but `await cv` (or `await`ing
- * ANY promise, at ANY nesting depth, whose settlement depends on that same `cv.then`
- * call firing) never returns, even wrapped in a plain native Promise. `cv` is a
- * non-native thenable (it comes back from Emscripten's factory call, not a real
- * `Promise`), and something about how V8 schedules the continuation after an `await`
- * on it never drains. Plain `.then(onSuccess, onError)` callback chaining sidesteps
- * whatever that is entirely. Do not reintroduce `async`/`await` on this path without
- * re-verifying against a real browser first — see the milestone 1 build report for
- * the full bisection.
+ * Promise you `await`. Awaiting (or `Promise.all`-ing) anything whose resolution traces
+ * back to the pinned OpenCV.js build's `cv` global pegged Chromium at 100% CPU forever
+ * in milestone 1 — `cv.then(resolve, reject)` resolves in well under a second, but
+ * `await cv` never returns. `cv` is a non-native thenable (Emscripten's module object,
+ * which itself has a `.then`), so resolving any Promise with it makes the Promise adopt
+ * it again, indefinitely. OpenCV now lives in the pipeline worker, which follows the
+ * same rule (see pipeline_worker.js); this loader keeps the callback style so the two
+ * engines' readiness is still combined without a Promise anywhere near `cv`.
  */
 
+import { PipelineClient } from "./pipeline/pipeline_client.js";
 import {
   OPENCV_JS_URL,
+  ONNX_RUNTIME_JS_URL,
+  ONNX_RUNTIME_WASM_DIRECTORY,
   TESSERACT_JS_URL,
   TESSERACT_WORKER_URL,
   TESSERACT_CORE_PATH,
@@ -51,11 +49,19 @@ function loadScriptTag(url, onLoad, onError) {
   document.head.appendChild(script);
 }
 
-function loadOpenCv(onReady, onError) {
-  loadScriptTag(
-    OPENCV_JS_URL,
-    () => window.cv.then(onReady, onError),
-    onError,
+/** Starts the pipeline worker; `onReady({ pipelineClient, openCvBuildInfo })`. */
+function startPipelineWorker(onReady, onError) {
+  const pipelineClient = new PipelineClient({
+    openCvUrl: OPENCV_JS_URL,
+    onnxRuntimeJsUrl: ONNX_RUNTIME_JS_URL,
+    onnxRuntimeWasmDirectory: ONNX_RUNTIME_WASM_DIRECTORY,
+  });
+  pipelineClient.start(
+    ({ openCvBuildInfo }) => onReady({ pipelineClient, openCvBuildInfo }),
+    (error) => {
+      pipelineClient.terminate();
+      onError(error);
+    },
   );
 }
 
@@ -76,8 +82,8 @@ function loadTesseractWorker(onReady, onError) {
 }
 
 // Memoizes the in-flight/completed load so a Retry click (or any other caller)
-// never re-inserts a second copy of the 10 MB OpenCV script tag while the first is
-// still loading. Cleared on failure so Retry genuinely retries from scratch.
+// never starts a second pipeline worker (and a second OpenCV download) while the
+// first is still loading. Cleared on failure so Retry genuinely retries from scratch.
 let pendingCallbacks = null;
 let completedEngines = null;
 
@@ -97,7 +103,7 @@ function settleAllPending(engines, error) {
 }
 
 /**
- * Loads both engines in parallel and calls `onReady({ cv, tesseractWorker,
+ * Loads both engines in parallel and calls `onReady({ pipelineClient, tesseractWorker,
  * openCvBuildInfo })` once both are genuinely ready, or `onError(error)` if either
  * fails (offline, CDN outage, etc.) — the caller is expected to offer a Retry, per
  * the spec's first-visit requirements. `openCvBuildInfo` is only included so the
@@ -115,24 +121,27 @@ export function loadProcessingEngines(onReady, onError) {
   }
   pendingCallbacks = [{ onReady, onError }];
 
-  let cvResult = null;
+  let pipelineResult = null;
   let tesseractWorkerResult = null;
 
   function checkBothReady() {
-    if (cvResult && tesseractWorkerResult) {
+    if (pipelineResult && tesseractWorkerResult) {
       completedEngines = {
-        cv: cvResult,
+        pipelineClient: pipelineResult.pipelineClient,
         tesseractWorker: tesseractWorkerResult,
-        openCvBuildInfo: cvResult.getBuildInformation(),
+        openCvBuildInfo: pipelineResult.openCvBuildInfo,
       };
       settleAllPending(completedEngines, null);
     }
   }
 
   function fail(error) {
+    // A half-started pipeline worker would otherwise leak on Retry.
+    if (pipelineResult) pipelineResult.pipelineClient.terminate();
+    pipelineResult = null;
     settleAllPending(null, error);
   }
 
-  loadOpenCv((cv) => { cvResult = cv; checkBothReady(); }, fail);
+  startPipelineWorker((pipeline) => { pipelineResult = pipeline; checkBothReady(); }, fail);
   loadTesseractWorker((worker) => { tesseractWorkerResult = worker; checkBothReady(); }, fail);
 }

@@ -207,6 +207,12 @@ def main() -> None:
             print(f"    - {url}")
     print(f"third-party origins actually contacted: {sorted({u.split('/')[2] for u in third_party_request_urls}) or ['(none)']}, CDN allowed: {ALLOWED_THIRD_PARTY_ORIGIN}")
 
+    shell_list_check = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "sync_service_worker_shell_list.py"), "--check"],
+        capture_output=True, text=True,
+    )
+    check.that("sw.js precaches exactly the files app/ ships (offline after first visit)", shell_list_check.returncode == 0)
+
     check.finish()
 
 
