@@ -85,7 +85,7 @@ def score_side(image, corners, side_index, pass_settings, paper_colour, config):
         image, side_start, side_end, corners.mean(axis=0),
         pass_settings["inward_band"], pass_settings["outward_band"], number_of_samples, corner_margin,
         config.tangential_offsets_pixels, config.inner_window_pixels, config.outer_window_pixels,
-        config.far_outer_gap_pixels, config.far_outer_window_pixels, paper_colour,
+        paper_colour,
         config.edge_score_mode, config.background_window_pixels, config.minimum_paper_background_contrast,
     )
     return profiles, number_of_samples

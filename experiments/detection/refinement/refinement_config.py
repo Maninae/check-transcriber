@@ -62,11 +62,6 @@ class CornerRefinementConfig:
     tangential_offsets_pixels: tuple[float, ...] = (-2.0, -1.0, 0.0, 1.0, 2.0)
     inner_window_pixels: int = 4
     outer_window_pixels: int = 4
-    # A second outside window starting `far_outer_gap_pixels` past the near one: the score
-    # uses the LESS paper-like of the two, so a thin printed line (paper resumes beyond
-    # it) scores ~0 while a real edge (background continues) keeps its score. 0 disables.
-    far_outer_gap_pixels: int = 4
-    far_outer_window_pixels: int = 0
     # "paper_distance": rise in colour distance to the paper colour across the edge.
     # "two_class": step in a per-sample paper(1)-vs-background(0) projection, which scales
     # faint edges up to full strength; line_score_clip is then in paperness units (<= 1).

@@ -4,8 +4,7 @@ For each sample position along the side we read a colour profile along the side'
 outward normal with one `cv2.remap` call (bilinear, straight from the uint8 image) and average a few profiles
 offset along the tangent to suppress texture. Each normal offset is then scored as a
 paper boundary: mean colour distance to the paper colour just OUTSIDE the offset minus
-the same just INSIDE it (box windows, the centre pixel excluded), optionally taking the
-less paper-like of a near and a far outside window. The score is high where
+the same just INSIDE it (box windows, the centre pixel excluded). The score is high where
 paper gives way to something else, low for a background stripe boundary (its inner side
 is not paper-coloured) and reduced for thin printed lines (they fill only part of the
 outer window).
@@ -93,8 +92,6 @@ def score_side_edge_profiles(
     tangential_offsets_pixels: tuple[float, ...],
     inner_window_pixels: int,
     outer_window_pixels: int,
-    far_outer_gap_pixels: int,
-    far_outer_window_pixels: int,
     paper_colour: np.ndarray,
     score_mode: str = "paper_distance",
     background_window_pixels: int = 6,
@@ -106,8 +103,6 @@ def score_side_edge_profiles(
         image: full-resolution (H, W) or (H, W, C) uint8 image; bilinear remap of uint8
             rounds to whole grey levels, negligible after the window averaging.
         corner_margin_pixels: samples start and end this far from the side's corners.
-        far_outer_gap_pixels / far_outer_window_pixels: optional second outside window
-            (see module docstring); window 0 disables it.
         paper_colour: (C,) median paper colour of the check.
         score_mode: "paper_distance" (rise in distance to paper colour) or "two_class"
             (step in a per-sample paper-vs-background feature, see
@@ -117,7 +112,7 @@ def score_side_edge_profiles(
     margin = min(corner_margin_pixels, 0.3 * side_length)
     positions_pixels = np.linspace(margin, side_length - margin, number_of_samples)
     inward, outward = int(np.ceil(inward_band_pixels)), int(np.ceil(outward_band_pixels))
-    outside_reach = outer_window_pixels + (far_outer_gap_pixels + far_outer_window_pixels if far_outer_window_pixels > 0 else 0)
+    outside_reach = outer_window_pixels
     sampled_offsets = np.arange(-inward - inner_window_pixels, outward + outside_reach + 1, dtype=np.float64)
     tangential_offsets = np.asarray(tangential_offsets_pixels, dtype=np.float64)
 
@@ -138,18 +133,13 @@ def score_side_edge_profiles(
     inside_image = inside_image.reshape(number_of_samples, number_of_tangential, -1).all(axis=1)
 
     if score_mode == "paper_distance":
-        feature = np.linalg.norm(profiles - paper_colour, axis=2)  # rises past the edge
+        edge_feature = np.linalg.norm(profiles - paper_colour, axis=2)  # rises past the edge
     elif score_mode == "two_class":
-        feature = -compute_two_class_paperness(profiles, paper_colour, background_window_pixels, minimum_paper_background_contrast)
+        edge_feature = -compute_two_class_paperness(profiles, paper_colour, background_window_pixels, minimum_paper_background_contrast)
     else:
         raise ValueError(f"unknown score_mode {score_mode!r}")
-    distance_to_paper = feature
     centre_indices = np.arange(inner_window_pixels, len(sampled_offsets) - outside_reach)
-    inner_distance, outer_distance = box_window_means(distance_to_paper, centre_indices, inner_window_pixels, outer_window_pixels)
-    if far_outer_window_pixels > 0:
-        # Far window = (c + gap + outer, c + gap + outer + far]; reuse the helper with a shifted centre.
-        _, far_outer_distance = box_window_means(distance_to_paper, centre_indices + far_outer_gap_pixels + outer_window_pixels, 1, far_outer_window_pixels)
-        outer_distance = np.minimum(outer_distance, far_outer_distance)
+    inner_distance, outer_distance = box_window_means(edge_feature, centre_indices, inner_window_pixels, outer_window_pixels)
     scores = outer_distance - inner_distance
     window_valid = np.ones_like(scores, dtype=bool)
     for shift in range(-inner_window_pixels, outside_reach + 1):
