@@ -11,7 +11,7 @@
  * - Focus on an unsure or blank field opens the magnifier; Escape or leaving closes it.
  */
 
-import { committedTextForField, copyValueForField, isReviewTabStop, markConfirmed, markEdited, wantsMagnifier } from "./review_field_states.js";
+import { committedTextForField, copyValueForField, isReviewedValue, isReviewTabStop, markConfirmed, markEdited, wantsMagnifier } from "./review_field_states.js";
 import { formatIsoDateForDisplay } from "../fields/date_parsing.js";
 
 /** The email date as the one-click suggestion for row `index`'s date, or null (spec 4.3 date handling). */
@@ -108,4 +108,15 @@ export function describeRowForDebug(grid, index) {
     previousBatchDate,
     emailDateSuggestion: emailDateSuggestionFor(grid, index),
   };
+}
+
+/**
+ * Finish batch (spec 4.6): per row, the copy values the history may learn from. Only values
+ * read confidently or confirmed by the operator; an amber read nobody looked at becomes "".
+ */
+export function collectReviewedRowValues(grid) {
+  return grid.rows.map((row, index) => {
+    const copyValues = grid.rowCopyValues(index);
+    return Object.fromEntries(Object.entries(copyValues).map(([key, value]) => [key, isReviewedValue(row.fields[key]) ? value : ""]));
+  });
 }

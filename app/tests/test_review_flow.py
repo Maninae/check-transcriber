@@ -242,7 +242,9 @@ def exercise_field_states(page, checks: CheckList) -> None:
     checks.that("disagreeing amounts: courtesy value, unsure, with the note shown",
                 row_2["amount"]["value"] == "1830.00" and row_2["amount"]["state"] == "unsure"
                 and page.locator(".review-row >> nth=1 >> .review-field-note:visible").inner_text() == "the written amount reads differently")
-    checks.that("a blank payee with no payee list", row_fields(page, 2)["payee"]["state"] == "blank")
+    row_3_payee = row_fields(page, 2)["payee"]
+    checks.that("with no payee list the payee shows the raw read, unsure",
+                row_3_payee["state"] == "unsure" and row_3_payee["value"] == "Oak Street Coop" and not row_3_payee["snappedFrom"])
 
     rows_top = page.locator(".review-row >> nth=0").bounding_box()
     page.evaluate("(top) => window.scrollTo(0, window.scrollY + top - 20)", rows_top["y"])
@@ -280,6 +282,7 @@ def exercise_keyboard_flow(page, checks: CheckList) -> None:
     page.locator("#field-2-payer").click()
     page.keyboard.press("Control+z")
     checks.that("Ctrl+Z undoes the payer snap back to what was read", page.locator("#field-2-payer").input_value() == "Lauren Copelsnd")
+    checks.that("and the restored raw read stays amber (unsure, not confirmed)", row_fields(page, 1)["payer"]["state"] == "unsure")
 
 
 def exercise_autocomplete_and_warnings(page, checks: CheckList) -> None:
@@ -395,6 +398,8 @@ def exercise_rotate_lightbox_and_finish(page, checks: CheckList, check_count: in
     guard_after_copy = page.evaluate("() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }")
     checks.that("no guard once every row is copied", not guard_after_copy)
 
+    unreviewed_payers = [row["fields"]["payer"]["value"] for row in describe_page_state(page)["rows"]
+                         if row["fields"]["payer"]["state"] == "unsure" and row["fields"]["payer"]["value"]]
     page.click("#finish-batch-button")
     checks.that("Finish batch returns to the empty drop zone", page.locator("#drop-zone-prompt").is_visible())
     checks.that(f"'{check_count} checks recorded' stays visible", page.locator("#batch-recorded-line").inner_text() == f"{check_count} checks recorded")
@@ -402,6 +407,8 @@ def exercise_rotate_lightbox_and_finish(page, checks: CheckList, check_count: in
     storage = app_storage(page)
     names = json.loads(storage.get(STORAGE_PREFIX + "knownPayerNames", "[]"))
     checks.that(f"Finish batch remembers the batch's payer names ({names})", "Dana Whitfield" in names and names.count("Lauren Copeland") == 1)
+    checks.that(f"but never an amber payer nobody reviewed ({unreviewed_payers})",
+                not any(name in names and name not in SEEDED_PAYER_NAMES for name in unreviewed_payers))
     history = json.loads(storage.get(STORAGE_PREFIX + "checkHistory", "[]"))
     today_iso = TODAY.isoformat()
     checks.that("and each check number with payer, date and today's batch date",
@@ -438,6 +445,24 @@ def exercise_review_grid(page, checks: CheckList, check_count: int) -> None:
     exercise_clear_everything(page, checks)
 
 
+def exercise_saved_switch_without_download(browser, base_url: str, checks: CheckList) -> None:
+    """A "Read handwriting" switch saved on, files not cached: no download at startup, a Download button instead."""
+    context = browser.new_context(viewport={"width": 1400, "height": 900})
+    page = context.new_page()
+    hub_requests = []
+    page.on("request", lambda request: hub_requests.append(request.url) if "hf.co" in request.url or "huggingface" in request.url else None)
+    page.goto(base_url)
+    page.evaluate("(key) => localStorage.setItem(key, JSON.stringify({ handwritingReaderEnabled: true }))", STORAGE_PREFIX + "settings")
+    page.reload()
+    wait_for_engines_ready(page, TIMEOUT_MS)
+    page.click("#settings-button")
+    page.wait_for_selector("#handwriting-download-button:not([hidden])", timeout=TIMEOUT_MS)
+    page.wait_for_timeout(1000)
+    checks.that("a switch saved on with nothing cached shows on with a Download button", page.is_checked("#handwriting-switch"))
+    checks.that(f"and the page starts no download by itself ({len(hub_requests)} Hub requests)", not hub_requests)
+    context.close()
+
+
 def main() -> None:
     """Run the flow and report."""
     SCREENSHOT_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -456,6 +481,7 @@ def main() -> None:
         paste_image_file(page, SCENE_IMAGE_PATH)
         check_count = exercise_count_step(page, checks)
         exercise_review_grid(page, checks, check_count)
+        exercise_saved_switch_without_download(browser, base_url, checks)
         browser.close()
     print(f"\nscreenshots: {SCREENSHOT_DIRECTORY}/count_step.png, review_grid.png, lightbox.png, lightbox_zoomed.png")
     print(f"             {M4_SCREENSHOT_DIRECTORY}/grid_mixed_states.png, inline_magnifier.png, settings_panel.png")

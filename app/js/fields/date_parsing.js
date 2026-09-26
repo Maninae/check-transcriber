@@ -56,6 +56,17 @@ export function parseDateToIso(dateText) {
   return null;
 }
 
+/**
+ * Like `parseDateToIso`, but a date written without a year ("9/12", "Sep 12", "12 Sept")
+ * takes `year`. For the batch-level email date box, where the operator types what the
+ * email header shows.
+ */
+export function parseDateAssumingYear(dateText, year) {
+  const trimmed = dateText.trim().replace(/[ ,]+$/, "");
+  if (!trimmed) return null;
+  return parseDateToIso(trimmed) || parseDateToIso(`${trimmed}/${year}`) || parseDateToIso(`${trimmed} ${year}`);
+}
+
 /** Local calendar date of `now` as ISO (the operator's today, not UTC's). */
 export function todayIso(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;

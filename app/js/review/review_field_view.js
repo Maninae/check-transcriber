@@ -114,6 +114,9 @@ export function createReviewFieldView(checkNumber, { key, label }, callbacks) {
     },
 
     /** A value from the reader. After a snap, Ctrl+Z goes back to what was actually read. */
+    clearUndoHistory() {
+      undoHistory.clearHistory();
+    },
     setGatedText(text, snappedFromText) {
       if (snappedFromText && snappedFromText !== text) {
         input.value = snappedFromText;

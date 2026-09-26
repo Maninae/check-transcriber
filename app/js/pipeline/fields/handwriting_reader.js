@@ -33,7 +33,8 @@ const BYTES_PER_MEGABYTE = 1e6;
 
 /** Fetches a URL into a Uint8Array, reporting cumulative bytes through `onBytes(received)`. */
 function fetchBytesWithProgress(url, onBytes) {
-  return fetch(url).then((response) => {
+  // No Referer: the Hub never learns which page asked (the URL itself is public and revision-pinned).
+  return fetch(url, { referrerPolicy: "no-referrer" }).then((response) => {
     if (!response.ok) throw new Error(`download failed (${response.status}) for ${url}`);
     if (!response.body) return response.arrayBuffer().then((buffer) => new Uint8Array(buffer));
     const reader = response.body.getReader();

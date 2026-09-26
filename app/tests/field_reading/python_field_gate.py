@@ -99,10 +99,12 @@ def gate(raw_reads: dict, known_payer_names: list[str], known_payee_names: list[
             out["payer"] = (state, name) if distance == 0 else (UNSURE, name)
 
     numeric, words = raw_reads.get("amount_numeric"), raw_reads.get("amount_words")
+    words = None if unread_handwriting(words) else words
     numeric_cents = parse_amount_numeric_to_cents(numeric["text"]) if has_text(numeric) else None
     words_cents = parse_amount_words_to_cents(words["text"]) if has_text(words) else None
+    uses_handwriting_reader = any(read and read["reader"] == "trocr" for read in (numeric, words))
     if numeric_cents is not None and numeric_cents == words_cents:
-        out["amount"] = (CONFIDENT, cents_text(numeric_cents))
+        out["amount"] = (UNSURE if uses_handwriting_reader else CONFIDENT, cents_text(numeric_cents))
     elif numeric_cents is not None:
         out["amount"] = (UNSURE, cents_text(numeric_cents))
     elif words_cents is not None:
@@ -121,9 +123,10 @@ def gate(raw_reads: dict, known_payer_names: list[str], known_payee_names: list[
     out["memo"] = (state, "" if state == BLANK else read["text"].strip())
 
     read = raw_reads.get("payee")
-    if not has_text(read) or unread_handwriting(read) or not known_payee_names or (read["reader"] == "trocr" and read["confidence"] < CONFIG["handwriting_unsure"]):
+    if not has_text(read) or unread_handwriting(read):
         out["payee"] = (BLANK, "")
     else:
-        name, score, _ = process.extractOne(read["text"].strip(), known_payee_names, scorer=fuzz.WRatio)
-        out["payee"] = (UNSURE, name) if score >= CONFIG["payee_snap"] else (BLANK, "")
+        text = read["text"].strip()
+        match = process.extractOne(text, known_payee_names, scorer=fuzz.WRatio) if known_payee_names else None
+        out["payee"] = (UNSURE, match[0] if match and match[1] >= CONFIG["payee_snap"] else text)
     return out

@@ -11,7 +11,7 @@
  */
 
 import { formatCentsAsAmount, normalizeTypedAmount, parseAmountNumericToCents, parseAmountWordsToCents } from "../../js/fields/money_parsing.js";
-import { formatIsoDateAsShortMonthDay, formatIsoDateForDisplay, isIsoDateWithinWindow, parseDateToIso } from "../../js/fields/date_parsing.js";
+import { formatIsoDateAsShortMonthDay, formatIsoDateForDisplay, isIsoDateWithinWindow, parseDateAssumingYear, parseDateToIso } from "../../js/fields/date_parsing.js";
 import { levenshteinDistance, normalizeFreeText, weightedRatio } from "../../js/fields/fuzzy_matching.js";
 import { findPayerSnap, gateCheckFields, normalizeCheckNumberForComparison, parseCheckNumberDigits } from "../../js/fields/field_gating.js";
 import { AMOUNT_DISAGREEMENT_NOTE, FIELD_CONFIDENCE_THRESHOLDS } from "../../js/fields/field_gating_config.js";
@@ -50,6 +50,13 @@ gated = gate({ amount_numeric: printedRead("$***453.00"), amount_words: printedR
 check("legal line unreadable: courtesy value unsure, no note", gated.amount.state === "unsure" && gated.amount.note === null);
 gated = gate({ amount_numeric: printedRead("$**4S3"), amount_words: printedRead("FOUR HUNDRED FIFTY-THREE AND 00/100") });
 check("courtesy unreadable, legal line readable: legal value, unsure", gated.amount.state === "unsure" && gated.amount.value === "453.00");
+gated = gate({ amount_numeric: printedRead("$***453.00"), amount_words: handwrittenRead("FOUR HUNDRED FIFTY-FOUR AND 00/100") });
+check("handwritten legal line without the handwriting reader counts as unread: unsure, no note", gated.amount.state === "unsure" && gated.amount.note === null);
+gated = gate({ amount_numeric: printedRead("$***453.00"), amount_words: handwrittenRead("FOUR HUNDRED FIFTY-THREE AND 00/100") });
+check("an unread handwritten legal line cannot confirm the amount", gated.amount.state === "unsure");
+gated = gate({ amount_numeric: trocrRead("453.00", 0.9), amount_words: trocrRead("four hundred fifty-three and 00/100", 0.9) });
+check("an agreeing amount that rests on handwriting-reader reads is capped at unsure", gated.amount.state === "unsure" && gated.amount.value === "453.00");
+check("a handwriting-reader check number is capped at unsure", gate({ check_number: trocrRead("2683", 0.99) }).checkNumber.state === "unsure");
 gated = gate({ amount_numeric: null, amount_words: null });
 check("no amount reads: blank", gated.amount.state === "blank" && gated.amount.value === "");
 
@@ -60,6 +67,8 @@ const dateCases = [["02/17/2025", "2025-02-17"], ["6/28/25", "2025-06-28"], ["8.
 for (const [text, iso] of dateCases) check(`date "${text}" -> ${iso}`, parseDateToIso(text) === iso);
 check("window: a year either side of today", isIsoDateWithinWindow("2025-09-26", TODAY, 366) && !isIsoDateWithinWindow("2025-09-01", TODAY, 366));
 check("display M/D/YYYY and ISO", formatIsoDateForDisplay("2026-09-04", "m/d/yyyy") === "9/4/2026" && formatIsoDateForDisplay("2026-09-04", "iso") === "2026-09-04");
+check("a year-less email date takes the given year", parseDateAssumingYear("9/12", 2026) === "2026-09-12" && parseDateAssumingYear("Sep 12", 2026) === "2026-09-12"
+  && parseDateAssumingYear("12 Sept", 2026) === "2026-09-12" && parseDateAssumingYear("9/12/2025", 2026) === "2025-09-12" && parseDateAssumingYear("soon", 2026) === null);
 check("short month-day for the duplicate warning", formatIsoDateAsShortMonthDay("2026-09-12") === "Sep 12");
 const dateThresholds = FIELD_CONFIDENCE_THRESHOLDS.date;
 check("printed date above the filled threshold: confident ISO", gate({ date: printedRead("9/4/2026", dateThresholds.filled) }).date.state === "confident"
@@ -94,8 +103,11 @@ check("free-text normalization matches the harness", normalizeFreeText("  **Hell
 const coops = ["Blue Heron Commons Land Trust", "Greenwillow Housing Cooperative", "Marrowstone Co-op Homes"];
 gated = gate({ payee: printedRead("Blue Heron CLT", 0.8) }, { knownPayeeNames: coops });
 check("abbreviated payee snaps to the co-op, unsure", gated.payee.value === "Blue Heron Commons Land Trust" && gated.payee.state === "unsure");
-check("payee without a configured list: blank", gate({ payee: printedRead("Blue Heron CLT") }).payee.state === "blank");
-check("unrelated payee: blank", gate({ payee: printedRead("Pacific Gas and Electric") }, { knownPayeeNames: coops }).payee.state === "blank");
+gated = gate({ payee: printedRead("Blue Heron CLT") });
+check("payee without a configured list: the raw read, unsure", gated.payee.state === "unsure" && gated.payee.value === "Blue Heron CLT");
+gated = gate({ payee: printedRead("Pacific Gas and Electric") }, { knownPayeeNames: coops });
+check("payee below the snap score: the raw read, unsure", gated.payee.state === "unsure" && gated.payee.value === "Pacific Gas and Electric" && gated.payee.snappedFrom === null);
+check("handwritten payee without the handwriting reader: blank", gate({ payee: handwrittenRead("Blue Heron CLT") }, { knownPayeeNames: coops }).payee.state === "blank");
 check("WRatio: identical 100, disjoint low", weightedRatio("abc", "abc") === 100 && weightedRatio("abc", "xyz") < 10);
 
 // Memo: printed memo is never confident.

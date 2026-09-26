@@ -14,6 +14,7 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | `js/review/` | The review grid (spec 4.3-4.5): field states, magnifier, autocomplete, duplicate warning, copy, lightbox. **Read its CLAUDE.md.** |
 | `js/fields/` | The field gate (stage 7): raw reads -> confident / unsure / blank. Pure, Node-testable. **Read its CLAUDE.md.** |
 | `js/settings/` | The inline settings panel and the settings model (date display, copy columns, known names, co-op payees, the read-handwriting switch, Clear everything). |
+| `js/handwriting_reader_cache.js` | Whether the opt-in reader's files are in the service-worker cache (startup never downloads by itself; a saved-on switch without files shows "Download now"), and "Remove the download". |
 | `js/storage/` | The only code that touches `localStorage` (namespaced, text only) and the batch history (confirmed names, check numbers). |
 | `js/step_indicator.js`, `js/toast.js`, `js/status_line.js` | Small DOM leaves: the step line, the "6 rows copied" toast, the engine readiness line. |
 | `js/input_doors.js` | The three ways a photo arrives — paste, drag-and-drop, click-to-browse — and nothing else. |

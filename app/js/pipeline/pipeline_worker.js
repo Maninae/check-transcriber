@@ -33,6 +33,11 @@ let classifierSession = null;
 let fieldModels = null; // { segnetSession, crnnSessions, styleSession, handwritingReader }
 let handwritingReaderUrls = null;
 let handwritingReaderLoad = null; // in-flight Promise while the opt-in reader downloads
+// The operator's latest on/off choice. A download that resolves after the switch went off
+// (or after "Clear everything") must not turn the reader back on.
+let handwritingReaderWanted = false;
+// Bumped by every new batch and by release-photo: a read chain that sees a newer value stops.
+let batchGeneration = 0;
 let currentPhoto = null; // { imageBgr, workingGray, workingScale }
 // Upright crops of the current batch, kept (memory only) so Rotate can re-read a check:
 // checkIndex -> { width, height, rgbaPixels: Uint8ClampedArray }. Dropped with the photo.
@@ -76,6 +81,7 @@ function initialize(message) {
 }
 
 function releasePhoto() {
+  batchGeneration += 1;
   checkCrops = new Map();
   if (!currentPhoto) return;
   currentPhoto.imageBgr.delete();
@@ -165,14 +171,26 @@ function readAllFields(crop, rotatedHalfTurn) {
  */
 function orientAndRectifyChecks(message) {
   const photo = requirePhoto();
+  batchGeneration += 1;
+  const generation = batchGeneration;
   const checkCount = message.cornerSets.length;
   const printedReadsByCheck = new Map();
+  // Start over, Finish batch or a new Continue released this batch: resolve quietly and stop.
+  const isStale = () => {
+    if (generation === batchGeneration) return false;
+    postResult(message.requestId, { cancelled: true });
+    return true;
+  };
   const postProgress = (text) => self.postMessage({ type: "progress", requestId: message.requestId, text });
-  const postError = (error) => self.postMessage({ type: "error", requestId: message.requestId, message: error && error.stack ? error.stack : String(error) });
+  const postError = (error) => {
+    if (generation !== batchGeneration) return;
+    self.postMessage({ type: "error", requestId: message.requestId, message: error && error.stack ? error.stack : String(error) });
+  };
   const postReads = (checkIndex, result, pass) => self.postMessage({
     type: "field-reads-ready", requestId: message.requestId, checkIndex, pass, rawReads: result.rawReads, timingsMs: result.timingsMs,
   });
   const readHandwritingCheck = (checkIndex) => {
+    if (isStale()) return;
     if (checkIndex >= checkCount || !fieldModels.handwritingReader) {
       postResult(message.requestId, {});
       return;
@@ -184,29 +202,34 @@ function orientAndRectifyChecks(message) {
     }
     postProgress(`Reading handwriting on check ${checkIndex + 1} of ${checkCount}`);
     readHandwritingFields(checkCrops.get(checkIndex), false, printedRawReads).then((result) => {
+      if (isStale()) return;
       postReads(checkIndex, result, "handwriting");
       readHandwritingCheck(checkIndex + 1);
     }).catch(postError);
   };
   const readCheck = (checkIndex) => {
+    if (isStale()) return;
     if (checkIndex >= checkCount) {
       readHandwritingCheck(0);
       return;
     }
     postProgress(`Reading check ${checkIndex + 1} of ${checkCount}`);
     readPrintedFields(checkCrops.get(checkIndex), false).then((result) => {
+      if (isStale()) return;
       printedReadsByCheck.set(checkIndex, result.rawReads);
       postReads(checkIndex, result, "printed");
       readCheck(checkIndex + 1);
     }).catch(postError);
   };
   const processCheck = (checkIndex) => {
+    if (isStale()) return;
     if (checkIndex >= checkCount) {
       readCheck(0);
       return;
     }
     postProgress(`Straightening check ${checkIndex + 1} of ${checkCount}`);
     stages.orientAndRectifyCheck(openCv, onnxRuntime, classifierSession, photo, message.cornerSets[checkIndex]).then((checkResult) => {
+      if (isStale()) return;
       checkCrops.set(checkIndex, { width: checkResult.width, height: checkResult.height, rgbaPixels: new Uint8ClampedArray(checkResult.rgbaPixels) });
       const rgbaBuffer = checkResult.rgbaPixels.buffer;
       self.postMessage({
@@ -243,6 +266,7 @@ function readFieldsOfCrop(message) {
 function setHandwritingReader(message) {
   const reply = () => postResult(message.requestId, { enabled: Boolean(fieldModels.handwritingReader) });
   const fail = (error) => self.postMessage({ type: "error", requestId: message.requestId, message: String(error) });
+  handwritingReaderWanted = message.enabled;
   if (!message.enabled) {
     fieldModels.handwritingReader = null;
     reply();
@@ -258,7 +282,11 @@ function setHandwritingReader(message) {
     const clearLoad = () => { handwritingReaderLoad = null; };
     handwritingReaderLoad.then(clearLoad, clearLoad);
   }
-  handwritingReaderLoad.then((reader) => { fieldModels.handwritingReader = reader; reply(); }, fail);
+  handwritingReaderLoad.then((reader) => {
+    // Switched off (or cleared) while downloading: keep it off; the files stay cached.
+    if (handwritingReaderWanted) fieldModels.handwritingReader = reader;
+    reply();
+  }, fail);
 }
 
 const REQUEST_HANDLERS = {

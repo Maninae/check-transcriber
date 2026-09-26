@@ -7,6 +7,7 @@
 
 import { SettingsPanel } from "./settings_panel.js";
 import { SETTING_NAMES } from "./app_settings.js";
+import { deleteCachedHandwritingReader, isHandwritingReaderCached } from "../handwriting_reader_cache.js";
 
 function queryRequiredElement(id) {
   const element = document.getElementById(id);
@@ -37,11 +38,15 @@ export function createSettingsPanel({ settings, batchHistory, localStore, review
     addPayeeInput: queryRequiredElement("add-payee-input"),
     handwritingSwitch: queryRequiredElement("handwriting-switch"),
     handwritingStatusLine: queryRequiredElement("handwriting-status"),
+    handwritingDownloadButton: queryRequiredElement("handwriting-download-button"),
+    handwritingRemoveButton: queryRequiredElement("handwriting-remove-button"),
     clearEverythingButton: queryRequiredElement("clear-everything-button"),
   }, {
     settings,
     batchHistory,
     localStore,
+    isHandwritingReaderCached,
+    deleteCachedHandwritingReader,
     enableHandwritingReader: (enabled, onProgress) =>
       whenPipelineClientReady().then((pipelineClient) => pipelineClient.setHandwritingReaderEnabled(enabled, onProgress)),
     onKnownPayerNamesChanged: () => reviewGrid.regateAllRows(),

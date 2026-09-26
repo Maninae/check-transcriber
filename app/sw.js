@@ -57,6 +57,7 @@ const APP_SHELL_PATHS = [
   "./js/fields/field_gating_config.js",
   "./js/fields/fuzzy_matching.js",
   "./js/fields/money_parsing.js",
+  "./js/handwriting_reader_cache.js",
   "./js/heic_detect.js",
   "./js/image_decode.js",
   "./js/input_doors.js",

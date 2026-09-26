@@ -10,11 +10,14 @@
  * - amount: filled ONLY when the courtesy box and the legal line parse to the same money
  *   value; otherwise the courtesy value is shown unsure, with a note when the legal line
  *   parsed to something else. The legal line itself is never shown.
- * - payee: snapped to the configured co-op list, always unsure; blank without a list.
+ * - payee: snapped to the configured co-op list when it matches, else the raw read; always
+ *   unsure (a sanity check, not copied by default).
  * - date (printed): confidence gate plus the plausible window; handwritten: blank.
  * - memo (printed): at best unsure; handwritten: blank.
- * With the opt-in handwriting reader, handwritten fields are read and gated the same way
- * but capped at unsure (field_gating_config.js explains why).
+ * With the opt-in handwriting reader, every handwritten field (check number, legal line and
+ * payee included) is read by it and gated the same way, but any value resting on one of its
+ * reads is capped at unsure (field_gating_config.js explains why). With the reader off, a
+ * handwritten legal line counts as unread, so it neither confirms nor contradicts the amount.
  *
  * Pure: no DOM, no storage. Runs on the main thread (and in Node for the unit tests), so
  * the grid can re-gate when the known-names lists change without re-reading pixels.
@@ -117,12 +120,24 @@ function gatePayer(rawRead, knownPayerNames) {
   return makeFieldState(FIELD_STATES.UNSURE, snap.knownName, rawRead, { snappedFrom: readText });
 }
 
-/** Spec 4.3 amount handling + the README agreement rule (see module docstring). */
-function gateAmount(numericRead, wordsRead) {
+/** A read the style classifier called handwritten but only the default readers saw: treated as not read. */
+function readOrNullWhenUnreadHandwriting(rawRead) {
+  return isUnreadHandwriting(rawRead) ? null : rawRead;
+}
+
+/**
+ * Spec 4.3 amount handling + the README agreement rule (see module docstring). A handwritten
+ * legal line the handwriting reader did not read counts as absent (no agreement, no note).
+ * Any amount that rests on a handwriting-reader read is capped at unsure.
+ */
+function gateAmount(numericRead, wordsReadOrUnread) {
+  const wordsRead = readOrNullWhenUnreadHandwriting(wordsReadOrUnread);
   const numericCents = hasText(numericRead) ? parseAmountNumericToCents(numericRead.text) : null;
   const wordsCents = hasText(wordsRead) ? parseAmountWordsToCents(wordsRead.text) : null;
+  const usesHandwritingReader = [numericRead, wordsRead].some((read) => read && read.reader === READERS.HANDWRITING);
   if (numericCents !== null && numericCents === wordsCents) {
-    return makeFieldState(FIELD_STATES.CONFIDENT, formatCentsAsAmount(numericCents), numericRead);
+    const state = usesHandwritingReader ? FIELD_STATES.UNSURE : FIELD_STATES.CONFIDENT;
+    return makeFieldState(state, formatCentsAsAmount(numericCents), numericRead);
   }
   if (numericCents !== null) {
     const note = wordsCents !== null ? AMOUNT_DISAGREEMENT_NOTE : null;
@@ -135,16 +150,15 @@ function gateAmount(numericRead, wordsRead) {
   return makeFieldState(FIELD_STATES.BLANK, "", numericRead);
 }
 
+/**
+ * Payee: snapped to the co-op list when it matches (WRatio >= 60), otherwise the raw read;
+ * always unsure. Blank only when there is nothing to show (no read, or unread handwriting).
+ */
 function gatePayee(rawRead, knownPayeeNames) {
-  if (!hasText(rawRead) || isUnreadHandwriting(rawRead) || knownPayeeNames.length === 0) {
-    return makeFieldState(FIELD_STATES.BLANK, "", rawRead);
-  }
-  if (rawRead.reader === READERS.HANDWRITING && rawRead.confidence < HANDWRITING_READ_UNSURE_MIN_CONFIDENCE) {
-    return makeFieldState(FIELD_STATES.BLANK, "", rawRead);
-  }
+  if (!hasText(rawRead) || isUnreadHandwriting(rawRead)) return makeFieldState(FIELD_STATES.BLANK, "", rawRead);
   const readText = rawRead.text.trim();
-  const match = bestWeightedRatioMatch(readText, knownPayeeNames);
-  if (!match || match.score < PAYEE_SNAP_MIN_SCORE) return makeFieldState(FIELD_STATES.BLANK, "", rawRead);
+  const match = knownPayeeNames.length ? bestWeightedRatioMatch(readText, knownPayeeNames) : null;
+  if (!match || match.score < PAYEE_SNAP_MIN_SCORE) return makeFieldState(FIELD_STATES.UNSURE, readText, rawRead);
   return makeFieldState(FIELD_STATES.UNSURE, match.choice, rawRead, { snappedFrom: readText });
 }
 

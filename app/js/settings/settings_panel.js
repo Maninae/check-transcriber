@@ -10,8 +10,11 @@
  * switch, and "Clear everything this page remembers".
  *
  * The handwriting switch is off by default and never turns itself on. Turning it on saves
- * the choice at once (so a reload mid-download tries again) and calls
- * `enableHandwritingReader(enabled, onProgress)`; a failure turns it back off and says so.
+ * the choice and calls `enableHandwritingReader(enabled, onProgress)`; a failure turns it
+ * back off and says so. At page load a switch saved "on" re-enables the reader only if its
+ * files are already cached; otherwise it stays on with a "Download now" button, so a page
+ * load never starts the 128 MB download by itself. Switching off keeps the cached files;
+ * "Remove the download" deletes them.
  */
 
 import { ColumnOrderList } from "./column_order_list.js";
@@ -20,6 +23,8 @@ const CLEAR_EVERYTHING_CONFIRM_MESSAGE =
   "Clear everything this page remembers? This removes the remembered payer names, the check history and your settings from this computer.";
 const CLEAR_NAMES_CONFIRM_MESSAGE = "Forget every remembered payer name?";
 const HANDWRITING_ON_MESSAGE = "On. Handwritten fields are read from now on.";
+const HANDWRITING_NOT_DOWNLOADED_MESSAGE = "On, but the handwriting reader is not on this computer yet.";
+const HANDWRITING_REMOVED_MESSAGE = "The download was removed from this computer.";
 const HANDWRITING_FAILED_MESSAGE = "The handwriting reader could not be downloaded, so this is off again. Check the internet connection and try again.";
 const REMOVE_GLYPH = "×";
 
@@ -43,6 +48,7 @@ export class SettingsPanel {
   /**
    * `elements`: the ids in index.html (see main.js). `services`: `{ settings, batchHistory,
    * localStore, enableHandwritingReader(enabled, onProgress) -> Promise,
+   * isHandwritingReaderCached() -> Promise<boolean>, deleteCachedHandwritingReader() -> Promise,
    * onKnownPayerNamesChanged(), onEverythingCleared() }`.
    */
   constructor(elements, services) {
@@ -70,6 +76,8 @@ export class SettingsPanel {
       this.renderPayeeNames();
     });
     this.handwritingSwitch.addEventListener("change", () => this.switchHandwritingReader(this.handwritingSwitch.checked));
+    this.handwritingDownloadButton.addEventListener("click", () => this.switchHandwritingReader(true));
+    this.handwritingRemoveButton.addEventListener("click", () => this.removeHandwritingDownload());
     this.clearEverythingButton.addEventListener("click", () => this.clearEverything());
     this.renderAll();
   }
@@ -118,11 +126,16 @@ export class SettingsPanel {
     const requestId = this.handwritingRequestId;
     this.settings.setHandwritingReaderEnabled(enabled);
     this.handwritingSwitch.checked = enabled;
+    this.handwritingDownloadButton.hidden = true;
     this.showHandwritingStatus(enabled ? "Getting the handwriting reader ready…" : null);
     const isCurrent = () => requestId === this.handwritingRequestId;
     Promise.resolve()
       .then(() => this.enableHandwritingReader(enabled, (progressText) => { if (isCurrent() && enabled) this.showHandwritingStatus(progressText); }))
-      .then(() => { if (isCurrent()) this.showHandwritingStatus(enabled ? HANDWRITING_ON_MESSAGE : null); })
+      .then(() => {
+        if (!isCurrent()) return;
+        this.showHandwritingStatus(enabled ? HANDWRITING_ON_MESSAGE : null);
+        this.refreshRemoveButton();
+      })
       .catch((error) => {
         console.warn("switching the handwriting reader failed:", error);
         if (!isCurrent() || !enabled) return;
@@ -132,9 +145,33 @@ export class SettingsPanel {
       });
   }
 
-  /** Called once the engines are ready: re-enables the reader if the operator left it on. */
+  /** Called once the engines are ready: re-enables a reader left on, but never downloads by itself. */
   restoreHandwritingReaderAtStartup() {
-    if (this.settings.isHandwritingReaderEnabled()) this.switchHandwritingReader(true);
+    this.refreshRemoveButton();
+    if (!this.settings.isHandwritingReaderEnabled()) return;
+    this.isHandwritingReaderCached().then((isCached) => {
+      if (!this.settings.isHandwritingReaderEnabled()) return; // switched off meanwhile
+      if (isCached) {
+        this.switchHandwritingReader(true);
+        return;
+      }
+      this.handwritingDownloadButton.hidden = false;
+      this.showHandwritingStatus(HANDWRITING_NOT_DOWNLOADED_MESSAGE);
+    });
+  }
+
+  /** "Remove the download" is offered only while the files are cached. */
+  refreshRemoveButton() {
+    this.isHandwritingReaderCached().then((isCached) => { this.handwritingRemoveButton.hidden = !isCached; });
+  }
+
+  /** Deletes the cached files; the reader goes off (it could not start again without them). */
+  removeHandwritingDownload() {
+    if (this.settings.isHandwritingReaderEnabled()) this.switchHandwritingReader(false);
+    this.deleteCachedHandwritingReader().then(() => {
+      this.handwritingRemoveButton.hidden = true;
+      this.showHandwritingStatus(HANDWRITING_REMOVED_MESSAGE);
+    });
   }
 
   clearEverything() {

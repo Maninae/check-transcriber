@@ -83,8 +83,14 @@ export function applyGatedFieldState(record, gatedField, fieldKey, dateDisplayFo
   };
 }
 
-/** The operator typed, undid, picked a suggestion or took the email date. */
+/**
+ * The operator typed, undid, picked a suggestion or took the email date. Undoing a snap back
+ * to the raw read leaves the field amber: nobody has confirmed that read.
+ */
 export function markEdited(record, text) {
+  if (record.snappedFrom && text === record.snappedFrom) {
+    return { ...record, text, reviewState: REVIEW_STATES.UNSURE, note: null, touched: true };
+  }
   let reviewState = REVIEW_STATES.CONFIRMED;
   if (!text.trim()) {
     const wasFlagged = record.gatedState === REVIEW_STATES.UNSURE || record.gatedState === REVIEW_STATES.BLANK;
@@ -104,4 +110,9 @@ export function rotateBoxHalfTurn(box, width, height) {
   if (!box) return null;
   const [x0, y0, x1, y1] = box;
   return [width - x1, height - y1, width - x0, height - y0];
+}
+
+/** Whether a field's value is one the operator can stand behind: read confidently, or confirmed/edited by them. */
+export function isReviewedValue(record) {
+  return record.reviewState === REVIEW_STATES.CONFIDENT || record.reviewState === REVIEW_STATES.CONFIRMED;
 }

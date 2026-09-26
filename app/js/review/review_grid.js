@@ -23,7 +23,7 @@ import { composeDisplayedCrop, createCanvasFromRgbaPixels, drawCanvasScaledToWid
 import { applyGatedFieldState, copyValueForField, createUnreadFieldRecord, displayTextForValue, rotateBoxHalfTurn } from "./review_field_states.js";
 import { createFieldCallbacks, describeRowForDebug, renderField } from "./review_field_editing.js";
 import { gateCheckFields } from "../fields/field_gating.js";
-import { formatIsoDateAsShortMonthDay, parseDateToIso } from "../fields/date_parsing.js";
+import { formatIsoDateAsShortMonthDay, parseDateAssumingYear } from "../fields/date_parsing.js";
 
 function createRowState() {
   return {
@@ -105,6 +105,20 @@ export class ReviewGrid {
   receiveFieldReads(index, rawReads, readRotatedHalfTurn = false) {
     const row = this.rows[index];
     if (!row) return;
+    this.applyFieldReads(row, index, rawReads, readRotatedHalfTurn);
+  }
+
+  /**
+   * A read streamed by the batch's own read chain (upright crop). Ignored once the operator
+   * has rotated the row: its own re-read (both passes, in the new orientation) wins.
+   */
+  receiveStreamedFieldReads(index, rawReads) {
+    const row = this.rows[index];
+    if (!row || row.readRequestGeneration > 0) return;
+    this.applyFieldReads(row, index, rawReads, false);
+  }
+
+  applyFieldReads(row, index, rawReads, readRotatedHalfTurn) {
     row.rawReads = rawReads;
     row.rawReadsRotatedHalfTurn = readRotatedHalfTurn;
     this.regateRow(index);
@@ -151,6 +165,7 @@ export class ReviewGrid {
       for (const record of Object.values(row.fields)) record.box = rotateBoxHalfTurn(record.box, width, height);
     }
     this.renderCrop(index);
+    for (const fieldView of row.view.fieldViews.values()) fieldView.clearUndoHistory();
     row.readRequestGeneration += 1;
     const generation = row.readRequestGeneration;
     const rotatedHalfTurn = row.rotatedHalfTurn;
@@ -231,7 +246,7 @@ export class ReviewGrid {
 
   /** The batch-level "Email date" box changed; offers it beside every blank date. */
   setEmailDateText(text) {
-    this.emailDateIso = text.trim() ? parseDateToIso(text) : null;
+    this.emailDateIso = text.trim() ? parseDateAssumingYear(text, new Date().getFullYear()) : null; // "Sep 12" = this year
     this.rows.forEach((row, index) => renderField(this, index, "date"));
   }
 

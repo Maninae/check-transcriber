@@ -10,3 +10,7 @@
 Invariants:
 - The handwriting switch is off by default and only the operator turns it on; its state persists and is re-applied once the engines are ready.
 - The UI copy never says "AI" or "model"; the switch is "Read handwriting (one-time 128 MB download)".
+
+## Handwriting switch lifecycle
+- Off by default; never downloads by itself. At page load a switch saved "on" re-enables the reader only when its files are already cached (`js/handwriting_reader_cache.js`); otherwise it stays on with a "Download now" button.
+- Switching off keeps the cached files; "Remove the download" deletes them (and turns the reader off). The worker ignores a download that finishes after the switch went off.

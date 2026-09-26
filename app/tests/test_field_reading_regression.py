@@ -6,7 +6,8 @@ Each crop (from synth v1's OCR eval manifest, decoded with cv2 so both sides see
 pixels) goes through the real pipeline worker (`readFieldsOfCrop`) and the real gate
 (js/fields/field_gating.js) in headless Chromium, and through field_reading/python_field_reader.py
 + python_field_gate.py. Reported:
-- parity: identical boxes, texts, readers; max confidence difference; gate state/value agreement;
+- parity: identical boxes, texts, readers; max confidence difference; gate state/value agreement
+  (the JS gate vs the Python gate mirror, both on the browser's reads);
 - accuracy vs ground truth (experiments' `normalize_field_value`): raw read exact-match per field,
   fill rate at the gate (confident share) and the accuracy of what the gate fills;
 - per-crop read time in the browser.
@@ -195,7 +196,9 @@ def main() -> None:
                 browser_read, research_read = result["rawReads"].get(field_name), research_reads.get(field_name)
                 research_recipe_agreement["fields"] += 1
                 research_recipe_agreement["same_text"] += (browser_read or {}).get("text") == (research_read or {}).get("text")
-            python_gated = python_gate(python_reads, [], known_payee_names, REGRESSION_TODAY_ISO)
+            # The gate logic is compared on the SAME reads (the browser's), so reader drift (the
+            # handwriting reader's int8 decoder, native vs WASM) cannot hide or fake a gate difference.
+            python_gated = python_gate(result["rawReads"], [], known_payee_names, REGRESSION_TODAY_ISO)
             truth_rows = crop["truth_rows"]
             for gate_key, (python_state, python_value) in python_gated.items():
                 browser_field = result["gated"][gate_key]
@@ -242,7 +245,7 @@ def main() -> None:
             print(f"      mismatch{' (handwriting reader, reported only)' if is_handwriting_mismatch(mismatch) else ''}: {mismatch}")
     print(f"  texts identical to the research recipe (cv2 ARM-HAL INTER_LINEAR resize; report only): "
           f"{research_recipe_agreement['same_text']}/{research_recipe_agreement['fields']}")
-    print(f"  gate state+value agreement (JS gate vs Python gate on each side's reads): {gate_agreement['same']}/{gate_agreement['fields']}")
+    print(f"  gate state+value agreement (JS gate vs Python gate on the browser's reads): {gate_agreement['same']}/{gate_agreement['fields']}")
     for mismatch in gate_agreement["mismatches"][:5]:
         print(f"      {mismatch}")
     parity_ok &= gate_agreement["same"] == gate_agreement["fields"]

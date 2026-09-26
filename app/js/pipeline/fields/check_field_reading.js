@@ -2,14 +2,15 @@
  * Reads every field of one upright check crop (spec section 5, stages 5-6) and returns the
  * raw reads that js/fields/field_gating.js turns into confident / unsure / blank.
  *
- Two passes, so the grid fills at the default readers' speed even with the (slow, opt-in)
+ * Two passes, so the grid fills at the default readers' speed even with the (slow, opt-in)
  * handwriting reader on:
  * 1. `readCheckFields`: segnet boxes (field_localization.js) -> per field with a box: the
  *    field window (box + margin), its grey line image, p(handwritten) from the style
  *    classifier, and the CRNN read (the amount CRNN for the courtesy box, the general CRNN
  *    elsewhere). The gate blanks handwritten fields read this way.
- * 2. `readHandwrittenFields` (handwriting reader on only): TrOCR re-reads the fields pass 1
- *    called handwritten, as the field-reading README recommends.
+ * 2. `readHandwrittenFields` (handwriting reader on only): TrOCR re-reads every field pass 1
+ *    called handwritten (the courtesy amount keeps the higher-confidence of the two readers).
+ *    The gate caps every handwriting-reader read at unsure.
  * The legal line is read (it feeds the amount cross-check) but the page never shows it. The
  * MICR band has no box and is never read.
  *
@@ -18,12 +19,12 @@
  */
 
 import { FIELD_CROP_MINIMUM_SIDE_PX, FIELD_NAMES, PRINTED_READER_BY_FIELD } from "./field_reading_config.js";
+import { HANDWRITTEN_PROBABILITY_THRESHOLD } from "../../fields/field_gating_config.js";
 import { fieldCropWindow } from "./field_crop_window.js";
 import { locateFieldBoxes } from "./field_localization.js";
 import { buildLineImage, classifyHandwritingProbability, readLineWithCrnn } from "./line_recognizers.js";
 import { readHandwrittenCrop } from "./handwriting_reader.js";
 
-const HANDWRITTEN_PROBABILITY_THRESHOLD = 0.5; // mirrors js/fields/field_gating_config.js
 const TROCR_READER_ID = "trocr";
 
 function copyWindowRgbaPixels(cropRgba, window) {

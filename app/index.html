@@ -117,8 +117,12 @@
         <input id="handwriting-switch" type="checkbox" role="switch" />
         <span>Read handwriting (one-time 128 MB download)</span>
       </label>
-      <p class="settings-help">The download happens once and then stays on this computer. The handwriting reader is made by a third party: <a href="https://github.com/Maninae/check-transcriber/blob/main/README.md#license" target="_blank" rel="noopener noreferrer">licence note</a>.</p>
+      <p class="settings-help">The download happens once and then stays on this computer. Switching this off keeps the download; "Remove the download" deletes it. The handwriting reader is made by a third party: <a href="https://github.com/Maninae/check-transcriber/blob/main/README.md#license" target="_blank" rel="noopener noreferrer">licence note</a>.</p>
       <p id="handwriting-status" class="settings-status" role="status" aria-live="polite" hidden></p>
+      <div class="settings-button-row">
+        <button id="handwriting-download-button" type="button" class="quiet-button settings-small-button" hidden>Download now (128 MB)</button>
+        <button id="handwriting-remove-button" type="button" class="quiet-button settings-small-button" hidden>Remove the download</button>
+      </div>
 
       <h2 class="settings-heading">Remembered on this computer</h2>
       <p class="settings-help">Payer names, check numbers with their payer and date, and these settings. Never the photos.</p>

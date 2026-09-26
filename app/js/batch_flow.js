@@ -11,6 +11,7 @@
  */
 
 import { todayIso } from "./fields/date_parsing.js";
+import { collectReviewedRowValues } from "./review/review_field_editing.js";
 
 const UNSAVED_CHECKS_MESSAGE = (count) =>
   `You have ${count} ${count === 1 ? "check" : "checks"} that have not been copied.`;
@@ -26,6 +27,7 @@ export class BatchFlow {
     this.timings = {};
     this.detectedQuads = null;
     this.orientedQuads = [];
+    this.batchToken = 0; // bumped per Continue and per clear; read-chain callbacks from older batches are dropped
     window.addEventListener("beforeunload", (event) => this.guardUnload(event));
   }
 
@@ -92,6 +94,9 @@ export class BatchFlow {
     this.timings.continuedAt = performance.now();
     this.reviewSection.hidden = false;
     this.orientedQuads = [];
+    this.batchToken += 1;
+    const batchToken = this.batchToken;
+    const isCurrent = () => batchToken === this.batchToken; // Start over / Finish / a new Continue retire this chain
     this.reviewGrid.start(cornerSets.length);
     this.reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
     // Timings: every crop shown, every check read by the default readers (the fully populated
@@ -101,22 +106,26 @@ export class BatchFlow {
     this.pipelineClient.orientAndRectifyChecks(
       cornerSets,
       (checkMessage) => {
+        if (!isCurrent()) return;
         this.orientedQuads[checkMessage.checkIndex] = checkMessage.orientedCorners;
         this.reviewGrid.setCrop(checkMessage.checkIndex, checkMessage);
         cropsShown += 1;
         if (cropsShown === cornerSets.length) this.timings.cropsCompleteAt = performance.now();
       },
-      (text) => this.showProgress(text),
+      (text) => { if (isCurrent()) this.showProgress(text); },
       ({ checkIndex, rawReads, pass }) => {
-        this.reviewGrid.receiveFieldReads(checkIndex, rawReads);
+        if (!isCurrent()) return;
+        this.reviewGrid.receiveStreamedFieldReads(checkIndex, rawReads);
         if (pass !== "printed") return;
         printedReadsShown += 1;
         if (printedReadsShown === cornerSets.length) this.timings.fieldReadsCompleteAt = performance.now();
       },
     ).then(() => {
+      if (!isCurrent()) return;
       this.showProgress(null);
       this.timings.gridCompleteAt = performance.now();
     }).catch((error) => {
+      if (!isCurrent()) return;
       console.error("straightening the checks failed:", error);
       this.showProgress("Something went wrong straightening the checks. Start over to try again");
     });
@@ -132,6 +141,7 @@ export class BatchFlow {
 
   /** Drops the batch everywhere (Start over, or a new photo replacing this one). */
   clear() {
+    this.batchToken += 1;
     this.countStep.clear();
     this.reviewGrid.clear();
     this.reviewSection.hidden = true;
@@ -144,11 +154,12 @@ export class BatchFlow {
   /**
    * Finish batch (spec 4.6): remember the payer names and each check's (number, payer,
    * date) with today as the batch date, release the images, keep a one-line record until
-   * the next photo. Only non-empty values are remembered.
+   * the next photo. Only confident or operator-confirmed values are remembered; an amber read
+   * nobody reviewed never enters the autocomplete list or the duplicate history.
    */
   finish() {
     const checkCount = this.reviewGrid.getCheckCount();
-    const rowValues = this.reviewGrid.collectRowCopyValues();
+    const rowValues = collectReviewedRowValues(this.reviewGrid);
     this.batchHistory.addKnownPayerNames(rowValues.map(({ payer }) => payer));
     this.batchHistory.recordConfirmedChecks(rowValues, todayIso());
     this.clear();
