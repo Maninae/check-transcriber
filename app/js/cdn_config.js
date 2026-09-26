@@ -52,6 +52,26 @@ export const TESSERACT_CORE_PATH =
 export const TESSERACT_LANG_PATH =
   `${CDN_ORIGIN}/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int`;
 
+// The opt-in handwriting reader ("Read handwriting" in settings; never fetched unless the
+// operator turns it on): Xenova's ONNX export of Microsoft's trocr-small-handwritten on the
+// Hugging Face Hub, pinned to one repository revision so the files can never change under
+// us. fp32 encoder + int8 merged decoder (experiments/field_reading/export/BROWSER_NOTE.md).
+// The Hub answers with a redirect to its CDN (us.aws.cdn.hf.co today; the host varies by
+// region and storage backend), which is why the CSP allows `https://*.hf.co` next to
+// huggingface.co. All three URLs fetched with curl (Origin header set) and confirmed
+// 302 -> 200/206 with CORS allowed, Sep 26 2026.
+export const HUGGING_FACE_HUB_ORIGIN = "https://huggingface.co";
+const HANDWRITING_READER_REPOSITORY = "Xenova/trocr-small-handwritten";
+const HANDWRITING_READER_REVISION = "2432e24d184b1d964d07ed04f5d9e21d31a59141";
+const HANDWRITING_READER_BASE_URL =
+  `${HUGGING_FACE_HUB_ORIGIN}/${HANDWRITING_READER_REPOSITORY}/resolve/${HANDWRITING_READER_REVISION}`;
+export const HANDWRITING_READER_URLS = Object.freeze({
+  encoder: `${HANDWRITING_READER_BASE_URL}/onnx/encoder_model.onnx`, // 87.5 MB, fp32
+  decoder: `${HANDWRITING_READER_BASE_URL}/onnx/decoder_model_merged_quantized.onnx`, // 40.5 MB, int8
+  tokenizer: `${HANDWRITING_READER_BASE_URL}/tokenizer.json`, // 4.5 MB, only the piece list is used
+  totalMegabytes: 132,
+});
+
 // First-visit download sizes, as transferred over the wire (jsDelivr serves brotli;
 // measured with `curl -H 'Accept-Encoding: br' <url> | wc -c`, Sep 2026). Shown in the
 // readiness line so the operator knows what "getting ready" means and that it only
@@ -60,6 +80,7 @@ const FIRST_VISIT_TRANSFER_SIZES_MB = {
   openCvJs: 3.5,
   onnxRuntimeJsAndWasm: 3.2,
   orientationClassifier: 1.9, // models/upside_down_classifier.onnx, served from our own host
+  fieldReaders: 30.1, // models/segnet (12.8) + two CRNNs (8.3 + 8.2) + style classifier (0.75), our own host
   tesseractJs: 0.2, // tesseract.min.js + worker.min.js
   tesseractCore: 3.9, // the SIMD or non-SIMD core, a few hundred KB apart
   tesseractEnglishData: 2.95, // English LSTM traineddata, gzipped

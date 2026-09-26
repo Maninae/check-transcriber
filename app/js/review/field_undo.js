@@ -21,8 +21,8 @@ function editKind(inputType) {
 
 /**
  * Attaches the history to `inputElement`. `onValueRestored(value)` fires after an undo
- * so the caller can update its own state. Returns `{ setValue(value) }` for script
- * edits that should themselves be undoable.
+ * so the caller can update its own state. Returns `{ setValue(value), clearHistory() }`;
+ * `setValue` is for script edits that should themselves be undoable.
  */
 export function attachFieldUndoHistory(inputElement, onValueRestored) {
   const previousValues = [];
@@ -54,6 +54,11 @@ export function attachFieldUndoHistory(inputElement, onValueRestored) {
   });
 
   return {
+    /** Forgets every step (Rotate re-reads the field; undoing into the old orientation's read would mislead). */
+    clearHistory() {
+      previousValues.length = 0;
+      lastEditKind = null;
+    },
     setValue(value) {
       pushSnapshot(inputElement.value);
       lastEditKind = null;

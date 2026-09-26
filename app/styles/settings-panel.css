@@ -1,0 +1,219 @@
+/**
+ * The settings panel (spec 4.3, 4.5, 4.6): compact, quiet and clearly secondary. It opens
+ * inline under the page header (never a modal) from a small gray "Settings" link, in
+ * three short columns that wrap on a narrow page. No accent except the on-state of the
+ * handwriting switch, which matches the done checkbox.
+ */
+
+.page-header-end {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--spacing-unit) * 2.5);
+}
+
+.settings-button[aria-expanded="true"] {
+  color: var(--color-text);
+}
+
+.settings-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
+  margin: calc(var(--spacing-unit) * -2) 0 calc(var(--spacing-unit) * 3);
+  padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 2.5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-heading {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.settings-heading:first-child {
+  margin-top: 0;
+}
+
+.settings-help {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.settings-help a {
+  color: inherit;
+}
+
+.settings-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+
+.settings-choice,
+.copy-column-label,
+.settings-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.settings-choice input,
+.copy-column-label input {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.copy-columns-list,
+.settings-name-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.copy-column {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fffdf8;
+  cursor: grab;
+}
+
+.copy-column--dragging {
+  opacity: 0.4;
+}
+
+.copy-column-handle {
+  color: #b8ae9f;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.settings-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+  border-bottom: 1px solid #efe8da;
+  overflow-wrap: anywhere;
+}
+
+.settings-remove-button {
+  flex: none;
+  border: none;
+  background: none;
+  color: #aaa092;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.settings-remove-button:hover {
+  color: var(--color-error);
+}
+
+.settings-add-form {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.settings-text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fffdf8;
+}
+
+.settings-text-input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  border-color: var(--color-accent);
+}
+
+.settings-small-button {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  white-space: normal; /* the long "Clear everything…" label wraps in a narrow column */
+  text-align: left;
+}
+
+.settings-nowrap {
+  white-space: nowrap;
+}
+
+/* The handwriting switch: a native checkbox (role="switch") drawn as a small toggle. */
+.settings-switch input {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  background: #d6cfc2;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.settings-switch input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 120ms ease;
+}
+
+.settings-switch input:checked {
+  background: var(--color-accent);
+}
+
+.settings-switch input:checked::before {
+  transform: translateX(14px);
+}
+
+.settings-switch input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Download now / Remove the download, under the handwriting switch. */
+.settings-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-button-row:has(> button:not([hidden])) {
+  margin: 4px 0 16px;
+}

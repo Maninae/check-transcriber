@@ -11,12 +11,15 @@ const WORKER_SCRIPT_URL = new URL("./pipeline_worker.js", import.meta.url).href;
 const CLASSIFIER_MODEL_PATH = "../../models/upside_down_classifier.onnx"; // relative to the worker script
 
 export class PipelineClient {
-  /** `libraryUrls`: `{ openCvUrl, onnxRuntimeJsUrl, onnxRuntimeWasmDirectory }` from cdn_config.js. */
+  /**
+   * `libraryUrls`: `{ openCvUrl, onnxRuntimeJsUrl, onnxRuntimeWasmDirectory, handwritingReaderUrls }`
+   * from cdn_config.js (the handwriting reader is only fetched if the operator turns it on).
+   */
   constructor(libraryUrls) {
     this.libraryUrls = libraryUrls;
     this.worker = null;
     this.nextRequestId = 1;
-    this.pendingRequests = new Map(); // requestId -> { resolve, reject, onProgress, onCheckReady }
+    this.pendingRequests = new Map(); // requestId -> { resolve, reject, onProgress, onCheckReady, onFieldReadsReady }
   }
 
   /** Starts the worker; calls `onReady({ openCvBuildInfo })` or `onError(error)`. */
@@ -48,16 +51,17 @@ export class PipelineClient {
     if (!pending) return undefined;
     if (message.type === "progress") return pending.onProgress?.(message.text);
     if (message.type === "check-ready") return pending.onCheckReady?.(message);
+    if (message.type === "field-reads-ready") return pending.onFieldReadsReady?.(message);
     this.pendingRequests.delete(message.requestId);
     if (message.type === "error") return pending.reject(new Error(message.message));
     return pending.resolve(message);
   }
 
-  request(type, payload = {}, { transfer = [], onProgress, onCheckReady } = {}) {
+  request(type, payload = {}, { transfer = [], onProgress, onCheckReady, onFieldReadsReady } = {}) {
     const requestId = this.nextRequestId;
     this.nextRequestId += 1;
     return new Promise((resolve, reject) => {
-      this.pendingRequests.set(requestId, { resolve, reject, onProgress, onCheckReady });
+      this.pendingRequests.set(requestId, { resolve, reject, onProgress, onCheckReady, onFieldReadsReady });
       this.worker.postMessage({ type, requestId, ...payload }, transfer);
     });
   }
@@ -80,9 +84,45 @@ export class PipelineClient {
     return this.request("refit-drawn-rectangle", { drawnCorners, otherCornerSets });
   }
 
-  /** Orients and crops each quad; `onCheckReady(message)` fires per check as it finishes. */
-  orientAndRectifyChecks(cornerSets, onCheckReady, onProgress) {
-    return this.request("orient-and-rectify-checks", { cornerSets }, { onCheckReady, onProgress });
+  /**
+   * Orients, crops and reads each quad. `onCheckReady(message)` fires per check with the crop
+   * (`{ checkIndex, width, height, rgbaBuffer, upsideDownProbability, orientedCorners }`), all
+   * crops first; then `onFieldReadsReady({ checkIndex, pass, rawReads, timingsMs })` per check,
+   * `pass` "printed" for every check, then "handwriting" again for checks with handwritten
+   * fields when the handwriting reader is on (the later read replaces the earlier one).
+   * `rawReads` is the input of js/fields/field_gating.js `gateCheckFields` (see its docstring).
+   * Resolves when every check is cropped and every pass is done.
+   */
+  orientAndRectifyChecks(cornerSets, onCheckReady, onProgress, onFieldReadsReady) {
+    return this.request("orient-and-rectify-checks", { cornerSets }, { onCheckReady, onProgress, onFieldReadsReady });
+  }
+
+  /**
+   * Re-reads one check's fields after the operator rotated it (the worker keeps each crop
+   * until the photo is released). `rotatedHalfTurn` is the row's rotation relative to the
+   * worker's upright crop. Resolves to `{ rawReads, timingsMs }`; boxes are in the rotated
+   * crop's pixel coordinates (the orientation the row displays).
+   */
+  rereadCheckFields(checkIndex, rotatedHalfTurn) {
+    return this.request("reread-check-fields", { checkIndex, rotatedHalfTurn });
+  }
+
+  /**
+   * Turns the opt-in handwriting reader on or off. Turning it on downloads it once (about
+   * 128 MB, cached by the service worker afterwards) and resolves when it is ready;
+   * `onProgress(text)` reports the download. Reads made after it resolves use it for
+   * handwritten fields. Resolves to `{ enabled }`.
+   */
+  setHandwritingReaderEnabled(enabled, onProgress) {
+    return this.request("set-handwriting-reader", { enabled }, { onProgress });
+  }
+
+  /**
+   * Reads the fields of one upright crop handed over as RGBA pixels (the parity and
+   * regression tests use this to feed exact pixels). Resolves to `{ rawReads, timingsMs }`.
+   */
+  readFieldsOfCrop(width, height, rgbaBuffer) {
+    return this.request("read-fields-of-crop", { width, height, rgbaBuffer }, { transfer: [rgbaBuffer] });
   }
 
   /** Frees the worker's copy of the photo (Finish batch, Start over). */

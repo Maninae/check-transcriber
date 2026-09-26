@@ -1,14 +1,18 @@
 """Time the two spec budgets on a 12-megapixel photo with six checks, in headless Chromium.
 
-    /Volumes/vega/datasets/check-transcriber/venv/bin/python app/tests/test_performance_budget.py [--runs 3]
+    /Volumes/vega/datasets/check-transcriber/venv/bin/python app/tests/test_performance_budget.py [--runs 3] [--handwriting]
 
 Spec section 5: under 3 s from paste to the count step, under 10 s from Continue to a
 fully populated review grid, for a 12 MP photo of six checks. The photo is the first
 eval scene with exactly six checks, all fully in frame, upscaled to 4000 x 3000 and saved
 as a JPEG (so decode cost is included, as for a real paste). Timings come from the page
 itself (`performance.now()` at the paste event, at the count step render, at Continue,
-at the last crop), via window.__checkTranscriberDebug. The first run includes JIT
-warm-up and is reported separately.
+at the last crop, when every check's fields are read, when everything including the
+handwriting pass is done), via window.__checkTranscriberDebug. "Fully populated grid" =
+every crop shown and every field read by the default readers. `--handwriting` turns the
+opt-in handwriting reader on first (persistent profile on vega, so it is downloaded once)
+and also reports Continue -> handwriting pass done. The first run includes JIT warm-up and
+is reported separately.
 
 This Mac is not the target laptop: report the numbers, and the note in app/CLAUDE.md
 records how they compare to a mid-range Windows machine.
@@ -35,7 +39,15 @@ JPEG_QUALITY = 90
 PHOTO_PATH = Path("/tmp/check-transcriber-m2/twelve_megapixel_six_checks.jpg")
 PASTE_TO_COUNT_BUDGET_S = 3.0
 CONTINUE_TO_GRID_BUDGET_S = 10.0
-TIMEOUT_MS = 120_000
+TIMEOUT_MS = 300_000
+PERSISTENT_PROFILE_DIRECTORY = Path("/Volumes/vega/datasets/check-transcriber/app-test-profiles/handwriting-reader")
+ENABLE_HANDWRITING_SCRIPT = """
+async () => {
+  const { loadProcessingEngines } = await import('./js/engine_loader.js');
+  const client = await new Promise((resolve, reject) => loadProcessingEngines((engines) => resolve(engines.pipelineClient), reject));
+  await client.setHandwritingReaderEnabled(true, () => {});
+}
+"""
 
 
 def build_twelve_megapixel_photo() -> str:
@@ -62,7 +74,9 @@ def time_one_run(page, previous_arrival: float) -> dict:
         "arrival": timings["photoArrivedAt"],
         "detected_count": detected_count,
         "paste_to_count_s": (timings["countStepShownAt"] - timings["photoArrivedAt"]) / 1000,
-        "continue_to_grid_s": (timings["gridCompleteAt"] - timings["continuedAt"]) / 1000,
+        "continue_to_crops_s": (timings["cropsCompleteAt"] - timings["continuedAt"]) / 1000,
+        "continue_to_grid_s": (timings["fieldReadsCompleteAt"] - timings["continuedAt"]) / 1000,
+        "continue_to_all_done_s": (timings["gridCompleteAt"] - timings["continuedAt"]) / 1000,
     }
 
 
@@ -70,15 +84,23 @@ def main() -> None:
     """Build the photo, run it `--runs` times after one warm-up, report against the budget."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--handwriting", action="store_true", help="turn the opt-in handwriting reader on first")
     arguments = parser.parse_args()
     scene_id = build_twelve_megapixel_photo()
     print(f"12 MP photo from {scene_id}: {PHOTO_PATH} ({PHOTO_PATH.stat().st_size / 1e6:.1f} MB)")
     with serve_directory() as base_url, sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
+        if arguments.handwriting:
+            PERSISTENT_PROFILE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            browser = playwright.chromium.launch_persistent_context(str(PERSISTENT_PROFILE_DIRECTORY), viewport={"width": 1400, "height": 900})
+            page = browser.new_page()
+        else:
+            browser = playwright.chromium.launch()
+            page = browser.new_context(viewport={"width": 1400, "height": 900}).new_page()
         page.on("dialog", lambda dialog: dialog.accept())
         page.goto(base_url)
         wait_for_engines_ready(page, TIMEOUT_MS)
+        if arguments.handwriting:
+            page.evaluate(ENABLE_HANDWRITING_SCRIPT)
         runs = []
         previous_arrival = 0
         for run_index in range(arguments.runs + 1):
@@ -86,14 +108,17 @@ def main() -> None:
             previous_arrival = run["arrival"]
             label = "warm-up" if run_index == 0 else f"run {run_index}"
             print(f"{label}: {run['detected_count']} checks, paste->count {run['paste_to_count_s']:.2f} s, "
-                  f"Continue->grid {run['continue_to_grid_s']:.2f} s", flush=True)
+                  f"Continue->crops {run['continue_to_crops_s']:.2f} s, Continue->grid (all fields read) {run['continue_to_grid_s']:.2f} s, "
+                  f"Continue->all passes done {run['continue_to_all_done_s']:.2f} s", flush=True)
             if run_index > 0:
                 runs.append(run)
         browser.close()
     paste_median = statistics.median(run["paste_to_count_s"] for run in runs)
     grid_median = statistics.median(run["continue_to_grid_s"] for run in runs)
+    all_done_median = statistics.median(run["continue_to_all_done_s"] for run in runs)
     print(f"median paste->count {paste_median:.2f} s (budget {PASTE_TO_COUNT_BUDGET_S} s), "
-          f"Continue->grid {grid_median:.2f} s (budget {CONTINUE_TO_GRID_BUDGET_S} s)")
+          f"Continue->grid {grid_median:.2f} s (budget {CONTINUE_TO_GRID_BUDGET_S} s), "
+          f"Continue->all passes done {all_done_median:.2f} s{' (handwriting reader on)' if arguments.handwriting else ''}")
     if paste_median > PASTE_TO_COUNT_BUDGET_S or grid_median > CONTINUE_TO_GRID_BUDGET_S:
         print("OVER BUDGET on this machine")
         sys.exit(1)

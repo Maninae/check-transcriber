@@ -10,19 +10,22 @@ flowchart LR
   P -- refit-drawn-rectangle --> F[drawn_rectangle_refit.js]
   P -- orient-and-rectify-checks --> S[check_pipeline_stage.js]
   S --> OR[orientation/ classifier via onnxruntime-web] --> RC[check_rectification.js 1600 px crop]
+  RC --> FR[fields/ segnet + CRNNs + style, optional TrOCR]
+  P -- reread-check-fields / set-handwriting-reader --> FR
 ```
 
 ## Modules
 
 | File | Owns |
 |---|---|
-| `pipeline_worker.js` | Classic worker entry: `importScripts` OpenCV.js + onnxruntime-web, dynamic-imports `worker_stages.js`, holds the current photo (BGR Mat + 1280 px orientation gray), message dispatch. |
+| `pipeline_worker.js` | Classic worker entry: `importScripts` OpenCV.js + onnxruntime-web, dynamic-imports `worker_stages.js`, holds the current photo (BGR Mat + 1280 px orientation gray) and each confirmed check's upright crop (for Rotate re-reads), the field-model sessions and the opt-in handwriting reader, message dispatch. Crops stream back first, then pass 1 reads (default readers), then pass 2 (handwriting reader, if on). |
 | `pipeline_client.js` | Main-thread side: blob bootstrap, request ids, Promises, progress and per-check streaming callbacks. |
 | `worker_stages.js` | The one ES module the worker imports; re-exports every stage entry point. |
 | `photo_detection_stage.js` | classical → refinement → reading order → confident cue. |
 | `drawn_rectangle_refit.js` | "Add a check": detect in a padded crop around the drag, else refine the drag, else keep it. |
 | `check_pipeline_stage.js` | Per confirmed quad: orientation then rectification. |
 | `check_rectification.js` | Perspective warp to the upright 1600 px landscape crop (height from the quad's aspect). |
+| `fields/` | Stages 5-6: field boxes, readers, the opt-in handwriting reader; see its CLAUDE.md. |
 | `orientation/` | Port of `experiments/detection/orientation/` (1280 px gray, 224x96 crop, roll rules) and the ONNX session. |
 | `classical/` | Port of `experiments/detection/classical/`; see its CLAUDE.md. |
 | `refinement/` | Port of `experiments/detection/refinement/`; see its CLAUDE.md. |
@@ -41,3 +44,4 @@ flowchart LR
 
 - Node, cv2 pixels, per module: `app/tests/parity/` (`run_refinement_parity.mjs`, `run_classical_parity.mjs`, `dump_*.py`).
 - Browser, end to end on eval scenes: `app/tests/test_detection_regression.py`.
+- Field reading, browser vs Python on 30 eval crops: `app/tests/test_field_reading_regression.py` (`--handwriting` for the opt-in reader).

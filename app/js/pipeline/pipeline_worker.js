@@ -19,7 +19,7 @@
  * Promise with it.
  *
  * Protocol: page -> worker `{ type, requestId, ...payload }`; worker -> page
- * `{ type: "result" | "error" | "progress" | "check-ready", requestId, ... }`, plus one
+ * `{ type: "result" | "error" | "progress" | "check-ready" | "field-reads-ready", requestId, ... }`, plus one
  * `{ type: "ready" | "init-failed" }` after "init".
  */
 
@@ -30,7 +30,18 @@ let openCv = null;
 let onnxRuntime = null;
 let stages = null;
 let classifierSession = null;
+let fieldModels = null; // { segnetSession, crnnSessions, styleSession, handwritingReader }
+let handwritingReaderUrls = null;
+let handwritingReaderLoad = null; // in-flight Promise while the opt-in reader downloads
+// The operator's latest on/off choice. A download that resolves after the switch went off
+// (or after "Clear everything") must not turn the reader back on.
+let handwritingReaderWanted = false;
+// Bumped by every new batch and by release-photo: a read chain that sees a newer value stops.
+let batchGeneration = 0;
 let currentPhoto = null; // { imageBgr, workingGray, workingScale }
+// Upright crops of the current batch, kept (memory only) so Rotate can re-read a check:
+// checkIndex -> { width, height, rgbaPixels: Uint8ClampedArray }. Dropped with the photo.
+let checkCrops = new Map();
 
 function resolveAgainstWorker(relativePath) {
   return new URL(relativePath, self.PIPELINE_WORKER_URL).href;
@@ -49,6 +60,7 @@ function initialize(message) {
   }
   onnxRuntime = self.ort;
   onnxRuntime.env.wasm.wasmPaths = message.onnxRuntimeWasmDirectory;
+  handwritingReaderUrls = message.handwritingReaderUrls;
   // Threads need cross-origin isolation (COOP/COEP headers), which GitHub Pages cannot set.
   onnxRuntime.env.wasm.numThreads = 1;
   const fail = (error) => self.postMessage({ type: "init-failed", message: String(error) });
@@ -56,8 +68,12 @@ function initialize(message) {
     openCv = readyCv;
     import(resolveAgainstWorker("./worker_stages.js")).then((stageModule) => {
       stages = stageModule;
-      stages.createUpsideDownClassifierSession(onnxRuntime, resolveAgainstWorker(message.classifierModelPath)).then((session) => {
+      Promise.all([
+        stages.createUpsideDownClassifierSession(onnxRuntime, resolveAgainstWorker(message.classifierModelPath)),
+        stages.createFieldModelSessions(onnxRuntime, resolveAgainstWorker),
+      ]).then(([session, models]) => {
         classifierSession = session;
+        fieldModels = models;
         self.postMessage({ type: "ready", openCvBuildInfo: openCv.getBuildInformation() });
       }, fail);
     }, fail);
@@ -65,6 +81,8 @@ function initialize(message) {
 }
 
 function releasePhoto() {
+  batchGeneration += 1;
+  checkCrops = new Map();
   if (!currentPhoto) return;
   currentPhoto.imageBgr.delete();
   currentPhoto.workingGray.delete();
@@ -102,16 +120,117 @@ function refitDrawnRectangle(message) {
   postResult(message.requestId, refit);
 }
 
-/** Orients and rectifies the confirmed quads one at a time, streaming each crop back. */
+/**
+ * Runs `readWithCropMat(cropRgba)` on a crop given as RGBA pixels (optionally turned 180
+ * degrees first). The cv.Mat lives only for the duration of the returned Promise.
+ */
+function withCropMat(width, height, rgbaPixels, rotatedHalfTurn, readWithCropMat) {
+  const cropRgba = new openCv.Mat(height, width, openCv.CV_8UC4);
+  cropRgba.data.set(rgbaPixels);
+  if (rotatedHalfTurn) openCv.rotate(cropRgba, cropRgba, openCv.ROTATE_180);
+  const release = () => cropRgba.delete();
+  let readPromise;
+  try {
+    readPromise = readWithCropMat(cropRgba);
+  } catch (error) {
+    release();
+    throw error;
+  }
+  return readPromise.then((result) => { release(); return result; }, (error) => { release(); throw error; });
+}
+
+/** Pass 1 on a crop: `{ rawReads, timingsMs }` from the default readers. */
+function readPrintedFields(crop, rotatedHalfTurn) {
+  return withCropMat(crop.width, crop.height, crop.rgbaPixels, rotatedHalfTurn,
+    (cropRgba) => stages.readCheckFields(openCv, onnxRuntime, fieldModels, cropRgba));
+}
+
+/** Pass 2 on a crop: TrOCR over pass 1's handwritten fields (handwriting reader on only). */
+function readHandwritingFields(crop, rotatedHalfTurn, printedRawReads) {
+  const reader = fieldModels.handwritingReader;
+  return withCropMat(crop.width, crop.height, crop.rgbaPixels, rotatedHalfTurn,
+    (cropRgba) => stages.readHandwrittenFields(onnxRuntime, reader, cropRgba, printedRawReads));
+}
+
+/** Both passes, as one result (Rotate re-reads, tests). */
+function readAllFields(crop, rotatedHalfTurn) {
+  return readPrintedFields(crop, rotatedHalfTurn).then((printed) => {
+    if (!fieldModels.handwritingReader || !stages.hasHandwrittenFields(printed.rawReads)) return printed;
+    return readHandwritingFields(crop, rotatedHalfTurn, printed.rawReads).then((handwriting) => ({
+      rawReads: handwriting.rawReads, timingsMs: { ...printed.timingsMs, ...handwriting.timingsMs },
+    }));
+  });
+}
+
+/**
+ * Orients and rectifies every confirmed quad, streaming each crop back as soon as it is
+ * straight (the grid fills with crops first); then pass 1 reads every check with the
+ * default readers; then, only if the handwriting reader is on, pass 2 re-reads the
+ * handwritten fields check by check. Each pass streams `field-reads-ready` per check, so a
+ * check can report twice (the grid re-gates the fields the operator has not touched).
+ */
 function orientAndRectifyChecks(message) {
   const photo = requirePhoto();
-  const processCheck = (checkIndex) => {
-    if (checkIndex >= message.cornerSets.length) {
+  batchGeneration += 1;
+  const generation = batchGeneration;
+  const checkCount = message.cornerSets.length;
+  const printedReadsByCheck = new Map();
+  // Start over, Finish batch or a new Continue released this batch: resolve quietly and stop.
+  const isStale = () => {
+    if (generation === batchGeneration) return false;
+    postResult(message.requestId, { cancelled: true });
+    return true;
+  };
+  const postProgress = (text) => self.postMessage({ type: "progress", requestId: message.requestId, text });
+  const postError = (error) => {
+    if (generation !== batchGeneration) return;
+    self.postMessage({ type: "error", requestId: message.requestId, message: error && error.stack ? error.stack : String(error) });
+  };
+  const postReads = (checkIndex, result, pass) => self.postMessage({
+    type: "field-reads-ready", requestId: message.requestId, checkIndex, pass, rawReads: result.rawReads, timingsMs: result.timingsMs,
+  });
+  const readHandwritingCheck = (checkIndex) => {
+    if (isStale()) return;
+    if (checkIndex >= checkCount || !fieldModels.handwritingReader) {
       postResult(message.requestId, {});
       return;
     }
-    self.postMessage({ type: "progress", requestId: message.requestId, text: `Straightening check ${checkIndex + 1} of ${message.cornerSets.length}` });
+    const printedRawReads = printedReadsByCheck.get(checkIndex);
+    if (!stages.hasHandwrittenFields(printedRawReads)) {
+      readHandwritingCheck(checkIndex + 1);
+      return;
+    }
+    postProgress(`Reading handwriting on check ${checkIndex + 1} of ${checkCount}`);
+    readHandwritingFields(checkCrops.get(checkIndex), false, printedRawReads).then((result) => {
+      if (isStale()) return;
+      postReads(checkIndex, result, "handwriting");
+      readHandwritingCheck(checkIndex + 1);
+    }).catch(postError);
+  };
+  const readCheck = (checkIndex) => {
+    if (isStale()) return;
+    if (checkIndex >= checkCount) {
+      readHandwritingCheck(0);
+      return;
+    }
+    postProgress(`Reading check ${checkIndex + 1} of ${checkCount}`);
+    readPrintedFields(checkCrops.get(checkIndex), false).then((result) => {
+      if (isStale()) return;
+      printedReadsByCheck.set(checkIndex, result.rawReads);
+      postReads(checkIndex, result, "printed");
+      readCheck(checkIndex + 1);
+    }).catch(postError);
+  };
+  const processCheck = (checkIndex) => {
+    if (isStale()) return;
+    if (checkIndex >= checkCount) {
+      readCheck(0);
+      return;
+    }
+    postProgress(`Straightening check ${checkIndex + 1} of ${checkCount}`);
     stages.orientAndRectifyCheck(openCv, onnxRuntime, classifierSession, photo, message.cornerSets[checkIndex]).then((checkResult) => {
+      if (isStale()) return;
+      checkCrops.set(checkIndex, { width: checkResult.width, height: checkResult.height, rgbaPixels: new Uint8ClampedArray(checkResult.rgbaPixels) });
       const rgbaBuffer = checkResult.rgbaPixels.buffer;
       self.postMessage({
         type: "check-ready", requestId: message.requestId, checkIndex,
@@ -119,9 +238,55 @@ function orientAndRectifyChecks(message) {
         width: checkResult.width, height: checkResult.height, rgbaBuffer,
       }, [rgbaBuffer]);
       processCheck(checkIndex + 1);
-    }).catch((error) => self.postMessage({ type: "error", requestId: message.requestId, message: String(error) }));
+    }).catch(postError);
   };
   processCheck(0);
+}
+
+/** Rotate on a row: re-read (both passes) that check's kept crop in the row's orientation. */
+function rereadCheckFields(message) {
+  const crop = checkCrops.get(message.checkIndex);
+  if (!crop) throw new Error(`no crop is kept for check ${message.checkIndex}`);
+  readAllFields(crop, message.rotatedHalfTurn).then(
+    (result) => postResult(message.requestId, result),
+    (error) => self.postMessage({ type: "error", requestId: message.requestId, message: String(error) }),
+  );
+}
+
+/** Tests and the parity harness: read an arbitrary crop handed over as RGBA pixels (both passes). */
+function readFieldsOfCrop(message) {
+  const crop = { width: message.width, height: message.height, rgbaPixels: new Uint8Array(message.rgbaBuffer) };
+  readAllFields(crop, false).then(
+    (result) => postResult(message.requestId, result),
+    (error) => self.postMessage({ type: "error", requestId: message.requestId, message: error && error.stack ? error.stack : String(error) }),
+  );
+}
+
+/** The opt-in handwriting reader: download once (service-worker cached), or drop it. */
+function setHandwritingReader(message) {
+  const reply = () => postResult(message.requestId, { enabled: Boolean(fieldModels.handwritingReader) });
+  const fail = (error) => self.postMessage({ type: "error", requestId: message.requestId, message: String(error) });
+  handwritingReaderWanted = message.enabled;
+  if (!message.enabled) {
+    fieldModels.handwritingReader = null;
+    reply();
+    return;
+  }
+  if (fieldModels.handwritingReader) {
+    reply();
+    return;
+  }
+  const onProgress = (text) => self.postMessage({ type: "progress", requestId: message.requestId, text });
+  if (!handwritingReaderLoad) {
+    handwritingReaderLoad = stages.loadHandwritingReader(onnxRuntime, handwritingReaderUrls, onProgress);
+    const clearLoad = () => { handwritingReaderLoad = null; };
+    handwritingReaderLoad.then(clearLoad, clearLoad);
+  }
+  handwritingReaderLoad.then((reader) => {
+    // Switched off (or cleared) while downloading: keep it off; the files stay cached.
+    if (handwritingReaderWanted) fieldModels.handwritingReader = reader;
+    reply();
+  }, fail);
 }
 
 const REQUEST_HANDLERS = {
@@ -129,6 +294,9 @@ const REQUEST_HANDLERS = {
   "detect-checks": detectChecks,
   "refit-drawn-rectangle": refitDrawnRectangle,
   "orient-and-rectify-checks": orientAndRectifyChecks,
+  "reread-check-fields": rereadCheckFields,
+  "read-fields-of-crop": readFieldsOfCrop,
+  "set-handwriting-reader": setHandwritingReader,
   "release-photo": (message) => { releasePhoto(); postResult(message.requestId, {}); },
 };
 

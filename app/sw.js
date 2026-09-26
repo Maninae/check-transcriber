@@ -18,12 +18,16 @@
  * copies of everything on their next visit.
  */
 
-const SW_VERSION = "v2";
+const SW_VERSION = "v3";
 const SHELL_CACHE_NAME = `check-transcriber-shell-${SW_VERSION}`;
 const CDN_CACHE_NAME = `check-transcriber-cdn-${SW_VERSION}`;
-const CURRENT_CACHE_NAMES = [SHELL_CACHE_NAME, CDN_CACHE_NAME];
+// The opt-in handwriting reader's files (Hugging Face Hub, ~132 MB, pinned revision; see
+// js/cdn_config.js). Not versioned with SW_VERSION: the URLs are immutable (revision-pinned),
+// so an app update must not throw away a 132 MB download the operator already made.
+const HANDWRITING_READER_CACHE_NAME = "check-transcriber-handwriting-reader";
+const CURRENT_CACHE_NAMES = [SHELL_CACHE_NAME, CDN_CACHE_NAME, HANDWRITING_READER_CACHE_NAME];
 
-// The app's own files (including models/upside_down_classifier.onnx), precached on
+// The app's own files (including every models/*.onnx the default reader needs), precached on
 // install so the very next visit is instant and offline even before the runtime
 // cache-fill below has had a chance to run. Generated: run
 // `python3 tests/sync_service_worker_shell_list.py` after adding or removing a file
@@ -37,7 +41,9 @@ const APP_SHELL_PATHS = [
   "./styles/count-step.css",
   "./styles/drop-zone.css",
   "./styles/lightbox.css",
+  "./styles/review-fields.css",
   "./styles/review-grid.css",
+  "./styles/settings-panel.css",
   "./styles/status-line.css",
   "./styles/step-indicator.css",
   "./js/batch_flow.js",
@@ -46,6 +52,12 @@ const APP_SHELL_PATHS = [
   "./js/count/count_overlay.js",
   "./js/count/count_step.js",
   "./js/engine_loader.js",
+  "./js/fields/date_parsing.js",
+  "./js/fields/field_gating.js",
+  "./js/fields/field_gating_config.js",
+  "./js/fields/fuzzy_matching.js",
+  "./js/fields/money_parsing.js",
+  "./js/handwriting_reader_cache.js",
   "./js/heic_detect.js",
   "./js/image_decode.js",
   "./js/input_doors.js",
@@ -87,6 +99,15 @@ const APP_SHELL_PATHS = [
   "./js/pipeline/classical/verification/quadrilateral_verification.js",
   "./js/pipeline/detection_confidence.js",
   "./js/pipeline/drawn_rectangle_refit.js",
+  "./js/pipeline/fields/check_field_reading.js",
+  "./js/pipeline/fields/ctc_decoding.js",
+  "./js/pipeline/fields/field_crop_window.js",
+  "./js/pipeline/fields/field_localization.js",
+  "./js/pipeline/fields/field_model_sessions.js",
+  "./js/pipeline/fields/field_reading_config.js",
+  "./js/pipeline/fields/handwriting_reader.js",
+  "./js/pipeline/fields/line_recognizers.js",
+  "./js/pipeline/fields/pillow_image_operations.js",
   "./js/pipeline/orientation/check_orientation.js",
   "./js/pipeline/orientation/upside_down_classifier.js",
   "./js/pipeline/photo_detection_stage.js",
@@ -113,13 +134,28 @@ const APP_SHELL_PATHS = [
   "./js/review/clipboard_rows.js",
   "./js/review/crop_rendering.js",
   "./js/review/field_definitions.js",
+  "./js/review/field_magnifier.js",
   "./js/review/field_undo.js",
   "./js/review/lightbox.js",
+  "./js/review/payer_autocomplete.js",
+  "./js/review/review_field_editing.js",
+  "./js/review/review_field_states.js",
+  "./js/review/review_field_view.js",
   "./js/review/review_grid.js",
   "./js/review/review_row.js",
+  "./js/settings/app_settings.js",
+  "./js/settings/column_order_list.js",
+  "./js/settings/settings_panel.js",
+  "./js/settings/settings_panel_setup.js",
   "./js/status_line.js",
   "./js/step_indicator.js",
+  "./js/storage/batch_history.js",
+  "./js/storage/local_store.js",
   "./js/toast.js",
+  "./models/crnn_amount_h32.onnx",
+  "./models/crnn_general_h32.onnx",
+  "./models/segnet_mobilenetv3l_768.onnx",
+  "./models/style_classifier_h32.onnx",
   "./models/upside_down_classifier.onnx",
 ];
 
@@ -127,6 +163,8 @@ const APP_SHELL_PATHS = [
 // importing the module) because a classic service worker can't use ES module
 // `import`; if that origin ever changes, update it in both places.
 const CDN_ORIGIN = "https://cdn.jsdelivr.net";
+// Only this repository's revision-pinned files are cached from the Hub (js/cdn_config.js).
+const HANDWRITING_READER_URL_PREFIX = "https://huggingface.co/Xenova/trocr-small-handwritten/resolve/";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -185,6 +223,9 @@ self.addEventListener("fetch", (event) => {
   const requestOrigin = new URL(request.url).origin;
   if (requestOrigin === CDN_ORIGIN) {
     event.respondWith(cacheFirstThenNetwork(request, CDN_CACHE_NAME));
+  } else if (request.url.startsWith(HANDWRITING_READER_URL_PREFIX)) {
+    // fetch() follows the Hub's redirect to its CDN; the final file is stored under this URL.
+    event.respondWith(cacheFirstThenNetwork(request, HANDWRITING_READER_CACHE_NAME));
   } else if (requestOrigin === self.location.origin) {
     event.respondWith(cacheFirstThenNetwork(request, SHELL_CACHE_NAME));
   }

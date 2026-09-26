@@ -53,11 +53,12 @@ Priors grab printed labels ("DATE", "PAY TO THE ORDER OF"), the payee address an
 | payer (printed) | CRNN | confidence gate + payer autocomplete snap (spec 4.3) | filled / unsure |
 | courtesy amount | amount CRNN (+ TrOCR when the handwriting model is enabled; take the higher confidence) | filled only when it agrees with the legal line; otherwise shown unsure | unsure unless agreement |
 | legal line | CRNN for printed, TrOCR for handwritten (style classifier routes) | never shown; feeds the amount cross-check | - |
-| payee | style-routed reader, then snap to the configured co-op list | snapped name, unsure below the snap score | unsure |
+| payee | style-routed reader, then snap to the configured co-op list | snapped name when WRatio >= 60, else the raw read | unsure (blank only when handwritten and the handwriting reader is off) |
 | date | CRNN when printed | printed: confidence gate + plausible-date window | printed: filled; **handwritten: blank** (offer the email date) |
 | memo | CRNN when printed | confidence gate | printed: unsure; **handwritten: blank** |
 | payer (handwritten, e.g. money-order FROM line) | - | - | **blank** |
 
+- **Opt-in handwriting reader (app decision, Sep 26 2026):** when the operator turns it on, TrOCR reads every field the style classifier calls handwritten (payer, date, memo, payee, courtesy amount, legal line, check number), and every value resting on a TrOCR read is capped at unsure, including an amount whose two reads agree. With the reader off, a handwritten legal line counts as unread: it neither confirms nor contradicts the courtesy amount.
 - Default download: segnet + CRNN + amount CRNN + style classifier, about 30 MB. TrOCR (128 MB) as an opt-in "read handwriting" download (spec's optional later model), pending the IAM licence decision.
 - Browser details: `export/BROWSER_NOTE.md`.
 

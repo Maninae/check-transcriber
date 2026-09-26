@@ -1,7 +1,8 @@
 /**
  * One batch, start to finish (spec 4): a decoded photo goes to the pipeline worker for
- * detection, the count step confirms the quads, the worker orients and crops each check
- * and the review grid fills row by row, and Finish batch clears it all.
+ * detection, the count step confirms the quads, the worker orients, crops and reads each
+ * check and the review grid fills row by row, and Finish batch records the batch's payer
+ * names and check numbers (text only, storage/batch_history.js) and clears the images.
  *
  * Owns the batch-level state (which step, timings) and the "leave page?" guard. The
  * photo's pixels live in three places only while a batch is open: the decoded canvas
@@ -9,11 +10,14 @@
  * Start over release all three.
  */
 
+import { todayIso } from "./fields/date_parsing.js";
+import { collectReviewedRowValues } from "./review/review_field_editing.js";
+
 const UNSAVED_CHECKS_MESSAGE = (count) =>
   `You have ${count} ${count === 1 ? "check" : "checks"} that have not been copied.`;
 
 export class BatchFlow {
-  /** `parts`: `{ countStep, reviewGrid, stepIndicator, progressLine, recordedLine, reviewSection, pageElement }`. */
+  /** `parts`: `{ countStep, reviewGrid, batchHistory, stepIndicator, progressLine, recordedLine, reviewSection, pageElement }`. */
   constructor(parts) {
     Object.assign(this, parts);
     this.pipelineClient = null;
@@ -23,6 +27,7 @@ export class BatchFlow {
     this.timings = {};
     this.detectedQuads = null;
     this.orientedQuads = [];
+    this.batchToken = 0; // bumped per Continue and per clear; read-chain callbacks from older batches are dropped
     window.addEventListener("beforeunload", (event) => this.guardUnload(event));
   }
 
@@ -89,19 +94,38 @@ export class BatchFlow {
     this.timings.continuedAt = performance.now();
     this.reviewSection.hidden = false;
     this.orientedQuads = [];
+    this.batchToken += 1;
+    const batchToken = this.batchToken;
+    const isCurrent = () => batchToken === this.batchToken; // Start over / Finish / a new Continue retire this chain
     this.reviewGrid.start(cornerSets.length);
     this.reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Timings: every crop shown, every check read by the default readers (the fully populated
+    // grid of spec section 5's budget), then gridCompleteAt once any handwriting pass is done too.
+    let cropsShown = 0;
+    let printedReadsShown = 0;
     this.pipelineClient.orientAndRectifyChecks(
       cornerSets,
       (checkMessage) => {
+        if (!isCurrent()) return;
         this.orientedQuads[checkMessage.checkIndex] = checkMessage.orientedCorners;
         this.reviewGrid.setCrop(checkMessage.checkIndex, checkMessage);
+        cropsShown += 1;
+        if (cropsShown === cornerSets.length) this.timings.cropsCompleteAt = performance.now();
       },
-      (text) => this.showProgress(text),
+      (text) => { if (isCurrent()) this.showProgress(text); },
+      ({ checkIndex, rawReads, pass }) => {
+        if (!isCurrent()) return;
+        this.reviewGrid.receiveStreamedFieldReads(checkIndex, rawReads);
+        if (pass !== "printed") return;
+        printedReadsShown += 1;
+        if (printedReadsShown === cornerSets.length) this.timings.fieldReadsCompleteAt = performance.now();
+      },
     ).then(() => {
+      if (!isCurrent()) return;
       this.showProgress(null);
       this.timings.gridCompleteAt = performance.now();
     }).catch((error) => {
+      if (!isCurrent()) return;
       console.error("straightening the checks failed:", error);
       this.showProgress("Something went wrong straightening the checks. Start over to try again");
     });
@@ -117,6 +141,7 @@ export class BatchFlow {
 
   /** Drops the batch everywhere (Start over, or a new photo replacing this one). */
   clear() {
+    this.batchToken += 1;
     this.countStep.clear();
     this.reviewGrid.clear();
     this.reviewSection.hidden = true;
@@ -126,9 +151,17 @@ export class BatchFlow {
     this.setStep(null);
   }
 
-  /** Finish batch: release the images, keep a one-line record until the next photo. */
+  /**
+   * Finish batch (spec 4.6): remember the payer names and each check's (number, payer,
+   * date) with today as the batch date, release the images, keep a one-line record until
+   * the next photo. Only confident or operator-confirmed values are remembered; an amber read
+   * nobody reviewed never enters the autocomplete list or the duplicate history.
+   */
   finish() {
     const checkCount = this.reviewGrid.getCheckCount();
+    const rowValues = collectReviewedRowValues(this.reviewGrid);
+    this.batchHistory.addKnownPayerNames(rowValues.map(({ payer }) => payer));
+    this.batchHistory.recordConfirmedChecks(rowValues, todayIso());
     this.clear();
     this.recordedLine.textContent = `${checkCount} ${checkCount === 1 ? "check" : "checks"} recorded`;
     this.recordedLine.hidden = false;
@@ -144,6 +177,8 @@ export class BatchFlow {
       timings: { ...this.timings },
       reviewRowCount: this.reviewGrid.getCheckCount(),
       croppedRowCount: this.reviewGrid.rows.filter((row) => row.uprightCropCanvas).length,
+      rows: this.reviewGrid.describeRowsForDebug(),
+      emailDateIso: this.reviewGrid.emailDateIso,
     };
   }
 }
