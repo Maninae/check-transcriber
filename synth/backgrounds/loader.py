@@ -1,8 +1,10 @@
 """List and load background images from a background root.
 
-Only the accepted subfolders (`synth.paths.ACCEPTED_BACKGROUND_SUBDIRECTORIES`: `flux/`,
-`photos/`) are scanned, recursively; `rejected/` and anything else beside them never reach a
-build. Ids are paths relative to the root (`flux/kitchen_0012.jpg`).
+Only the accepted subfolders (`synth.paths.ACCEPTED_BACKGROUND_SUBDIRECTORIES`: `flux/` generated,
+`photos/` own real photos, `web/` CC0 / public-domain downloads from `fetch_web_backgrounds`) are
+scanned, recursively; `rejected/` and anything else beside them never reach a build. Ids are paths
+relative to the root (`flux/kitchen_0012.jpg`, `web/web__polyhaven__denim-fabric__denim_fabric.jpg`).
+Non-image files there (`web/SOURCES.jsonl`) are ignored.
 """
 
 import logging

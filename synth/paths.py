@@ -12,5 +12,5 @@ FONT_DIR = Path(os.environ.get("CHECK_SYNTH_FONT_DIR", DATA_ROOT / "fonts"))
 BACKGROUND_DIR = Path(os.environ.get("CHECK_SYNTH_BACKGROUND_DIR", DATA_ROOT / "backgrounds"))
 PROCEDURAL_BACKGROUND_DIR = BACKGROUND_DIR / "procedural"
 # Only these subfolders of a background root feed builds; `rejected/` (and anything else) is ignored.
-ACCEPTED_BACKGROUND_SUBDIRECTORIES = ("flux", "photos")
+ACCEPTED_BACKGROUND_SUBDIRECTORIES = ("flux", "photos", "web")
 SYNTH_OUTPUT_DIR = Path(os.environ.get("CHECK_SYNTH_OUTPUT_DIR", DATA_ROOT / "synth"))
