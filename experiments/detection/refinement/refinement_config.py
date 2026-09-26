@@ -17,17 +17,21 @@ class CornerRefinementConfig:
     # Per pass: search band inward / outward of the current side, as a fraction of the
     # short side, clamped to [minimum_band_pixels, maximum_band_pixels].
     inward_band_fraction_per_pass: tuple[float, ...] = (0.14, 0.03)
-    outward_band_fraction_per_pass: tuple[float, ...] = (0.03, 0.03)
+    outward_band_fraction_per_pass: tuple[float, ...] = (0.01, 0.03)
     minimum_band_pixels: float = 6.0
     maximum_band_pixels: float = 140.0
-    # Radon line search half-range (degrees) per pass, and its step.
-    maximum_line_angle_degrees_per_pass: tuple[float, ...] = (6.0, 2.0)
+    # Pass 1 finds the side with a Radon line search; later passes only grow the curve
+    # from the previous result (a second search could jump to a second outward edge).
+    # Search half-range = atan(2 * inward band / side length), clamped to this range, so
+    # short sides under keystone get a wider angle search.
+    minimum_line_angle_degrees: float = 3.0
+    maximum_line_angle_degrees: float = 15.0
     line_angle_step_degrees: float = 0.5
     # The outermost candidate line whose integrated score reaches this fraction of the
     # best wins (printed borders and rules lie inside the paper edge).
-    outermost_line_ratio: float = 0.5
+    outermost_line_ratio: float = 0.65
     # Per-sample scores are capped at this contrast (colour units) before integration.
-    line_score_clip: float = 20.0
+    line_score_clip: float = 0.6
     # Curve degree per pass (1 straight, 2 captures curl), and grow iterations.
     curve_degree_per_pass: tuple[int, ...] = (1, 2)
     curve_grow_iterations: int = 3
@@ -45,6 +49,17 @@ class CornerRefinementConfig:
     tangential_offsets_pixels: tuple[float, ...] = (-2.0, -1.0, 0.0, 1.0, 2.0)
     inner_window_pixels: int = 4
     outer_window_pixels: int = 4
+    # A second outside window starting `far_outer_gap_pixels` past the near one: the score
+    # uses the LESS paper-like of the two, so a thin printed line (paper resumes beyond
+    # it) scores ~0 while a real edge (background continues) keeps its score. 0 disables.
+    far_outer_gap_pixels: int = 4
+    far_outer_window_pixels: int = 0
+    # "paper_distance": rise in colour distance to the paper colour across the edge.
+    # "two_class": step in a per-sample paper(1)-vs-background(0) projection, which scales
+    # faint edges up to full strength; line_score_clip is then in paperness units (<= 1).
+    edge_score_mode: str = "two_class"
+    background_window_pixels: int = 6
+    minimum_paper_background_contrast: float = 6.0
     # Paper colour = median over a grid spanning this central part of the input quad.
     paper_sample_inset_fraction: float = 0.15
 
@@ -53,7 +68,7 @@ class CornerRefinementConfig:
     ransac_inlier_distance_pixels: float = 1.5
     minimum_inlier_fraction: float = 0.25
     minimum_inlier_count: int = 6
-    minimum_edge_score: float = 4.0
+    minimum_edge_score: float = 0.2
 
     # Guard rails vs the INPUT quad: max corner move as a multiple of the pass-1 inward
     # band, and max relative change of any side's length.

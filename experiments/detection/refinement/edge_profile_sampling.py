@@ -4,7 +4,8 @@ For each sample position along the side we read a colour profile along the side'
 outward normal with one `cv2.remap` call (bilinear, float32) and average a few profiles
 offset along the tangent to suppress texture. Each normal offset is then scored as a
 paper boundary: mean colour distance to the paper colour just OUTSIDE the offset minus
-the same just INSIDE it (box windows, the centre pixel excluded). The score is high where
+the same just INSIDE it (box windows, the centre pixel excluded), optionally taking the
+less paper-like of a near and a far outside window. The score is high where
 paper gives way to something else, low for a background stripe boundary (its inner side
 is not paper-coloured) and reduced for thin printed lines (they fill only part of the
 outer window).
@@ -60,6 +61,26 @@ def box_window_means(values: np.ndarray, centre_indices: np.ndarray, inner_windo
     return inner_means, outer_means
 
 
+def compute_two_class_paperness(
+    profiles: np.ndarray, paper_colour: np.ndarray, background_window_pixels: int, minimum_contrast: float
+) -> np.ndarray:
+    """Per-sample paperness in [0, 1]: 0 = this sample's background colour, 1 = paper.
+
+    The background colour B of each sample is the mean of the outermost
+    `background_window_pixels` of its profile (outside the approximate side). Each pixel is
+    projected onto the paper-minus-B direction and clipped, so a faint but real hue
+    difference still spans the full 0-1 range while dark ink clips to 0 like background.
+    Samples whose B is within `minimum_contrast` of the paper colour get NaN (no evidence).
+    """
+    background_colours = profiles[:, -background_window_pixels:, :].mean(axis=1)  # (S, C)
+    paper_minus_background = paper_colour[None, :] - background_colours
+    contrast_squared = (paper_minus_background**2).sum(axis=1)
+    paperness = ((profiles - background_colours[:, None, :]) * paper_minus_background[:, None, :]).sum(axis=2) / np.maximum(contrast_squared, 1e-9)[:, None]
+    paperness = np.clip(paperness, 0.0, 1.0)
+    paperness[contrast_squared < minimum_contrast**2] = np.nan
+    return paperness
+
+
 def score_side_edge_profiles(
     image_crop_float: np.ndarray,
     crop_origin_xy: np.ndarray,
@@ -74,7 +95,12 @@ def score_side_edge_profiles(
     tangential_offsets_pixels: tuple[float, ...],
     inner_window_pixels: int,
     outer_window_pixels: int,
+    far_outer_gap_pixels: int,
+    far_outer_window_pixels: int,
     paper_colour: np.ndarray,
+    score_mode: str = "paper_distance",
+    background_window_pixels: int = 6,
+    minimum_paper_background_contrast: float = 6.0,
 ) -> SideScoreProfiles:
     """Paper-boundary score for offsets in [-inward_band, +outward_band] at each sample.
 
@@ -83,13 +109,19 @@ def score_side_edge_profiles(
         crop_origin_xy: full-image (x, y) of the crop's pixel (0, 0).
         image_width_height: full image size, to reject profiles that leave the frame.
         corner_margin_pixels: samples start and end this far from the side's corners.
+        far_outer_gap_pixels / far_outer_window_pixels: optional second outside window
+            (see module docstring); window 0 disables it.
         paper_colour: (C,) median paper colour of the check.
+        score_mode: "paper_distance" (rise in distance to paper colour) or "two_class"
+            (step in a per-sample paper-vs-background feature, see
+            `compute_two_class_paperness`).
     """
     unit_tangent, unit_normal, side_length = compute_side_frame(side_start, side_end, quad_centroid)
     margin = min(corner_margin_pixels, 0.3 * side_length)
     positions_pixels = np.linspace(margin, side_length - margin, number_of_samples)
     inward, outward = int(np.ceil(inward_band_pixels)), int(np.ceil(outward_band_pixels))
-    sampled_offsets = np.arange(-inward - inner_window_pixels, outward + outer_window_pixels + 1, dtype=np.float64)
+    outside_reach = outer_window_pixels + (far_outer_gap_pixels + far_outer_window_pixels if far_outer_window_pixels > 0 else 0)
+    sampled_offsets = np.arange(-inward - inner_window_pixels, outward + outside_reach + 1, dtype=np.float64)
     tangential_offsets = np.asarray(tangential_offsets_pixels, dtype=np.float64)
 
     # Map grid: rows = sample x tangential offset, columns = normal offset.
@@ -112,13 +144,24 @@ def score_side_edge_profiles(
     profiles = profiles.reshape(number_of_samples, number_of_tangential, len(sampled_offsets), -1).mean(axis=1)
     inside_image = inside_image.reshape(number_of_samples, number_of_tangential, -1).all(axis=1)
 
-    distance_to_paper = np.linalg.norm(profiles - paper_colour, axis=2)
-    centre_indices = np.arange(inner_window_pixels, len(sampled_offsets) - outer_window_pixels)
+    if score_mode == "paper_distance":
+        feature = np.linalg.norm(profiles - paper_colour, axis=2)  # rises past the edge
+    elif score_mode == "two_class":
+        feature = -compute_two_class_paperness(profiles, paper_colour, background_window_pixels, minimum_paper_background_contrast)
+    else:
+        raise ValueError(f"unknown score_mode {score_mode!r}")
+    distance_to_paper = feature
+    centre_indices = np.arange(inner_window_pixels, len(sampled_offsets) - outside_reach)
     inner_distance, outer_distance = box_window_means(distance_to_paper, centre_indices, inner_window_pixels, outer_window_pixels)
+    if far_outer_window_pixels > 0:
+        # Far window = (c + gap + outer, c + gap + outer + far]; reuse the helper with a shifted centre.
+        _, far_outer_distance = box_window_means(distance_to_paper, centre_indices + far_outer_gap_pixels + outer_window_pixels, 1, far_outer_window_pixels)
+        outer_distance = np.minimum(outer_distance, far_outer_distance)
     scores = outer_distance - inner_distance
     window_valid = np.ones_like(scores, dtype=bool)
-    for shift in range(-inner_window_pixels, outer_window_pixels + 1):
+    for shift in range(-inner_window_pixels, outside_reach + 1):
         window_valid &= inside_image[:, centre_indices + shift]
+    window_valid &= np.isfinite(scores)
     return SideScoreProfiles(
         side_start=side_start.astype(np.float64),
         unit_tangent=unit_tangent,

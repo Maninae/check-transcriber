@@ -95,18 +95,26 @@ def refine_one_side(crop, crop_origin, image_size, corners, side_index, pass_set
     profiles = score_side_edge_profiles(
         crop, crop_origin, image_size, side_start, side_end, corners.mean(axis=0),
         pass_settings["inward_band"], pass_settings["outward_band"], number_of_samples, corner_margin,
-        config.tangential_offsets_pixels, config.inner_window_pixels, config.outer_window_pixels, paper_colour,
+        config.tangential_offsets_pixels, config.inner_window_pixels, config.outer_window_pixels,
+        config.far_outer_gap_pixels, config.far_outer_window_pixels, paper_colour,
+        config.edge_score_mode, config.background_window_pixels, config.minimum_paper_background_contrast,
     )
     current_curve = SideCurve(profiles.side_start, profiles.unit_tangent, profiles.unit_normal, side_length, np.zeros(2))
-    line = search_outermost_strong_line(
-        profiles, pass_settings["maximum_angle"], config.line_angle_step_degrees, config.outermost_line_ratio,
-        config.minimum_edge_score, config.line_score_clip,
-    )
-    if line is None:
-        return current_curve
-    offset_at_middle, slope = line
-    half_length = side_length / 2
-    seed_curve = SideCurve(profiles.side_start, profiles.unit_tangent, profiles.unit_normal, side_length, np.array([offset_at_middle, slope * half_length]))
+    if pass_settings["search_line"]:
+        maximum_angle = float(np.clip(
+            np.degrees(np.arctan(2 * pass_settings["inward_band"] / max(side_length, 1.0))),
+            config.minimum_line_angle_degrees, config.maximum_line_angle_degrees,
+        ))
+        line = search_outermost_strong_line(
+            profiles, maximum_angle, config.line_angle_step_degrees, config.outermost_line_ratio,
+            config.minimum_edge_score, config.line_score_clip,
+        )
+        if line is None:
+            return current_curve
+        offset_at_middle, slope = line
+        seed_curve = SideCurve(profiles.side_start, profiles.unit_tangent, profiles.unit_normal, side_length, np.array([offset_at_middle, slope * side_length / 2]))
+    else:
+        seed_curve = current_curve
     required_inliers = max(config.minimum_inlier_count, int(np.ceil(config.minimum_inlier_fraction * number_of_samples)))
     fitted_curve = None
     for _ in range(config.curve_grow_iterations):
@@ -143,16 +151,15 @@ def refine_check_quadrilateral(
         {
             "inward_band": band_pixels(inward_fraction, short_side, config),
             "outward_band": band_pixels(outward_fraction, short_side, config),
-            "maximum_angle": maximum_angle,
+            "search_line": pass_index == 0,
             "degree": degree,
         }
-        for inward_fraction, outward_fraction, maximum_angle, degree in zip(
-            config.inward_band_fraction_per_pass, config.outward_band_fraction_per_pass,
-            config.maximum_line_angle_degrees_per_pass, config.curve_degree_per_pass,
-        )
+        for pass_index, (inward_fraction, outward_fraction, degree) in enumerate(zip(
+            config.inward_band_fraction_per_pass, config.outward_band_fraction_per_pass, config.curve_degree_per_pass,
+        ))
     ]
     largest_band = max(max(settings["inward_band"], settings["outward_band"]) for settings in pass_settings_list)
-    window_reach = max(config.inner_window_pixels, config.outer_window_pixels) + max(abs(offset) for offset in config.tangential_offsets_pixels)
+    window_reach = max(config.inner_window_pixels, config.outer_window_pixels + config.far_outer_gap_pixels + config.far_outer_window_pixels) + max(abs(offset) for offset in config.tangential_offsets_pixels)
     crop, crop_origin = extract_float_crop(image, input_corners, 2 * largest_band + window_reach + CROP_PADDING_PIXELS)
     image_size = (image.shape[1], image.shape[0])
     paper_colour = estimate_paper_colour(crop, crop_origin, input_corners, config.paper_sample_inset_fraction)
