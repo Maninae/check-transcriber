@@ -11,7 +11,7 @@ Output layout (Ultralytics-compatible):
     DIR/manifest.json, DIR/build_plan.json, DIR/failures.jsonl (only if something failed)
     DIR/data.yaml, DIR/data_obb.yaml, DIR/yolo_obb/<split>/{images,labels}  (symlinks)
     DIR/{train,val,eval}/images/*.jpg           scene photos
-    DIR/{train,val,eval}/annotations/*.json     full scene labels (see compose/scene_label.py)
+    DIR/{train,val,eval}/annotations/*.json     full scene labels (see scene_composer/scene_label.py)
     DIR/{train,val,eval}/labels/*.txt           YOLO segmentation (paper outline)
     DIR/{train,val,eval}/labels_obb/*.txt       YOLO oriented boxes (4 corners)
     DIR/{train,val,eval}/annotations_coco.json  COCO: checks (outline + corner keypoints) and fields (with text)
@@ -44,11 +44,11 @@ from dataset_builder.scene_task_runner import run_scene_task
 from dataset_builder.scene_worker import SceneTask, worker_initializer
 from scene_composer import GENERATOR_VERSION
 from scene_composer.compose_scene import SceneConfig
-from synthetic_backgrounds.background_traits import describe_backgrounds
+from scene_composer.scene_ingredient_pools import ingredient_pools_for_split
 from synthetic_checks.check_templates import DEFAULT_TEMPLATE_COUNT
 from synthetic_checks.print_sheets import write_print_sheets
 from synthetic_checks.splits import SPLIT_NAMES
-from synthetic_data_paths import BACKGROUND_DIR, SYNTH_OUTPUT_DIR
+from synthetic_data_paths import BACKGROUND_DIR, DATASET_OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ DEFAULT_WORKER_COUNT = max(1, min(4, (os.cpu_count() or 2) - 1))
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     """Command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output", type=Path, default=SYNTH_OUTPUT_DIR / "dataset", help="output directory (new or empty, unless --resume)")
+    parser.add_argument("--output", type=Path, default=DATASET_OUTPUT_DIR / "dataset", help="output directory (new or empty, unless --resume)")
     parser.add_argument("--scenes", type=int, default=100, help="total scenes across all splits")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKER_COUNT)
@@ -108,14 +108,10 @@ def scene_tasks_for_plan(plan: BuildPlan, output_directory: Path) -> list[SceneT
     scene_config = scene_config_from_plan(plan)
     tasks = []
     for split_name in SPLIT_NAMES:
-        pools = plan.split_pools[split_name]
-        backgrounds = describe_backgrounds(Path(plan.background_root),
-                                           [(background_id, plan.background_paths[background_id]) for background_id in pools["background_ids"]])
+        pools = ingredient_pools_for_split(plan.split_pools[split_name], Path(plan.background_root), plan.background_paths)
         for scene_index in range(plan.scene_counts[split_name]):
-            tasks.append(SceneTask(plan.seed, split_name, scene_index, tuple(pools["template_ids"]), backgrounds,
-                                   str(output_directory / split_name), plan.template_count, scene_config,
-                                   tuple(pools["handwriting_font_ids"]), tuple(pools["signature_font_ids"]),
-                                   tuple(pools["payee_names"]), tuple(pools["bank_names"])))
+            tasks.append(SceneTask(plan.seed, split_name, scene_index, pools, str(output_directory / split_name),
+                                   plan.template_count, scene_config))
     return tasks
 
 

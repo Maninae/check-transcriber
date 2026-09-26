@@ -11,11 +11,17 @@ without hand transcription. `print_sheet__page=NN.png` is each page as rendered,
   layout families, so every sheet has both kinds of fill-in and several designs.
 - `held_out_split="eval"` restricts templates, fonts, payees and banks to that seed's eval pools,
   so a model trained on the same seed's train split has never seen the designs, hands or names.
+
+Usage:
+    python -m synthetic_checks.print_sheets --output DIR --pages 4
+    python -m synthetic_checks.print_sheets --output DIR --pages 12 --print-pool eval --seed 1
 """
 
+import argparse
 import csv
 import json
 import logging
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -24,7 +30,7 @@ from PIL import Image, ImageDraw
 
 from synthetic_checks.check_fields import FieldName
 from synthetic_checks.check_layout import RENDER_DPI, CheckSizeKind, check_size_pixels
-from synthetic_checks.check_templates import TemplateDesign, build_template_catalog, template_family_by_id
+from synthetic_checks.check_templates import DEFAULT_TEMPLATE_COUNT, TemplateDesign, build_template_catalog, template_family_by_id
 from synthetic_checks.content.fake_data import sample_check_content
 from synthetic_checks.content.fake_payees_and_banks import BANK_NAMES, PAYEE_NAMES
 from synthetic_checks.fonts.font_registry import load_font
@@ -166,3 +172,30 @@ def write_print_sheets(output_directory: Path, page_count: int, seed: int, templ
     logger.info("wrote %d pages, %d checks to %s (clean stock: %s)", page_count, len(csv_rows), output_directory,
                 clean_stock)
     return pdf_path
+
+
+def parse_arguments(argv: list[str]) -> argparse.Namespace:
+    """Command-line interface (also reachable as `python -m dataset_builder.build_dataset --print-sheets`)."""
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--output", type=Path, required=True, help="output directory")
+    parser.add_argument("--pages", type=int, required=True, help="Letter pages to write")
+    parser.add_argument("--seed", type=int, default=0, help="content seed, and the split seed for --print-pool eval")
+    parser.add_argument("--templates", type=int, default=DEFAULT_TEMPLATE_COUNT, help="size of the template catalog")
+    parser.add_argument("--print-pool", choices=("all", "eval"), default="all",
+                        help="print from every template and font, or only this seed's eval-split pools")
+    parser.add_argument("--simulated-print-texture", action="store_true",
+                        help="render simulated toner and fibre too (off by default: the real printer adds its own)")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Entry point for `python -m synthetic_checks.print_sheets`."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
+    write_print_sheets(arguments.output, arguments.pages, arguments.seed, arguments.templates,
+                       held_out_split="eval" if arguments.print_pool == "eval" else None,
+                       clean_stock=not arguments.simulated_print_texture)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,9 +1,6 @@
-"""Background surfaces for scenes.
+"""The background library: surfaces checks are laid on, and how scenes choose among them.
 
-- `loader.py`: every JPEG/PNG under a directory tree (default `paths.BACKGROUND_DIR`,
-  with `flux/` for generated surfaces and `photos/` for real ones). Background ids are
-  paths relative to that root, so splits stay stable as files are added.
-- `procedural.py`: synthetic fabric for tests and for runs with no real backgrounds yet.
-- A FLUX generation script is expected to be dropped in here later; it only needs to
-  write image files under the background root.
+Loader and traits at the top, the FLUX generator and the CC0 web fetcher as CLIs, the web
+sources' leaves in `web_sources/`. Images live on the data drive (`synthetic_data_paths.BACKGROUND_DIR`),
+never in the repo. Module map: CLAUDE.md.
 """

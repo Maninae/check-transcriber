@@ -11,6 +11,7 @@ from dataset_builder.build_plan import BuildPlan
 from dataset_builder.manifest import read_manifest
 from dataset_builder.scene_task_runner import run_scene_task
 from dataset_builder.tests.conftest import BUILD_SCENES
+from scene_composer.on_demand import SyntheticSceneStream
 from synthetic_checks.check_templates import build_template_catalog, template_family_by_id
 from synthetic_checks.splits import DEFAULT_SPLIT_FRACTIONS, SPLIT_NAMES, assign_ids_by_hash_rank, plan_split_pools, plan_template_pools
 
@@ -120,3 +121,15 @@ def replace_argument(arguments, **changes):
     copied = parse_arguments([])
     copied.__dict__.update({**arguments.__dict__, **changes})
     return copied
+
+
+def test_stream_reproduces_the_dataset_builders_scenes(built_dataset, tmp_path):
+    """One composition path: a stream with the build's seed and backgrounds yields the builder's files, byte for byte."""
+    root, output_directory, manifest, _ = built_dataset
+    stream = SyntheticSceneStream(manifest.seed, split="val", backgrounds=root / "backgrounds")
+    for scene_index in range(manifest.scene_counts["val"]):
+        composed = stream.scene(scene_index)
+        scene_id = composed.label.scene_id
+        assert json.dumps(composed.label_record()) == (output_directory / "val" / "annotations" / f"{scene_id}.json").read_text()
+        composed.write_jpeg(tmp_path / f"{scene_id}.jpg")
+        assert (tmp_path / f"{scene_id}.jpg").read_bytes() == (output_directory / "val" / "images" / f"{scene_id}.jpg").read_bytes()
