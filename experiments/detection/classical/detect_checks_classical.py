@@ -22,31 +22,33 @@ detector cannot tell a check's top from its bottom).
 import cv2
 import numpy as np
 
-from experiments.detection.classical.candidate_regions import extract_all_candidate_regions
-from experiments.detection.classical.candidate_selection import (
+from experiments.detection.classical.candidates.candidate_regions import extract_all_candidate_regions
+from experiments.detection.classical.candidates.line_quadrilateral_hypotheses import build_line_quadrilateral_hypotheses
+from experiments.detection.classical.candidates.line_segment_extraction import extract_line_segments
+from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
+from experiments.detection.classical.geometry.edge_line_snapping import snap_quadrilateral_sides_to_edges
+from experiments.detection.classical.geometry.full_resolution_edge_refinement import refine_corners_at_full_resolution
+from experiments.detection.classical.geometry.quadrilateral_fitting import (
+    FittedQuadrilateral,
+    fit_quadrilateral_to_contour,
+)
+from experiments.detection.classical.geometry.quadrilateral_geometry import order_corners_clockwise
+from experiments.detection.classical.preprocessing.working_image_channels import (
+    WorkingImageChannels,
+    build_working_image_channels,
+)
+from experiments.detection.classical.verification.candidate_selection import (
     VerifiedCandidate,
     select_non_overlapping_candidates,
 )
-from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.edge_line_snapping import snap_quadrilateral_sides_to_edges
-from experiments.detection.classical.interior_appearance import (
+from experiments.detection.classical.verification.interior_appearance import (
     interior_looks_like_check,
     measure_interior_appearance,
 )
-from experiments.detection.classical.full_resolution_edge_refinement import refine_corners_at_full_resolution
-from experiments.detection.classical.interior_seam_detection import measure_interior_seam_strength
-from experiments.detection.classical.line_quadrilateral_hypotheses import build_line_quadrilateral_hypotheses
-from experiments.detection.classical.line_segment_extraction import extract_line_segments
-from experiments.detection.classical.quadrilateral_fitting import fit_quadrilateral_to_contour
-from experiments.detection.classical.quadrilateral_fitting import FittedQuadrilateral
-from experiments.detection.classical.quadrilateral_geometry import order_corners_clockwise
-from experiments.detection.classical.quadrilateral_verification import (
+from experiments.detection.classical.verification.interior_seam_detection import measure_interior_seam_strength
+from experiments.detection.classical.verification.quadrilateral_verification import (
     measure_quadrilateral_evidence,
     passes_geometry_gates,
-)
-from experiments.detection.classical.working_image_channels import (
-    WorkingImageChannels,
-    build_working_image_channels,
 )
 from experiments.detection.predictions.detected_check import DetectedCheck
 

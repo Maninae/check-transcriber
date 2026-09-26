@@ -19,7 +19,7 @@ from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
-from experiments.detection.classical.working_image_channels import WorkingImageChannels
+from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 HOUGH_ANGLE_RESOLUTION_RADIANS = np.pi / 360
 MERGE_ANGLE_TOLERANCE_DEGREES = 2.0

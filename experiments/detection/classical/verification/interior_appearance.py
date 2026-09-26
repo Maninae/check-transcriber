@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.working_image_channels import WorkingImageChannels
+from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 INTERIOR_SHRINK_FACTOR = 0.9
 INTERIOR_SAMPLING_STRIDE = 2  # medians over every 2nd pixel in each direction (4x cheaper)

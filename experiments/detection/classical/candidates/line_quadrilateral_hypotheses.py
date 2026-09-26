@@ -24,7 +24,7 @@ the four sides observed segments cover).
 import numpy as np
 
 from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.quadrilateral_geometry import intersect_lines, order_corners_clockwise
+from experiments.detection.classical.geometry.quadrilateral_geometry import intersect_lines, order_corners_clockwise
 
 MINIMUM_PAIR_OVERLAP_FRACTION = 0.25  # of the shorter segment
 MINIMUM_SPAN_COVERAGE_FRACTION = 0.4  # each pair segment must cover this much of the hypothesis span

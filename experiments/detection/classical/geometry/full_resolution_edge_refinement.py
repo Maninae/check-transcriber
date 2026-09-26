@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.edge_line_snapping import snap_quadrilateral_sides_to_edges
+from experiments.detection.classical.geometry.edge_line_snapping import snap_quadrilateral_sides_to_edges
 
 CROP_MARGIN_PIXELS = 40
 TEXT_SUPPRESSION_KERNEL_PIXELS = 5

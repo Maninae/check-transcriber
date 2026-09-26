@@ -15,7 +15,7 @@ seam strength is the maximum over all lines.
 import cv2
 import numpy as np
 
-from experiments.detection.classical.working_image_channels import WorkingImageChannels
+from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 SEAM_LINE_FRACTIONS = np.linspace(0.12, 0.88, 17)  # positions across the quad, away from its own sides
 SAMPLES_PER_SEAM_LINE = 48

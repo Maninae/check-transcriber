@@ -24,16 +24,16 @@ A region is returned as its external contour in working-image pixels.
 import cv2
 import numpy as np
 
-from experiments.detection.classical.adjacent_cell_merging import (
+from experiments.detection.classical.candidates.adjacent_cell_merging import (
     find_adjacent_cell_pairs,
     merged_pair_regions,
 )
-from experiments.detection.classical.candidate_region import CandidateRegion
+from experiments.detection.classical.candidates.candidate_region import CandidateRegion
 from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
-from experiments.detection.classical.working_image_channels import WorkingImageChannels
+from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 DARK_FLOOR_PERCENTILE = 25.0  # smooth regions darker than this paper-score percentile are not paper
 

@@ -29,14 +29,14 @@ from experiments.detection.classical.classical_detector_config import (
     ClassicalDetectorConfig,
     odd_kernel_size,
 )
-from experiments.detection.classical.edge_line_snapping import side_is_on_image_border
-from experiments.detection.classical.quadrilateral_geometry import (
+from experiments.detection.classical.geometry.edge_line_snapping import side_is_on_image_border
+from experiments.detection.classical.geometry.quadrilateral_geometry import (
     is_convex_quadrilateral,
     quadrilateral_area,
     quadrilateral_aspect_ratio,
     quadrilateral_interior_angles_degrees,
 )
-from experiments.detection.classical.working_image_channels import WorkingImageChannels
+from experiments.detection.classical.preprocessing.working_image_channels import WorkingImageChannels
 
 SIDE_END_EXCLUSION_FRACTION = 0.08
 GRADIENT_SEARCH_OFFSETS_PIXELS = (-2.0, -1.0, 0.0, 1.0, 2.0)

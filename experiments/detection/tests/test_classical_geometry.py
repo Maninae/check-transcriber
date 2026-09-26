@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from experiments.detection.classical.edge_line_snapping import snap_quadrilateral_sides_to_edges
-from experiments.detection.classical.line_segment_extraction import merge_collinear_segments
-from experiments.detection.classical.quadrilateral_geometry import (
+from experiments.detection.classical.geometry.edge_line_snapping import snap_quadrilateral_sides_to_edges
+from experiments.detection.classical.candidates.line_segment_extraction import merge_collinear_segments
+from experiments.detection.classical.geometry.quadrilateral_geometry import (
     convex_quadrilateral_iou,
     intersect_lines,
     order_corners_clockwise,

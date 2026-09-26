@@ -3,7 +3,30 @@
     python -m experiments.detection.classical.tune_classical_detector \\
         --split val --offset 120 --limit 150 --workers 2 --output-dir <dir>
 
-For each parameter in `PARAMETER_GRID: dict[str, list] = {
+For each parameter in `PARAMETER_GRID`, in order, every listed value is tried with all
+other fields at the current best; a value is adopted only if it beats the best
+objective. One pass over the grid is the default (`--passes`).
+
+- Objective: mean of F1 at IoU 0.5 and F1 at IoU 0.9 (finds checks AND places corners).
+- Writes `sweep_results.jsonl` (one line per evaluated config) and `best_config.json`
+  (overrides only, loadable by `run_classical_detector --config-json`).
+- Tune on val (or train) only; eval is scored once with the frozen config.
+"""
+
+import argparse
+import dataclasses
+import json
+import logging
+from pathlib import Path
+
+from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
+from experiments.detection.classical.run_classical_detector import build_config_from_overrides, run_detector_on_scenes
+from experiments.detection.dataset.scene_annotations import load_split_scene_annotations
+from experiments.detection.metrics.score_predictions import score_predictions_against_split
+
+logger = logging.getLogger(__name__)
+
+PARAMETER_GRID: dict[str, list] = {
     "maximum_interior_seam_strength": [0.55, 0.85, 1.01],
     "minimum_verification_score": [0.5, 0.65, 0.8],
     "minimum_line_hypothesis_score": [0.6, 0.9],

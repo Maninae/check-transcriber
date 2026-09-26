@@ -24,7 +24,7 @@ import cv2
 import numpy as np
 
 from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.quadrilateral_geometry import (
+from experiments.detection.classical.geometry.quadrilateral_geometry import (
     convex_polygon_intersection_area,
     convex_quadrilateral_iou,
     quadrilateral_area,

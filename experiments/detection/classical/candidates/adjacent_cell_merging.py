@@ -16,7 +16,7 @@ counting (min, max) pairs measures the shared boundary length.
 import cv2
 import numpy as np
 
-from experiments.detection.classical.candidate_region import CandidateRegion
+from experiments.detection.classical.candidates.candidate_region import CandidateRegion
 
 NO_LABEL_SENTINEL = np.int32(2**30)
 

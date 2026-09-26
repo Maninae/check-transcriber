@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from experiments.detection.classical.quadrilateral_geometry import (
+from experiments.detection.classical.geometry.quadrilateral_geometry import (
     intersect_lines,
     order_corners_clockwise,
     quadrilateral_area,

@@ -15,7 +15,7 @@ running out of frame has no edge there).
 import cv2
 import numpy as np
 
-from experiments.detection.classical.quadrilateral_geometry import intersect_lines
+from experiments.detection.classical.geometry.quadrilateral_geometry import intersect_lines
 
 SIDE_END_EXCLUSION_FRACTION = 0.1
 MINIMUM_VALID_FRACTION = 0.35  # of a side's samples; otherwise the side keeps its old line
