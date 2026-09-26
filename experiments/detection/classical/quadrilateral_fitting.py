@@ -21,12 +21,14 @@ from experiments.detection.classical.quadrilateral_geometry import (
     intersect_lines,
     order_corners_clockwise,
     quadrilateral_area,
+    quadrilateral_aspect_ratio,
 )
 
 SIDE_POINT_DISTANCE_FRACTION = 0.03  # contour points farther than this x side length from a side are ignored
 SIDE_CORNER_EXCLUSION_FRACTION = 0.12  # skip the ends of each side, where corners round off
 MINIMUM_POINTS_PER_SIDE = 8
 MAXIMUM_CORNER_SHIFT_FRACTION = 0.15  # refit corner may move at most this x the shorter side
+COARSE_GATE_SLACK = 0.9  # coarse-quad pre-gates are this much looser than the final gates
 
 
 @dataclass
@@ -87,8 +89,17 @@ def refit_sides_with_lines(contour_points: np.ndarray, coarse_corners: np.ndarra
     return refit_corners
 
 
-def fit_quadrilateral_to_contour(contour_points: np.ndarray, source_name: str) -> FittedQuadrilateral | None:
-    """Coarse approxPolyN quad plus a per-side line refit; None for degenerate regions."""
+def fit_quadrilateral_to_contour(
+    contour_points: np.ndarray,
+    source_name: str,
+    minimum_rectangularity: float = 0.0,
+    aspect_range: tuple[float, float] = (0.0, np.inf),
+) -> FittedQuadrilateral | None:
+    """Coarse approxPolyN quad plus a per-side line refit; None for degenerate regions.
+
+    `minimum_rectangularity` and `aspect_range` reject on the coarse quad before the
+    (costly) line refit; pass loose values, the caller re-gates the refit quad.
+    """
     hull = cv2.convexHull(contour_points.reshape(-1, 1, 2).astype(np.float32))
     if len(hull) < 4:
         return None
@@ -96,9 +107,14 @@ def fit_quadrilateral_to_contour(contour_points: np.ndarray, source_name: str) -
     if len(coarse_corners) != 4:
         return None
     coarse_corners = order_corners_clockwise(coarse_corners.astype(np.float64))
+    filled_region_area = abs(cv2.contourArea(contour_points.reshape(-1, 1, 2).astype(np.float32)))
+    coarse_area = quadrilateral_area(coarse_corners)
+    if coarse_area <= 0 or filled_region_area / coarse_area < minimum_rectangularity * COARSE_GATE_SLACK:
+        return None
+    if not aspect_range[0] * COARSE_GATE_SLACK <= quadrilateral_aspect_ratio(coarse_corners) <= aspect_range[1] / COARSE_GATE_SLACK:
+        return None
     refined_corners = order_corners_clockwise(refit_sides_with_lines(contour_points.astype(np.float64), coarse_corners))
     quad_area = quadrilateral_area(refined_corners)
     if quad_area <= 0:
         return None
-    filled_region_area = abs(cv2.contourArea(contour_points.reshape(-1, 1, 2).astype(np.float32)))
     return FittedQuadrilateral(refined_corners, min(filled_region_area / quad_area, 1.5), source_name)

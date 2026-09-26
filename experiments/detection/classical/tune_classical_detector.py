@@ -1,40 +1,19 @@
 """Coordinate-descent sweep of the classical detector's thresholds on a val subset.
 
     python -m experiments.detection.classical.tune_classical_detector \\
-        --split val --limit 150 --workers 2 --output-dir <dir>
+        --split val --offset 120 --limit 150 --workers 2 --output-dir <dir>
 
-For each parameter in `PARAMETER_GRID`, in order, every listed value is tried with all
-other fields at the current best; a value is adopted only if it beats the best
-objective. One pass over the grid is the default (`--passes`).
-
-- Objective: mean of F1 at IoU 0.5 and F1 at IoU 0.9 (finds checks AND places corners).
-- Writes `sweep_results.jsonl` (one line per evaluated config) and `best_config.json`
-  (overrides only, loadable by `run_classical_detector --config-json`).
-- Tune on val (or train) only; eval is scored once with the frozen config.
-"""
-
-import argparse
-import dataclasses
-import json
-import logging
-from pathlib import Path
-
-from experiments.detection.classical.classical_detector_config import ClassicalDetectorConfig
-from experiments.detection.classical.run_classical_detector import build_config_from_overrides, run_detector_on_scenes
-from experiments.detection.dataset.scene_annotations import load_split_scene_annotations
-from experiments.detection.metrics.score_predictions import score_predictions_against_split
-
-logger = logging.getLogger(__name__)
-
-PARAMETER_GRID: dict[str, list] = {
-    "minimum_verification_score": [0.5, 0.6, 0.7, 0.8],
-    "maximum_interior_seam_strength": [0.4, 0.5, 0.6, 0.7],
-    "minimum_edge_support": [0.3, 0.45, 0.6],
-    "edge_support_gradient_threshold": [7.0, 10.0, 14.0],
-    "minimum_interior_print_fraction": [0.03, 0.05, 0.07],
-    "maximum_interior_texture": [3.5, 4.5, 6.0],
-    "refinement_search_fraction": [0.003, 0.004, 0.006, 0.008],
-    "working_long_side_pixels": [1400, 1600, 2000],
+For each parameter in `PARAMETER_GRID: dict[str, list] = {
+    "maximum_interior_seam_strength": [0.55, 0.85, 1.01],
+    "minimum_verification_score": [0.5, 0.65, 0.8],
+    "minimum_line_hypothesis_score": [0.6, 0.9],
+    "minimum_edge_support": [0.3, 0.6],
+    "minimum_interior_print_fraction": [0.03, 0.07],
+    "maximum_interior_texture": [3.5, 6.0],
+    "maximum_covered_fraction": [0.45, 0.75],
+    "relative_area_floor": [0.2, 0.4],
+    "refinement_search_fraction": [0.003, 0.008],
+    "working_long_side_pixels": [1400, 2000],
 }
 
 
@@ -65,6 +44,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Coordinate sweep of classical detector thresholds.")
     parser.add_argument("--split", choices=("train", "val"), default="val")
+    parser.add_argument("--offset", type=int, default=0, help="skip the first N scenes (sorted by id)")
     parser.add_argument("--limit", type=int, default=150)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--passes", type=int, default=1)
@@ -74,7 +54,7 @@ def main() -> None:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     known_fields = {field.name for field in dataclasses.fields(ClassicalDetectorConfig)}
 
-    scenes = load_split_scene_annotations(arguments.split, limit=arguments.limit)
+    scenes = load_split_scene_annotations(arguments.split)[arguments.offset : arguments.offset + arguments.limit]
     best_overrides = json.loads(arguments.start_config_json.read_text()) if arguments.start_config_json else {}
     results_path = arguments.output_dir / "sweep_results.jsonl"
     best_result = evaluate_overrides(best_overrides, scenes, arguments.workers)

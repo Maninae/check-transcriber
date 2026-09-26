@@ -64,7 +64,8 @@ class WorkingImageChannels:
 def resize_to_working_resolution(image_bgr: np.ndarray, working_long_side_pixels: int) -> tuple[np.ndarray, float]:
     """Downscale (never upscale) so the long side is at most the working size.
 
-    Returns the working image and the factor that maps working coordinates to full res.
+    Returns the working image and the factor that maps working coordinates to full res
+    (the pixel-center offset is applied by the caller).
     """
     full_long_side = max(image_bgr.shape[:2])
     if full_long_side <= working_long_side_pixels:

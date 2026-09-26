@@ -57,7 +57,13 @@ def collect_verified_candidates(
     """Every region-derived quad that passes the shape gates and the evidence threshold."""
     fitted_quads = []
     for region in extract_all_candidate_regions(channels, config):
-        fitted_quad = fit_quadrilateral_to_contour(region.contour, region.source_name)
+        fitted_quad = fit_quadrilateral_to_contour(
+            region.contour,
+            region.source_name,
+            minimum_rectangularity=config.minimum_region_rectangularity,
+            aspect_range=(min(config.minimum_aspect_ratio, config.border_truncated_aspect_range[0]),
+                          max(config.maximum_aspect_ratio, config.border_truncated_aspect_range[1])),
+        )
         if fitted_quad is not None and fitted_quad.rectangularity >= config.minimum_region_rectangularity:
             fitted_quads.append(fitted_quad)
     if config.use_line_hypotheses:
