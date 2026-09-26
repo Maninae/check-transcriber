@@ -6,8 +6,11 @@ Run (from the worktree root):
 - Holds the area MPS lock. Cosine schedule over the planned steps (`--epochs`), but stops at
   `--max-minutes` regardless; validation every `--validate-every` steps on a fixed subset of
   handwritten val rows, scored with the harness's `normalize_field_value` (field_correct).
-- Best checkpoint -> RECOGNIZER_ROOT/trocr_small_handwritten_ft/best (save_pretrained + the
-  sentencepiece model, so `TrocrCropReader("trocr_small_handwritten_ft")` loads it).
+- Every validation also scores the 78 real SSBI handwriting crops (real_ssbi_scoring rules), the
+  actual shipping criterion: synth val alone rewards forgetting real handwriting.
+- Every validated checkpoint -> RECOGNIZER_ROOT/trocr_small_handwritten_ft/step_<n>; the synth-best
+  one is also written to .../best (save_pretrained + the sentencepiece model, so
+  `TrocrCropReader("trocr_small_handwritten_ft")` loads it).
 """
 
 import argparse
@@ -26,6 +29,7 @@ from experiments.field_reading.data_access.field_manifest import load_field_rows
 from experiments.field_reading.learned.context_crop_export import CONTEXT_MANIFEST_PATH, SCORED_STATUSES
 from experiments.field_reading.learned.line_crop_dataset import read_rgb_image
 from experiments.field_reading.learned.mps_lock import hold_mps_lock
+from experiments.field_reading.learned.real_ssbi_scoring import comparable_text, load_ssbi_rows, pad_tight_crop
 from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
 from experiments.field_reading.learned.trocr_finetune_data import (IGNORED_TARGET_ID, TrocrFinetuneDataset,
                                                                    collate_trocr_batch, select_finetune_rows)
@@ -51,6 +55,27 @@ def validation_accuracy(reader: TrocrCropReader, rows: pd.DataFrame, crops: list
     return float(sum(correct) / len(correct))
 
 
+def ssbi_exact_by_field(reader: TrocrCropReader, ssbi_rows: pd.DataFrame, ssbi_crops: list) -> dict[str, dict[str, float]]:
+    """Exact-match rate per field on the real SSBI crops, for RGB and grey+autocontrast input."""
+    reader.model.eval()
+    by_input = {}
+    for input_name, grey_input in [("rgb", False), ("grey", True)]:
+        reader.grey_input = grey_input
+        reads = reader.read_crops(ssbi_crops)
+        exact = [comparable_text(field, text) == comparable_text(field, truth)
+                 for (text, _), field, truth in zip(reads, ssbi_rows.field_name, ssbi_rows.text)]
+        by_input[input_name] = pd.Series(exact, index=ssbi_rows.field_name.values).groupby(level=0).mean().round(3).to_dict()
+    reader.grey_input = False
+    reader.model.train()
+    return by_input
+
+
+def save_checkpoint(model: VisionEncoderDecoderModel, base_directory, checkpoint_directory) -> None:
+    """save_pretrained plus the sentencepiece model the reader needs."""
+    model.save_pretrained(checkpoint_directory)
+    shutil.copy(base_directory / SENTENCEPIECE_FILE_NAME, checkpoint_directory / SENTENCEPIECE_FILE_NAME)
+
+
 def finetune(arguments: argparse.Namespace) -> None:
     """Training loop (runs under the MPS lock)."""
     device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -64,6 +89,8 @@ def finetune(arguments: argparse.Namespace) -> None:
     validation_rows = validation_rows[validation_rows.status.isin(SCORED_STATUSES) & validation_rows.handwritten]
     validation_rows = validation_rows.sample(VALIDATION_ROW_COUNT, random_state=arguments.seed)
     validation_crops = [read_rgb_image(path) for path in validation_rows.field_crop_path]
+    ssbi_rows = load_ssbi_rows()
+    ssbi_crops = [pad_tight_crop(read_rgb_image(path)) for path in ssbi_rows.crop_path]
     reader = TrocrCropReader(BASE_MODEL_ID, device)
     model: VisionEncoderDecoderModel = reader.model
     model.train()
@@ -74,7 +101,8 @@ def finetune(arguments: argparse.Namespace) -> None:
     logger.info("fine-tuning on %d rows (%d hw), %d planned steps, device %s", len(training_rows),
                 int(training_rows.handwritten.sum()), planned_steps, device)
     best_accuracy = validation_accuracy(reader, validation_rows, validation_crops)
-    logger.info("zero-shot val field accuracy on the %d handwritten rows: %.4f", len(validation_rows), best_accuracy)
+    logger.info("zero-shot val field accuracy on the %d handwritten rows: %.4f; SSBI exact %s", len(validation_rows),
+                best_accuracy, ssbi_exact_by_field(reader, ssbi_rows, ssbi_crops))
     started, step, history = time.time(), 0, []
     out_of_time = False
     while step < planned_steps and not out_of_time:
@@ -96,12 +124,15 @@ def finetune(arguments: argparse.Namespace) -> None:
             out_of_time = elapsed_minutes > arguments.max_minutes
             if step % arguments.validate_every == 0 or out_of_time or step >= planned_steps:
                 accuracy = validation_accuracy(reader, validation_rows, validation_crops)
-                history.append({"step": step, "elapsed_min": elapsed_minutes, "val_hw_field_accuracy": accuracy})
-                logger.info("step %d val hw field accuracy %.4f (best %.4f)", step, accuracy, best_accuracy)
+                ssbi_exact = ssbi_exact_by_field(reader, ssbi_rows, ssbi_crops)
+                history.append({"step": step, "elapsed_min": elapsed_minutes, "val_hw_field_accuracy": accuracy,
+                                "ssbi_exact": ssbi_exact})
+                logger.info("step %d val hw field accuracy %.4f (best %.4f) SSBI exact %s", step, accuracy, best_accuracy, ssbi_exact)
+                save_checkpoint(model, base_directory, OUTPUT_DIRECTORY / f"step_{step}")
+                (OUTPUT_DIRECTORY / "history.json").write_text(json.dumps(history, indent=1))
                 if accuracy > best_accuracy:
                     best_accuracy = accuracy
-                    model.save_pretrained(OUTPUT_DIRECTORY / "best")
-                    shutil.copy(base_directory / SENTENCEPIECE_FILE_NAME, OUTPUT_DIRECTORY / "best" / SENTENCEPIECE_FILE_NAME)
+                    save_checkpoint(model, base_directory, OUTPUT_DIRECTORY / "best")
             if out_of_time or step >= planned_steps:
                 break
     (OUTPUT_DIRECTORY / "history.json").write_text(json.dumps(history, indent=1))
@@ -116,7 +147,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--printed-fraction", type=float, default=0.2)
-    parser.add_argument("--validate-every", type=int, default=1500)
+    parser.add_argument("--validate-every", type=int, default=1000)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
     arguments = parser.parse_args()

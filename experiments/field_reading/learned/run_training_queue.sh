@@ -3,6 +3,7 @@
 # Launch only when the lead has released the GPU to U4. Optional $1: a PID to wait for first.
 # Usage: nohup experiments/field_reading/learned/run_training_queue.sh [pid] > <log> 2>&1 &
 set -u
+export HF_HOME=/Volumes/vega/ai-models/field-reading/hf_home TORCH_HOME=/Volumes/vega/ai-models/field-reading/torch_home
 PY=/Volumes/vega/datasets/check-transcriber/venv/bin/python
 LOGS=/Volumes/vega/datasets/check-transcriber/field-reading/logs
 M=experiments.field_reading.learned

@@ -9,7 +9,6 @@ or fine-tuned directories under RECOGNIZER_CHECKPOINT_ROOT.
 """
 
 import logging
-import os
 from pathlib import Path
 
 import numpy as np
@@ -22,9 +21,6 @@ from experiments.field_reading.config import FIELD_READING_MODEL_ROOT
 from experiments.field_reading.learned.trocr_tokenizer import SENTENCEPIECE_FILE_NAME, XlmRobertaSentencePieceCodec
 
 logger = logging.getLogger(__name__)
-
-os.environ.setdefault("HF_HOME", str(FIELD_READING_MODEL_ROOT / "hf_home"))
-os.environ.setdefault("TORCH_HOME", str(FIELD_READING_MODEL_ROOT / "torch_home"))
 
 TROCR_MODEL_REGISTRY: dict[str, str] = {
     "trocr_small_handwritten": "microsoft/trocr-small-handwritten",
