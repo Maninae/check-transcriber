@@ -68,8 +68,44 @@
 }
 
 .review-field-input::placeholder {
-  color: #b39462;
+  color: var(--color-attention-placeholder);
   font-style: italic;
+}
+
+/* Not read yet: a soft moving shimmer, so a waiting field never looks like an empty read. */
+.review-field-input[data-review-state="unread"] {
+  color: transparent;
+  border-color: #ece5d6;
+  background: linear-gradient(100deg, #f4efe5 20%, #fbf8f1 40%, #f4efe5 60%) 0 0 / 300% 100%;
+  animation: field-shimmer 1.4s linear infinite;
+}
+
+.review-field-input[data-review-state="unread"]:focus {
+  color: var(--color-text);
+  animation: none;
+  background: #fffdf8;
+}
+
+@keyframes field-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+/* A value just arrived: fade it in. */
+.review-field-input--arrived {
+  animation: field-arrive 450ms var(--ease-out);
+}
+
+@keyframes field-arrive {
+  from { opacity: 0.2; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Rotated: the untouched fields are being read again. */
+.review-row--rereading .review-field-input:not(:focus):not([data-touched="true"]) {
+  color: transparent;
+  background: linear-gradient(100deg, #f4efe5 20%, #fbf8f1 40%, #f4efe5 60%) 0 0 / 300% 100%;
+  animation: field-shimmer 1.4s linear infinite;
 }
 
 .review-field-note {
@@ -102,10 +138,30 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: #aaa092;
+  color: var(--color-icon-quiet);
   cursor: pointer;
-  font-size: 0.85rem;
-  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.copy-icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.copy-icon-button .copy-icon-done,
+.copy-icon-button--copied .copy-icon-copy {
+  display: none;
+}
+
+.copy-icon-button--copied .copy-icon-done {
+  display: block;
 }
 
 .copy-icon-button:hover {
@@ -115,6 +171,7 @@
 
 .copy-icon-button--copied {
   color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .payer-suggestions {
@@ -169,4 +226,9 @@
   border: 1px solid var(--color-attention-line);
   border-radius: 4px;
   background: #ece6da;
+}
+
+.review-row--rereading .review-field-input:not(:focus):not([data-touched="true"])::placeholder,
+.review-field-input[data-review-state="unread"]::placeholder {
+  color: transparent;
 }

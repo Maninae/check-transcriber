@@ -18,7 +18,7 @@
  * copies of everything on their next visit.
  */
 
-const SW_VERSION = "v3";
+const SW_VERSION = "v4";
 const SHELL_CACHE_NAME = `check-transcriber-shell-${SW_VERSION}`;
 const CDN_CACHE_NAME = `check-transcriber-cdn-${SW_VERSION}`;
 // The opt-in handwriting reader's files (Hugging Face Hub, ~132 MB, pinned revision; see
@@ -40,6 +40,7 @@ const APP_SHELL_PATHS = [
   "./styles/base.css",
   "./styles/count-step.css",
   "./styles/drop-zone.css",
+  "./styles/feedback.css",
   "./styles/lightbox.css",
   "./styles/review-fields.css",
   "./styles/review-grid.css",
@@ -57,11 +58,13 @@ const APP_SHELL_PATHS = [
   "./js/fields/field_gating_config.js",
   "./js/fields/fuzzy_matching.js",
   "./js/fields/money_parsing.js",
+  "./js/first_run_hints.js",
   "./js/handwriting_reader_cache.js",
   "./js/heic_detect.js",
   "./js/image_decode.js",
   "./js/input_doors.js",
   "./js/main.js",
+  "./js/photo_intake.js",
   "./js/pipeline/check_pipeline_stage.js",
   "./js/pipeline/check_rectification.js",
   "./js/pipeline/classical/candidates/adjacent_cell_merging.js",
@@ -131,6 +134,8 @@ const APP_SHELL_PATHS = [
   "./js/pipeline/refinement/side_line_search.js",
   "./js/pipeline/refinement/side_refinement.js",
   "./js/pipeline/worker_stages.js",
+  "./js/progress_copy.js",
+  "./js/progress_panel.js",
   "./js/review/clipboard_rows.js",
   "./js/review/crop_rendering.js",
   "./js/review/field_definitions.js",

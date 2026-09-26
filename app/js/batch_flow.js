@@ -8,16 +8,34 @@
  * photo's pixels live in three places only while a batch is open: the decoded canvas
  * (main.js), the count step's display canvas, and the worker's copy. Finish batch and
  * Start over release all three.
+ *
+ * Feedback (so nothing ever looks stuck): every stage is reported through the progress
+ * panel (progress_panel.js) in plain words (progress_copy.js), with a determinate bar once
+ * the work is countable; the review heading carries a live summary ("All 6 checks read.
+ * 3 fields need a look"); failures offer Start over; Finish ends on a toast.
  */
 
 import { todayIso } from "./fields/date_parsing.js";
 import { collectReviewedRowValues } from "./review/review_field_editing.js";
+import { STAGE_COPY, describeReviewSummary, describeWorkerStage, parseCheckOfTotal, pluralizeChecks, reviewProgressFraction } from "./progress_copy.js";
+import { HINT_KEYS } from "./first_run_hints.js";
+
+const DETECTION_FAILED_MESSAGE = "Something went wrong finding the checks. Start over and paste the photo again.";
+const STRAIGHTENING_FAILED_MESSAGE = "Something went wrong straightening the checks. Start over and paste the photo again.";
+const ENGINES_FAILED_WHILE_WAITING_MESSAGE = "Couldn't load the check-reading tools. Your photo is kept. Check the internet, then press Retry.";
+
+function scrollBehavior() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
 
 const UNSAVED_CHECKS_MESSAGE = (count) =>
   `You have ${count} ${count === 1 ? "check" : "checks"} that have not been copied.`;
 
 export class BatchFlow {
-  /** `parts`: `{ countStep, reviewGrid, batchHistory, stepIndicator, progressLine, recordedLine, reviewSection, pageElement }`. */
+  /**
+   * `parts`: `{ countStep, reviewGrid, batchHistory, stepIndicator, progressPanel, recordedNotice,
+   * recordedLine, reviewSummaryElement, hints, toast, onStartOverRequested, reviewSection, pageElement }`.
+   */
   constructor(parts) {
     Object.assign(this, parts);
     this.pipelineClient = null;
@@ -28,12 +46,17 @@ export class BatchFlow {
     this.detectedQuads = null;
     this.orientedQuads = [];
     this.batchToken = 0; // bumped per Continue and per clear; read-chain callbacks from older batches are dropped
+    this.readsRunning = false; // Continue's crop-and-read chain is still going
+    this.retryEngines = null; // set while the engines have failed to load: Retry for a waiting photo
+    this.summaryHeld = false; // the panel's "All N checks read" is showing; the heading line waits
+    this.reviewGrid.onFieldStatesChanged = () => this.updateReviewSummary();
     window.addEventListener("beforeunload", (event) => this.guardUnload(event));
   }
 
   /** Called once the engines are ready; runs any photo that arrived before that. */
   setPipelineClient(pipelineClient) {
     this.pipelineClient = pipelineClient;
+    this.retryEngines = null;
     const waiters = this.enginesWaiters;
     this.enginesWaiters = [];
     waiters.forEach((run) => run());
@@ -46,45 +69,102 @@ export class BatchFlow {
   setStep(step, checkCount = null) {
     this.step = step;
     this.stepIndicator.show(step, checkCount);
-    this.pageElement.classList.toggle("page--wide", step === "count" || step === "review");
+    // Wide from the moment a photo lands, so the photo appears at its final size (no jump at the count step).
+    this.pageElement.classList.toggle("page--wide", step !== null);
   }
 
-  showProgress(text) {
-    this.progressLine.hidden = !text;
-    this.progressLine.textContent = text ? `${text}…` : "";
+  /** How many checks a replace or Start over would throw away (0: nothing worth a question). */
+  countChecksAtStake() {
+    if (this.step === "review") return this.reviewGrid.getCheckCount();
+    if (this.step === "count") return this.countStep.quads.length;
+    return 0;
+  }
+
+  /**
+   * The engines failed to load. `retry()` loads them again (main.js). A photo waiting on
+   * them gets one message with its own Retry, and the kept photo continues once they load.
+   */
+  onEnginesFailed(retry) {
+    this.retryEngines = retry;
+    if (this.enginesWaiters.length > 0) this.showEnginesFailedInPanel();
+  }
+
+  showEnginesFailedInPanel() {
+    this.onEngineFailureShownInPanel?.();
+    this.progressPanel.showError(ENGINES_FAILED_WHILE_WAITING_MESSAGE, "Retry", () => {
+      const retry = this.retryEngines;
+      this.retryEngines = null;
+      this.progressPanel.showStage(STAGE_COPY.waitingForTools);
+      if (retry) retry();
+    });
+  }
+
+  showFailure(message) {
+    this.progressPanel.showError(message, "Start over", () => this.onStartOverRequested());
+  }
+
+  /** The line beside the review heading: still reading, or what is left to look at. */
+  updateReviewSummary() {
+    // One message at a time: while the progress panel speaks, the heading line stays quiet.
+    if (this.step !== "review" || this.readsRunning || this.summaryHeld) {
+      this.reviewSummaryElement.textContent = "";
+      return;
+    }
+    const counts = this.reviewGrid.countFieldStates();
+    const summary = describeReviewSummary({
+      checkCount: this.reviewGrid.getCheckCount(),
+      unreadFieldCount: counts.unread,
+      flaggedFieldCount: counts.flagged,
+      handwritingPending: this.readsRunning && counts.unread === 0,
+    });
+    this.reviewSummaryElement.textContent = summary.text;
+    this.reviewSummaryElement.dataset.tone = summary.tone;
   }
 
   /** A photo was decoded; `photoArrivedAt` is performance.now() at paste/drop/pick. */
   startWithPhoto(fullResCanvas, photoArrivedAt) {
     this.fullResCanvas = fullResCanvas;
-    this.recordedLine.hidden = true;
+    this.recordedNotice.hidden = true;
     this.timings = { photoArrivedAt };
     this.detectedQuads = null;
     this.setStep("photo");
+    // Her photo, dimmed with a light sweeping over it, where the outlines will appear: the
+    // progress panel sits in the count heading's place, so nothing moves when they land.
+    this.hints.present(HINT_KEYS.FIX_OUTLINES);
+    this.countStep.showScanning(fullResCanvas);
+    this.progressPanel.placeAtStartOf(this.countStep.dom.sectionElement);
+    this.countStep.dom.sectionElement.scrollIntoView({ behavior: "auto", block: "start" });
     const run = () => this.detect(fullResCanvas);
     if (this.pipelineClient) {
       run();
+    } else if (this.retryEngines) {
+      this.enginesWaiters.push(run);
+      this.showEnginesFailedInPanel();
     } else {
-      this.showProgress("Getting ready");
+      this.progressPanel.showStage(STAGE_COPY.waitingForTools);
       this.enginesWaiters.push(run);
     }
   }
 
   detect(fullResCanvas) {
-    this.showProgress("Finding checks");
+    this.progressPanel.showStage(STAGE_COPY.findingChecks);
     this.pipelineClient.loadPhoto(fullResCanvas)
-      .then(() => this.pipelineClient.detectChecks((text) => this.showProgress(text)))
+      .then(() => this.pipelineClient.detectChecks((text) => {
+        if (fullResCanvas === this.fullResCanvas) this.progressPanel.showStage(describeWorkerStage(text));
+      }))
       .then((detections) => {
         if (fullResCanvas !== this.fullResCanvas) return; // replaced while detecting
         this.detectedQuads = detections.map(({ corners }) => corners);
-        this.showProgress(null);
+        this.progressPanel.hide();
+        this.progressPanel.returnHome();
         this.setStep("count", detections.length);
-        this.countStep.show(fullResCanvas, detections);
+        this.countStep.show(fullResCanvas, detections); // un-dims the photo; outlines fade in one by one
         this.timings.countStepShownAt = performance.now();
       })
       .catch((error) => {
+        if (fullResCanvas !== this.fullResCanvas) return;
         console.error("check detection failed:", error);
-        this.showProgress("Something went wrong finding the checks. Start over to try again");
+        this.showFailure(DETECTION_FAILED_MESSAGE);
       });
   }
 
@@ -97,8 +177,15 @@ export class BatchFlow {
     this.batchToken += 1;
     const batchToken = this.batchToken;
     const isCurrent = () => batchToken === this.batchToken; // Start over / Finish / a new Continue retire this chain
+    this.hints.withdraw(HINT_KEYS.FIX_OUTLINES);
     this.reviewGrid.start(cornerSets.length);
-    this.reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    this.hints.present(HINT_KEYS.REVIEW_GUIDE);
+    this.readsRunning = true;
+    const checkCount = cornerSets.length;
+    this.progressPanel.placeAtStartOf(this.reviewSection);
+    this.progressPanel.showStage(describeWorkerStage(`Straightening check 1 of ${checkCount}`), 0);
+    this.updateReviewSummary();
+    this.reviewSection.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
     // Timings: every crop shown, every check read by the default readers (the fully populated
     // grid of spec section 5's budget), then gridCompleteAt once any handwriting pass is done too.
     let cropsShown = 0;
@@ -111,23 +198,43 @@ export class BatchFlow {
         this.reviewGrid.setCrop(checkMessage.checkIndex, checkMessage);
         cropsShown += 1;
         if (cropsShown === cornerSets.length) this.timings.cropsCompleteAt = performance.now();
+        this.progressPanel.setFraction(reviewProgressFraction({ cropsShown, printedReadsShown, checkCount }));
       },
-      (text) => { if (isCurrent()) this.showProgress(text); },
+      (text) => {
+        if (!isCurrent()) return;
+        // Printed pass: straightened + read out of 2 per check. Handwriting pass: its own check counter.
+        const handwritingCheck = /handwriting/i.test(text) ? parseCheckOfTotal(text) : null;
+        const fraction = handwritingCheck
+          ? (handwritingCheck.current - 1) / handwritingCheck.total
+          : reviewProgressFraction({ cropsShown, printedReadsShown, checkCount });
+        this.progressPanel.showStage(describeWorkerStage(text), fraction);
+      },
       ({ checkIndex, rawReads, pass }) => {
         if (!isCurrent()) return;
         this.reviewGrid.receiveStreamedFieldReads(checkIndex, rawReads);
         if (pass !== "printed") return;
         printedReadsShown += 1;
         if (printedReadsShown === cornerSets.length) this.timings.fieldReadsCompleteAt = performance.now();
+        this.progressPanel.setFraction(reviewProgressFraction({ cropsShown, printedReadsShown, checkCount }));
       },
     ).then(() => {
       if (!isCurrent()) return;
-      this.showProgress(null);
+      this.readsRunning = false;
+      this.countStep.setBusy(false);
+      const counts = this.reviewGrid.countFieldStates();
+      const doneSummary = describeReviewSummary({ checkCount, unreadFieldCount: 0, flaggedFieldCount: counts.flagged, handwritingPending: false });
+      this.summaryHeld = true;
+      this.progressPanel.showDone(doneSummary.text, () => {
+        this.summaryHeld = false;
+        this.updateReviewSummary();
+      });
       this.timings.gridCompleteAt = performance.now();
     }).catch((error) => {
       if (!isCurrent()) return;
       console.error("straightening the checks failed:", error);
-      this.showProgress("Something went wrong straightening the checks. Start over to try again");
+      this.readsRunning = false;
+      this.countStep.setBusy(false);
+      this.showFailure(STRAIGHTENING_FAILED_MESSAGE);
     });
   }
 
@@ -145,10 +252,16 @@ export class BatchFlow {
     this.countStep.clear();
     this.reviewGrid.clear();
     this.reviewSection.hidden = true;
-    this.showProgress(null);
+    this.readsRunning = false;
+    this.summaryHeld = false;
+    this.progressPanel.hide();
+    this.progressPanel.returnHome();
+    this.hints.withdraw(HINT_KEYS.FIX_OUTLINES);
+    this.hints.withdraw(HINT_KEYS.REVIEW_GUIDE);
     if (this.pipelineClient) this.pipelineClient.releasePhoto();
     this.fullResCanvas = null;
     this.setStep(null);
+    this.updateReviewSummary();
   }
 
   /**
@@ -163,8 +276,8 @@ export class BatchFlow {
     this.batchHistory.addKnownPayerNames(rowValues.map(({ payer }) => payer));
     this.batchHistory.recordConfirmedChecks(rowValues, todayIso());
     this.clear();
-    this.recordedLine.textContent = `${checkCount} ${checkCount === 1 ? "check" : "checks"} recorded`;
-    this.recordedLine.hidden = false;
+    this.recordedLine.textContent = `${pluralizeChecks(checkCount)} recorded`;
+    this.recordedNotice.hidden = false;
   }
 
   /** For window.__checkTranscriberDebug (tests only; holds no pixels). */

@@ -25,6 +25,7 @@ export function renderField(grid, index, fieldKey) {
   const row = grid.rows[index];
   const emailDateSuggestion = fieldKey === "date" ? emailDateSuggestionFor(grid, index) : null;
   row.view.fieldViews.get(fieldKey).render(row.fields[fieldKey], { emailDateSuggestion });
+  grid.scheduleFieldStatesChanged?.();
 }
 
 function updateRecord(grid, index, fieldKey, nextRecord) {

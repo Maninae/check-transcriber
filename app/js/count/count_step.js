@@ -8,6 +8,16 @@
  * Numbers stay in reading order (re-sorted after every add or remove). The step is never
  * skipped; Continue hands the confirmed quads to the review step and locks this view
  * so the numbered photo stays above the grid for cross-checking.
+ *
+ * While the checks are being found the photo is already here, dimmed with a light sweeping
+ * across it (`showScanning`); when they land it brightens and the outlines fade in one by
+ * one (`show`), in the same place, so nothing on the page jumps. Outlines are also
+ * keyboard targets: Tab to one, Enter selects it, Delete removes it.
+ *
+ * Guidance: the photo is sized to fit the window height, so every outline can be counted
+ * without scrolling; the note under the heading changes with what she is doing (drawing,
+ * a check selected); Continue says why when it cannot be pressed, and turns into a busy
+ * "Straightening…" once pressed, so it cannot be pressed twice.
  */
 
 import { renderCountOverlay } from "./count_overlay.js";
@@ -15,6 +25,13 @@ import { describeCountHeader } from "./count_header_text.js";
 import { sortIntoReadingOrder } from "../pipeline/reading_order.js";
 
 const MINIMUM_DRAWN_SIZE_SCREEN_PX = 20;
+const PHOTO_BOTTOM_MARGIN_PX = 16;
+const MINIMUM_PHOTO_HEIGHT_PX = 360; // below this, counting beats fitting: let it scroll
+const CONTINUE_LABEL = "Continue";
+const CONTINUE_BUSY_LABEL = "Straightening…";
+const CONTINUE_DISABLED_NO_CHECKS = "Outline at least one check first: click Add a check, then drag a box around it.";
+const REVEAL_ANIMATION_MS = 1600; // the staggered fade-in of the outlines (styles/count-step.css)
+const CONTINUE_DISABLED_PENDING = "One moment, fitting the new outline to the check's edges.";
 
 export class CountStep {
   /** `dom`: section, heading, note, photo canvas, overlay svg, add and continue buttons.
@@ -31,30 +48,74 @@ export class CountStep {
     this.cornerDrag = null; // { quadId, cornerIndex, pointerId }
     this.wasEdited = false;
     this.locked = false;
+    this.scanning = false;
+    this.revealTimer = null;
     dom.addCheckButton.addEventListener("click", () => this.setDrawingMode(!this.isDrawing));
     dom.continueButton.addEventListener("click", () => this.continueToReview());
     dom.overlayElement.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
     dom.overlayElement.addEventListener("pointermove", (event) => this.handlePointerMove(event));
     dom.overlayElement.addEventListener("pointerup", (event) => this.handlePointerUp(event));
+    dom.overlayElement.addEventListener("keydown", (event) => this.handleOutlineKeydown(event));
     document.addEventListener("keydown", (event) => this.handleKeydown(event));
     window.addEventListener("resize", () => { if (this.photoCanvas) this.render(); });
   }
 
+  /** The photo is in and the checks are being found: show it dimmed, scanning, with no outlines yet. */
+  showScanning(fullResCanvas) {
+    this.photoCanvas = fullResCanvas;
+    this.quads = [];
+    this.selectedQuadId = null;
+    this.wasEdited = false;
+    this.locked = false;
+    this.scanning = true;
+    this.dom.sectionElement.classList.remove("count-step--locked", "count-step--settled");
+    this.dom.sectionElement.classList.add("count-step--scanning");
+    this.dom.sectionElement.hidden = false;
+    this.setBusy(false);
+    this.setDrawingMode(false);
+    this.updateHeader();
+    this.drawPhoto();
+    this.dom.overlayElement.replaceChildren();
+    this.dom.overlayElement.setAttribute("viewBox", `0 0 ${fullResCanvas.width} ${fullResCanvas.height}`);
+  }
+
   /** Shows the photo and the detector's quads (`[{ corners, confident }]`, reading order). */
   show(fullResCanvas, detections) {
+    const alreadyShowingThisPhoto = this.scanning && this.photoCanvas === fullResCanvas;
+    this.scanning = false;
+    this.dom.sectionElement.classList.remove("count-step--scanning");
     this.photoCanvas = fullResCanvas;
     this.quads = detections.map(({ corners, confident }) => ({ id: this.nextQuadId++, corners, confident, pending: false }));
     this.selectedQuadId = null;
     this.wasEdited = false;
     this.locked = false;
-    this.dom.sectionElement.classList.remove("count-step--locked");
+    this.dom.sectionElement.classList.remove("count-step--locked", "count-step--settled");
     this.dom.sectionElement.hidden = false;
-    this.drawPhoto();
+    this.setBusy(false);
     this.setDrawingMode(this.quads.length === 0);
+    this.updateHeader(); // before measuring: the heading and note set how much room the photo has
+    if (!alreadyShowingThisPhoto) this.drawPhoto(); // already sized while scanning: keep it still
+    this.dom.overlayElement.classList.add("count-overlay--revealing");
+    clearTimeout(this.revealTimer);
+    this.revealTimer = setTimeout(() => this.dom.overlayElement.classList.remove("count-overlay--revealing"), REVEAL_ANIMATION_MS);
     this.render();
   }
 
+  /**
+   * Caps the photo's width so its height fits the window below the step's header: every
+   * outline visible at once on a 1366x768 laptop. Uses CSSOM (allowed by the CSP).
+   */
+  fitPhotoFrameToWindow() {
+    const frameElement = this.dom.photoCanvas.parentElement;
+    frameElement.style.removeProperty("max-width");
+    const reservedAbove = frameElement.getBoundingClientRect().top - this.dom.sectionElement.getBoundingClientRect().top;
+    const availableHeight = Math.max(MINIMUM_PHOTO_HEIGHT_PX, window.innerHeight - reservedAbove - PHOTO_BOTTOM_MARGIN_PX);
+    const fittedWidth = Math.floor(availableHeight * (this.photoCanvas.width / this.photoCanvas.height));
+    if (fittedWidth < frameElement.clientWidth) frameElement.style.setProperty("max-width", `${fittedWidth}px`);
+  }
+
   drawPhoto() {
+    this.fitPhotoFrameToWindow();
     const frameWidth = this.dom.photoCanvas.parentElement.clientWidth;
     const targetWidth = Math.min(this.photoCanvas.width, Math.round(frameWidth * (window.devicePixelRatio || 1)));
     this.dom.photoCanvas.width = targetWidth;
@@ -66,7 +127,9 @@ export class CountStep {
 
   render() {
     const displayScale = this.dom.overlayElement.getBoundingClientRect().width / this.photoCanvas.width || 1;
+    const focusedQuadId = Number(document.activeElement?.dataset?.quadId) || null; // survives the re-render
     renderCountOverlay(this.dom.overlayElement, {
+      isLocked: this.locked,
       imageWidth: this.photoCanvas.width,
       imageHeight: this.photoCanvas.height,
       displayScale,
@@ -74,18 +137,42 @@ export class CountStep {
       selectedQuadId: this.selectedQuadId,
       drawRectangle: this.drawRectangle,
     });
+    if (focusedQuadId !== null) this.dom.overlayElement.querySelector(`[data-quad-id="${focusedQuadId}"]`)?.focus({ preventScroll: true });
+    this.updateHeader();
+    if (!this.locked) {
+      const hasPending = this.quads.some(({ pending }) => pending);
+      this.dom.continueButton.disabled = this.quads.length === 0 || hasPending;
+      this.dom.continueButton.title = this.quads.length === 0 ? CONTINUE_DISABLED_NO_CHECKS : hasPending ? CONTINUE_DISABLED_PENDING : "Straighten and read every outlined check";
+    }
+    this.callbacks.onCountChanged?.(this.quads.length);
+  }
+
+  updateHeader() {
     const header = describeCountHeader(this.quads, this.wasEdited);
     this.dom.headingElement.textContent = header.heading;
-    this.dom.noteElement.textContent = header.note;
-    this.dom.continueButton.disabled = this.quads.length === 0 || this.quads.some(({ pending }) => pending);
-    this.callbacks.onCountChanged?.(this.quads.length);
+    this.dom.noteElement.textContent = this.describeCurrentAction() || header.note;
+  }
+
+  /** The note while she is mid-action, or null for the header's own note. */
+  describeCurrentAction() {
+    if (this.locked) return null;
+    if (this.isDrawing && this.quads.length > 0) {
+      return "Drag a box around the check on the photo. It snaps to the check's edges.";
+    }
+    const selectedPosition = this.quads.findIndex(({ id }) => id === this.selectedQuadId);
+    if (selectedPosition >= 0) {
+      return `Check ${selectedPosition + 1} selected. Click the red × (or press Delete) to remove it, or drag a corner to adjust it.`;
+    }
+    return null;
   }
 
   setDrawingMode(isDrawing) {
     this.isDrawing = isDrawing;
     this.dom.addCheckButton.setAttribute("aria-pressed", String(isDrawing));
+    this.dom.addCheckButton.textContent = isDrawing ? "Drawing… (Esc to cancel)" : "Add a check";
     this.dom.overlayElement.classList.toggle("count-overlay--drawing", isDrawing);
     if (isDrawing) this.selectedQuadId = null;
+    if (this.photoCanvas) this.updateHeader(); // the note says what to do the moment the mode changes
   }
 
   toPhotoPoint(event) {
@@ -95,8 +182,17 @@ export class CountStep {
     return [Math.min(Math.max(x, 0), this.photoCanvas.width - 1), Math.min(Math.max(y, 0), this.photoCanvas.height - 1)];
   }
 
+  /** Enter or Space on a focused outline selects it (then Delete removes it, as with a click). */
+  handleOutlineKeydown(event) {
+    const quadId = Number(event.target.dataset?.quadId);
+    if (!quadId || this.locked || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    this.selectedQuadId = quadId;
+    this.render();
+  }
+
   handlePointerDown(event) {
-    if (this.locked) return;
+    if (this.locked || this.scanning) return;
     const target = event.target;
     const [x, y] = this.toPhotoPoint(event);
     if (target.closest("[data-remove-quad-id]")) {
@@ -179,7 +275,7 @@ export class CountStep {
   }
 
   handleKeydown(event) {
-    if (this.locked || this.dom.sectionElement.hidden) return;
+    if (this.locked || this.scanning || this.dom.sectionElement.hidden) return;
     const typingInField = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
     if (typingInField) return;
     if ((event.key === "Delete" || event.key === "Backspace") && this.selectedQuadId !== null) {
@@ -193,8 +289,22 @@ export class CountStep {
     }
   }
 
+  /** Continue pressed: a busy, unpressable "Straightening…" until the grid is done; then it folds away. */
+  setBusy(isBusy) {
+    this.dom.continueButton.textContent = isBusy ? CONTINUE_BUSY_LABEL : CONTINUE_LABEL;
+    this.dom.continueButton.classList.toggle("primary-button--busy", isBusy);
+    this.dom.continueButton.setAttribute("aria-busy", String(isBusy));
+    if (isBusy) {
+      this.dom.continueButton.disabled = true;
+      this.dom.continueButton.title = "Working on it";
+    }
+    if (!isBusy && this.locked) this.dom.sectionElement.classList.add("count-step--settled");
+  }
+
   continueToReview() {
+    if (this.locked) return; // a double click
     this.locked = true;
+    this.setBusy(true);
     this.selectedQuadId = null;
     this.setDrawingMode(false);
     this.dom.sectionElement.classList.add("count-step--locked");
@@ -214,6 +324,10 @@ export class CountStep {
     this.dom.photoCanvas.width = 0;
     this.dom.overlayElement.replaceChildren();
     this.dom.sectionElement.hidden = true;
-    this.dom.sectionElement.classList.remove("count-step--locked");
+    this.scanning = false;
+    this.dom.sectionElement.classList.remove("count-step--locked", "count-step--settled", "count-step--scanning");
+    this.dom.overlayElement.classList.remove("count-overlay--revealing");
+    this.dom.photoCanvas.parentElement.style.removeProperty("max-width");
+    this.setBusy(false);
   }
 }

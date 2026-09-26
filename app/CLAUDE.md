@@ -7,7 +7,7 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | Path | Owns |
 |---|---|
 | `index.html` | Page shell, the Content-Security-Policy meta tag, DOM for every step (drop zone, count step, review grid, lightbox). |
-| `js/main.js` | Wiring: DOM lookups, input doors, engine start, builds the count step / review grid / lightbox / batch flow, the `window.__checkTranscriberDebug` test hook. |
+| `js/main.js` | Wiring: DOM lookups, input doors (to photo_intake.js), engine start, builds the count step / review grid / lightbox / batch flow, the `window.__checkTranscriberDebug` test hook. |
 | `js/batch_flow.js` | One batch start to finish: photo → worker detection → count step → worker crops → review grid → Finish batch; the "leave page?" guard; timings. |
 | `js/pipeline/` | Everything that touches pixels, in a Web Worker (detection, corner refinement, orientation, rectification). **Read its CLAUDE.md.** |
 | `js/count/` | The count step (spec 4.2): `count_step.js` state + pointer/keyboard, `count_overlay.js` SVG drawing, `count_header_text.js` header copy. |
@@ -16,7 +16,10 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | `js/settings/` | The inline settings panel and the settings model (date display, copy columns, known names, co-op payees, the read-handwriting switch, Clear everything). |
 | `js/handwriting_reader_cache.js` | Whether the opt-in reader's files are in the service-worker cache (startup never downloads by itself; a saved-on switch without files shows "Download now"), and "Remove the download". |
 | `js/storage/` | The only code that touches `localStorage` (namespaced, text only) and the batch history (confirmed names, check numbers). |
-| `js/step_indicator.js`, `js/toast.js`, `js/status_line.js` | Small DOM leaves: the step line, the "6 rows copied" toast, the engine readiness line. |
+| `js/step_indicator.js`, `js/toast.js`, `js/status_line.js` | Small DOM leaves: the numbered step line, the toast (tick or info icon, time scales with length), the engine readiness line (sliding bar; error card with Retry). |
+| `js/progress_panel.js`, `js/progress_copy.js` | The one moving progress card (scan glyph, stage text, determinate or sliding bar, "still working" after 4 s, done and error states); pure worker-text-to-plain-words copy, Node-tested. |
+| `js/photo_intake.js` | Between a file arriving and the batch flow: refuse HEIC/non-photos first (hint, or an info toast when a batch is open), the inline "Replace these N checks?" / "Start over?" bar in the photo strip (never window.confirm; the new file is held until she answers), "Opening the photo…", the photo strip, reset to the empty page. |
+| `js/first_run_hints.js` | Dismissible `<details class="hint">` cards (Gmail paste recipe, fixing outlines, review colours and shortcuts): auto-open for the first 3 sessions unless "Got it", then a one-line link. |
 | `js/input_doors.js` | The three ways a photo arrives — paste, drag-and-drop, click-to-browse — and nothing else. |
 | `js/heic_detect.js` | HEIC/HEIF detection by extension and by container magic bytes. |
 | `js/image_decode.js` | EXIF-oriented decode into a full-res canvas. The only module that touches a raw File/Blob. |
@@ -25,6 +28,18 @@ This directory is the entire deployed artifact: plain HTML/CSS/ES-module JS, no 
 | `models/` | Our own models, all fp32 ONNX: `upside_down_classifier.onnx` (1.9 MB, orientation), and the field readers from `experiments/field_reading/`: `segnet_mobilenetv3l_768.onnx` (12.8 MB, field boxes), `crnn_general_h32.onnx` (8.3 MB), `crnn_amount_h32.onnx` (8.2 MB), `style_classifier_h32.onnx` (0.75 MB). |
 | `sw.js` | Service worker: app-shell + CDN cache-first, offline after first visit. |
 | `styles/` | One stylesheet per screen; `base.css` holds the palette, type and shared buttons. |
+
+## Feedback and guidance (the UX pass, docs/UX_AUDIT.md)
+
+- Nothing is ever silent: a photo landing shows "Opening the photo…" at once, then a thumbnail; every pipeline stage goes through the progress panel in plain words; unread fields and crops shimmer (never plain empty boxes); Rotate shows "Reading this check again…"; the review heading carries a live summary ("All 6 checks read. 3 fields need a look").
+- The progress panel starts under the drop zone ("Opening the photo…"), stands in for the count heading while the checks are found (same height, so the heading replaces it with no jump; her photo shows dimmed with a light sweeping across it), and moves to the top of the review step on Continue (sticky inside it). It ends on one done message ("All 6 checks read. 3 fields need a look"); the heading's summary line waits until it folds.
+- Engines failing with a photo waiting: one panel message with Retry ("Your photo is kept"); the status box defers (a CSS class, never `hidden`, which the tests read as ready) and a successful Retry drains the waiting photo.
+- Drag-and-drop covers the whole page (`input_doors.js`): an overlay says "Drop the photo anywhere"; drags that start inside the page (the column list) are ignored.
+- The count photo is capped to fit the window height (`count_step.js fitPhotoFrameToWindow`), and the note under its heading reserves two lines: a note that grows mid-drag shifts the photo under the pointer (this broke the refit test once).
+- The page is wide from the moment a photo lands. Count outlines are keyboard targets (Tab, Enter selects, Delete removes); numbers sit just outside each check's top edge.
+- `tests/browser_test_helpers.py paste_image_file` answers the inline replace bar (as the old dialog handlers accepted window.confirm); pass `answer_replace=False` to leave it open.
+- Tests pin some copy exactly: `#photo-received-line` "Photo received" (the decoded size is in `data-photo-width/height`), `#batch-recorded-line` "N checks recorded", `#toast` "N rows copied", the snapped payer tooltip `Read as "…"`. Change them together with the tests.
+- Every animation stops under `prefers-reduced-motion` (base.css); keyboard focus shows one green ring (`:focus-visible`).
 
 ## Visual hierarchy
 

@@ -22,42 +22,54 @@ function createElement(tagName, className, textContent) {
   return element;
 }
 
-/** Shows "copied" feedback on a button for a second. */
+/**
+ * Shows "copied" feedback on a button for a second. An icon button swaps its copy icon for
+ * a tick (both icons live in the button; CSS shows one); a text button reads "Copied".
+ */
 export function flashCopied(button) {
+  const isIconButton = button.classList.contains("copy-icon-button");
   const originalText = button.textContent;
   const originalTitle = button.title;
-  button.classList.add("copy-icon-button--copied");
-  button.textContent = button.classList.contains("copy-icon-button") ? "✓" : "Copied";
+  clearTimeout(button.copiedFlashTimer);
+  button.classList.add(isIconButton ? "copy-icon-button--copied" : "button--copied");
+  if (!isIconButton) button.textContent = "Copied ✓";
   button.title = "Copied";
-  setTimeout(() => {
-    button.classList.remove("copy-icon-button--copied");
-    button.textContent = originalText;
+  button.copiedFlashTimer = setTimeout(() => {
+    button.classList.remove("copy-icon-button--copied", "button--copied");
+    if (!isIconButton) button.textContent = originalText;
     button.title = originalTitle;
   }, COPIED_FLASH_MS);
 }
 
 function createCropColumn(checkNumber, callbacks) {
   const cropColumn = createElement("div", "review-crop-column");
-  const cropPlaceholder = createElement("div", "review-crop-placeholder", "Straightening…");
+  const cropPlaceholder = createElement("div", "review-crop-placeholder");
+  cropPlaceholder.append(createElement("span", "review-crop-placeholder-text", `Straightening check ${checkNumber}…`));
   const cropFrame = createElement("div", "review-crop-frame");
   cropFrame.hidden = true;
   const cropCanvas = createElement("canvas", "review-crop-canvas");
   cropCanvas.addEventListener("click", callbacks.onCropClick);
   const boxOutline = createElement("div", "review-crop-box-outline");
   boxOutline.hidden = true;
-  cropFrame.append(cropCanvas, boxOutline);
+  cropCanvas.title = "Click to see this check larger";
+  const enlargeHint = createElement("span", "review-crop-enlarge-hint", "Click to enlarge");
+  enlargeHint.setAttribute("aria-hidden", "true");
+  cropFrame.append(cropCanvas, boxOutline, enlargeHint);
   const magnifierCanvas = createElement("canvas", "review-magnifier");
   magnifierCanvas.hidden = true;
   magnifierCanvas.setAttribute("aria-hidden", "true");
   const numberBadge = createElement("span", "review-row-number", `Check ${checkNumber}`);
   const cropActions = createElement("div", "review-crop-actions");
   const rotateButton = createUntabbableButton("small-link-button", "Rotate", callbacks.onRotate);
+  rotateButton.title = "Upside down? Turn it over; the fields are read again";
   const micrToggleButton = createUntabbableButton("small-link-button", "Show bottom line", callbacks.onToggleMicr);
   micrToggleButton.title = "The bottom line holds bank numbers and is blurred by default";
+  const rereadStatus = createElement("span", "review-reread-status", "Reading this check again…");
+  rereadStatus.hidden = true;
   // The number sits under the crop, never on it: the payer name is printed top-left.
-  cropActions.append(numberBadge, rotateButton, micrToggleButton);
+  cropActions.append(numberBadge, rotateButton, micrToggleButton, rereadStatus);
   cropColumn.append(cropPlaceholder, cropFrame, magnifierCanvas, cropActions);
-  return { cropColumn, cropPlaceholder, cropFrame, cropCanvas, boxOutline, magnifierCanvas, micrToggleButton };
+  return { cropColumn, cropPlaceholder, cropFrame, cropCanvas, boxOutline, magnifierCanvas, micrToggleButton, rereadStatus };
 }
 
 /**
@@ -84,12 +96,14 @@ export function createReviewRowView(checkNumber, callbacks) {
 
   const sideColumn = createElement("div", "review-row-side");
   const copyRowButton = createUntabbableButton("quiet-button", "Copy row", () => callbacks.onCopyRow(copyRowButton));
+  copyRowButton.title = "Copies this check as one spreadsheet line, in your column order";
   const doneLabel = createElement("label", "review-done-label");
   const doneCheckbox = createElement("input");
   doneCheckbox.type = "checkbox";
   doneCheckbox.tabIndex = -1;
   doneCheckbox.addEventListener("change", () => callbacks.onDoneChange(doneCheckbox.checked));
   doneLabel.append(doneCheckbox, document.createTextNode("Done"));
+  doneLabel.title = "Ticks itself when you copy the row; tick it by hand to mark a check you've entered";
   sideColumn.append(copyRowButton, doneLabel);
 
   rowElement.append(crop.cropColumn, fieldsColumn, sideColumn);
@@ -107,6 +121,11 @@ export function createReviewRowView(checkNumber, callbacks) {
     setDone(isDone) {
       doneCheckbox.checked = isDone;
       rowElement.classList.toggle("review-row--done", isDone);
+    },
+    /** Rotated: the untouched fields shimmer and a small line says they are being read again. */
+    setRereading(isRereading) {
+      rowElement.classList.toggle("review-row--rereading", isRereading);
+      crop.rereadStatus.hidden = !isRereading;
     },
     setMicrShown(isShown) {
       crop.micrToggleButton.textContent = isShown ? "Blur bottom line" : "Show bottom line";

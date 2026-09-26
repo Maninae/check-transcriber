@@ -11,6 +11,12 @@
  * Security Policy only allows network access to its one CDN, so fetching an arbitrary
  * Gmail-hosted image URL would be blocked anyway. The honest behavior is the hint the
  * spec asks for, not a fetch that can never succeed.
+ *
+ * Drag-and-drop covers the WHOLE page, not just the drop zone: while a file (or a Gmail
+ * image) is dragged over the window, a full-page overlay says "Drop the photo anywhere",
+ * and a drop anywhere is taken in. That also stops a near-miss drop from making the
+ * browser open the image in this tab and lose an open batch. Drags that start inside the
+ * page (the settings panel's column list) are left alone.
  */
 
 const IMAGE_MIME_PREFIX = "image/";
@@ -20,7 +26,7 @@ function isImageFile(file) {
 }
 
 /**
- * Wires up paste-anywhere, drag-and-drop onto `dropZoneElement`, and click-to-browse
+ * Wires up paste-anywhere, drag-and-drop anywhere on the page, and click-to-browse
  * on `dropZonePromptElement`. All three call `onImageFile(file)` on success.
  * `onNoUsableImage(reason)` fires when a drop carried a URL/HTML reference instead of
  * actual image data, so the caller can show the copy-image hint.
@@ -28,35 +34,61 @@ function isImageFile(file) {
  * Click-to-browse is scoped to `dropZonePromptElement` (the empty-state prompt), not
  * the whole drop zone: once a photo is showing, the drop zone also contains the
  * Start Over button, and wiring the click handler to the full zone would pop the file
- * picker open every time that button is clicked. Drag-and-drop stays wired to the
- * full `dropZoneElement` in both states, since replacing an already-loaded photo by
- * dropping a new one on top of it is a real flow (see the paste-again confirm in main.js).
+ * picker open every time that button is clicked. Drag-and-drop works in every state,
+ * since replacing an already-loaded photo by dropping a new one is a real flow (see the
+ * paste-again confirm in main.js).
  */
 export function initializeInputDoors({
   dropZoneElement,
   dropZonePromptElement,
   fileInputElement,
+  dropOverlayElement,
   onImageFile,
   onNoUsableImage,
 }) {
   document.addEventListener("paste", (event) => handlePaste(event, onImageFile));
 
-  dropZoneElement.addEventListener("dragover", (event) => {
+  // dragenter/dragleave fire for every child element crossed, so count depth to know when
+  // the drag really left the window.
+  let dragDepth = 0;
+  let dragStartedInPage = false;
+  const setDragActive = (isActive) => {
+    dropOverlayElement.hidden = !isActive;
+    dropZoneElement.classList.toggle("drop-zone--drag-active", isActive);
+  };
+  document.addEventListener("dragstart", () => { dragStartedInPage = true; });
+  document.addEventListener("dragend", () => { dragStartedInPage = false; dragDepth = 0; setDragActive(false); });
+  document.addEventListener("dragenter", (event) => {
+    if (dragStartedInPage) return;
     event.preventDefault();
-    dropZoneElement.classList.add("drop-zone--drag-active");
+    dragDepth += 1;
+    setDragActive(true);
   });
-
-  dropZoneElement.addEventListener("dragleave", () => {
-    dropZoneElement.classList.remove("drop-zone--drag-active");
+  document.addEventListener("dragover", (event) => {
+    if (dragStartedInPage) return;
+    event.preventDefault(); // without this the browser would navigate to the dropped image
+    setDragActive(true);
   });
-
-  dropZoneElement.addEventListener("drop", (event) => {
+  document.addEventListener("dragleave", () => {
+    if (dragStartedInPage) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) setDragActive(false);
+  });
+  document.addEventListener("drop", (event) => {
+    if (dragStartedInPage) return;
     event.preventDefault();
-    dropZoneElement.classList.remove("drop-zone--drag-active");
+    dragDepth = 0;
+    setDragActive(false);
     handleDrop(event, onImageFile, onNoUsableImage);
   });
 
   dropZonePromptElement.addEventListener("click", () => fileInputElement.click());
+  dropZonePromptElement.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInputElement.click();
+    }
+  });
 
   fileInputElement.addEventListener("change", () => {
     const [file] = fileInputElement.files;

@@ -17,7 +17,8 @@
 
 .settings-panel {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  grid-template-columns: 1fr;
+  container-type: inline-size; /* the groups below lay out by the panel's own width */
   gap: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
   margin: calc(var(--spacing-unit) * -2) 0 calc(var(--spacing-unit) * 3);
   padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 2.5);
@@ -123,8 +124,8 @@
   flex: none;
   border: none;
   background: none;
-  color: #aaa092;
-  font-size: 1rem;
+  color: var(--color-icon-quiet);
+  font-size: 1.1rem;
   line-height: 1;
   padding: 2px 4px;
   cursor: pointer;
@@ -216,4 +217,90 @@
 
 .settings-button-row:has(> button:not([hidden])) {
   margin: 4px 0 16px;
+}
+
+/* The panel's own header row spans all three columns: title, "saved on this computer", Close. */
+.settings-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--spacing-unit) * 1.5);
+  padding-bottom: 10px;
+  border-bottom: 1px solid #efe8da;
+}
+
+.settings-panel-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.settings-panel-subtitle {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.settings-empty-line {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.settings-progress {
+  width: 100%;
+}
+
+.settings-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #ece6da;
+  overflow: hidden;
+}
+
+.settings-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--color-accent);
+  transition: width 300ms var(--ease-out);
+}
+
+.settings-danger-button:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+/* Three columns on the wide page; under 900 px of panel, two, with Handwriting (the
+   longest group) across the full width underneath. */
+.settings-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
+}
+
+@container (max-width: 900px) {
+  .settings-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-group--handwriting {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 480px) {
+  .settings-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-danger-button {
+  white-space: nowrap;
+}
+
+.settings-status[data-tone="error"] {
+  color: var(--color-error);
 }

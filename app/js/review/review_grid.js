@@ -20,7 +20,7 @@ import { REVIEW_FIELDS } from "./field_definitions.js";
 import { formatRowAsTabSeparatedLine, formatRowsAsTabSeparatedText, writeTextToClipboard } from "./clipboard_rows.js";
 import { magnifierRegionForField } from "./field_magnifier.js";
 import { composeDisplayedCrop, createCanvasFromRgbaPixels, drawCanvasScaledToWidth, shouldBlurTopBand } from "./crop_rendering.js";
-import { applyGatedFieldState, copyValueForField, createUnreadFieldRecord, displayTextForValue, rotateBoxHalfTurn } from "./review_field_states.js";
+import { applyGatedFieldState, copyValueForField, createUnreadFieldRecord, displayTextForValue, isHighlighted, REVIEW_STATES, rotateBoxHalfTurn } from "./review_field_states.js";
 import { createFieldCallbacks, describeRowForDebug, renderField } from "./review_field_editing.js";
 import { gateCheckFields } from "../fields/field_gating.js";
 import { formatIsoDateAsShortMonthDay, parseDateAssumingYear } from "../fields/date_parsing.js";
@@ -52,6 +52,8 @@ export class ReviewGrid {
     this.rows = [];
     this.emailDateIso = null;
     this.magnifiedField = null; // { index, fieldKey } while a magnifier is open
+    this.onFieldStatesChanged = null; // set by batch_flow.js: the review summary line follows every field change
+    this.fieldStatesChangePending = false;
     this.emailDateInputElement.addEventListener("input", () => this.setEmailDateText(this.emailDateInputElement.value));
   }
 
@@ -74,6 +76,29 @@ export class ReviewGrid {
       REVIEW_FIELDS.forEach(({ key }) => renderField(this, index, key));
     }
     this.onRowsChanged();
+  }
+
+  /** A field was rendered: tell the summary once per task, not once per field. */
+  scheduleFieldStatesChanged() {
+    if (this.fieldStatesChangePending || !this.onFieldStatesChanged) return;
+    this.fieldStatesChangePending = true;
+    queueMicrotask(() => {
+      this.fieldStatesChangePending = false;
+      this.onFieldStatesChanged?.();
+    });
+  }
+
+  /** `{ unread, flagged }`: fields not read yet, and fields still amber (unsure or blank). */
+  countFieldStates() {
+    let unread = 0;
+    let flagged = 0;
+    for (const row of this.rows) {
+      for (const record of Object.values(row.fields)) {
+        if (record.reviewState === REVIEW_STATES.UNREAD) unread += 1;
+        else if (isHighlighted(record)) flagged += 1;
+      }
+    }
+    return { unread, flagged };
   }
 
   /** Receives one crop from the pipeline worker. */
@@ -169,13 +194,21 @@ export class ReviewGrid {
     row.readRequestGeneration += 1;
     const generation = row.readRequestGeneration;
     const rotatedHalfTurn = row.rotatedHalfTurn;
+    row.view.setRereading(true);
+    const isLatest = () => this.rows[index] === row && row.readRequestGeneration === generation; // not rotated again, same batch
     Promise.resolve()
       .then(() => this.rereadCheckFields(index, rotatedHalfTurn))
       .then((result) => {
-        if (this.rows[index] !== row || row.readRequestGeneration !== generation) return; // rotated again, or a new batch
+        if (!isLatest()) return;
+        row.view.setRereading(false);
         this.receiveFieldReads(index, result.rawReads, rotatedHalfTurn);
       })
-      .catch((error) => console.warn(`re-reading check ${index + 1} after rotating failed:`, error));
+      .catch((error) => {
+        console.warn(`re-reading check ${index + 1} after rotating failed:`, error);
+        if (!isLatest()) return;
+        row.view.setRereading(false);
+        this.toast.show(`Check ${index + 1} couldn't be read again. Its fields are unchanged.`, { tone: "info" });
+      });
   }
 
   toggleMicrShown(index) {
@@ -216,7 +249,7 @@ export class ReviewGrid {
   }
 
   copyField(index, fieldKey, button) {
-    writeTextToClipboard(this.rowCopyValues(index)[fieldKey]).then(() => flashCopied(button));
+    writeTextToClipboard(this.rowCopyValues(index)[fieldKey]).then(() => flashCopied(button), () => this.showCopyFailed());
   }
 
   copyRow(index, button) {
@@ -224,7 +257,12 @@ export class ReviewGrid {
     writeTextToClipboard(line).then(() => {
       flashCopied(button);
       this.setDone(index, true);
-    });
+      this.toast.show(`Check ${index + 1} copied. Paste it into your tracker with Ctrl+V.`);
+    }, () => this.showCopyFailed());
+  }
+
+  showCopyFailed() {
+    this.toast.show("Couldn't copy. Click the page once, then try again.", { tone: "info" });
   }
 
   /** Copies every row in count-step order and ticks them all done. */
@@ -234,7 +272,7 @@ export class ReviewGrid {
     return writeTextToClipboard(text).then(() => {
       this.rows.forEach((row, index) => this.setDone(index, true));
       this.toast.show(`${this.rows.length} ${this.rows.length === 1 ? "row" : "rows"} copied`);
-    });
+    }, () => this.showCopyFailed());
   }
 
   /** "Seen before: batch on Sep 12." when this check number and payer were in a past batch. */
