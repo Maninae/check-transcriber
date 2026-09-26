@@ -13,7 +13,7 @@ Sources of truth, by accepted subfolder:
 
 Choosing (`choose_background`): lit photos get `LIT_PHOTO_SCENE_SHARE` of a split's scenes whenever
 the split has any, and soft surfaces are `SOFT_SURFACE_WEIGHT` times as likely within each group, so
-the scene mix leans toward what property managers actually photograph. Split membership is untouched:
+the scene mix leans toward the surfaces checks are actually photographed on. Split membership is untouched:
 the choice only ever draws from the split's own pool.
 """
 

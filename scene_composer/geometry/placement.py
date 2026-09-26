@@ -1,6 +1,6 @@
 """Physical layout of checks on the sheet, in inches, before any camera is chosen.
 
-A property manager lays the checks out, then frames the photo around them, so layout
+Someone lays the checks out, then frames the photo around them, so layout
 comes first and the camera is fitted to the group afterwards (scene_framing.py).
 
 Layout modes:

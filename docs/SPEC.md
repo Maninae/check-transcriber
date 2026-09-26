@@ -1,10 +1,10 @@
 # Check Transcriber: Spec (draft 1, Sep 25 2026)
 
-A browser-only tool that turns a phone photo of several rent checks into upright, cropped, readable check images with the key fields pulled out, reviewed by a person, and copied into a spreadsheet. Built for a three-person housing nonprofit. Primary user: the operations person who records rent (HCI background, Windows laptop, Chrome or Edge), referred to below as the operator.
+A browser-only tool that turns a phone photo of several checks into upright, cropped, readable check images with the key fields pulled out, reviewed by a person, and copied into a spreadsheet. Built for a three-person housing nonprofit. Primary user: the operations person who records rent (HCI background, Windows laptop, Chrome or Edge), referred to below as the operator.
 
 ## 1. Goal
 
-Today, 2 to 4 times a month, a property manager collects tenant rent checks, lays them on a bedsheet, photographs them with a phone, and emails the photo. the operator opens the email, reads each check off the photo by eye, and types who paid, how much, the date and the check number into a spreadsheet tracker.
+Several checks arrive as one phone photo: a handful of checks laid on a plain surface, photographed from above, sent by email. Someone opens the email, reads each check off the photo by eye, and types who paid, how much, the date and the check number into a spreadsheet.
 
 The tool replaces the reading-by-eye step. The operator pastes the photo into a web page, the page finds each check, straightens it, reads the printed fields, leaves the uncertain ones blank, and shows everything on one scrolling page for the operator's to confirm and copy. Target: a six-check batch goes from ten minutes of squinting to under two minutes of confirming.
 
@@ -15,9 +15,9 @@ Success looks like: the operator uses it for every batch without being asked to,
 Constraints:
 - Runs entirely in the browser. No backend, no server, no account, no login. Hosted as static files on GitHub Pages. The page must work with the network tab silent after first load.
 - No installation. No terminal, no Homebrew, no downloaded app, no browser extension. A link is the whole distribution.
-- Windows laptop, Chrome or Edge, current versions. Everything must work without WebGPU; WebGPU is an optional accelerator only.
+- An ordinary laptop, Chrome or Edge, current versions. Everything must work without WebGPU; WebGPU is an optional accelerator only.
 - Input is a phone photo (JPEG, typically 3 to 12 megapixels), arriving as a Gmail attachment.
-- The team is wary of AI. The UI never says "AI" or "model." The page describes itself as a check scanner. Every automatic read is visibly provisional until the operator confirms it.
+- The UI never says "AI" or "model." The page describes itself as a check scanner. Every automatic read is visibly provisional until the operator confirms it.
 - Check images contain bank routing and account numbers. The tool never extracts, stores or displays the MICR line (the machine-printed numbers along the bottom edge) beyond what is needed to find the check number, and by default blurs that band in every crop it shows.
 - Zero maintenance burden. No dependency that phones home, no service that expires, no build step required to keep it running. If nobody touches the repo for two years it still works.
 
@@ -75,7 +75,7 @@ Each check is one row:
   - Date
   - Check number (the printed number at the top-right)
   - Memo (the handwritten memo line, often a unit number or "Sept rent")
-  - Payee (who the check is written to; expected to be the nonprofit or one of its co-ops; used as a sanity check, shown but not copied by default)
+  - Payee (who the check is written to; expected to be one of a short known list of payees; used as a sanity check, shown but not copied by default)
 - A rotate button on the crop (rotates 180 degrees; 90-degree rotations are also available in a small menu) for the case where orientation was guessed wrong. Rotating re-runs the field reads for that row.
 - A "done" checkbox at the far right, ticked automatically when the operator copies the row, so a half-finished batch shows the operator's where the operator left off. Done rows dim slightly.
 
@@ -148,7 +148,7 @@ Model choices for v1:
 
 Where the files come from: the app's own JavaScript and CSS live on GitHub Pages. The OpenCV and Tesseract WebAssembly files and the language data are larger than the 100 MB per-file limit only in the model case, but to keep the Pages repo small they are fetched from a public CDN on first load and cached by a service worker, so later visits are fully offline. The service worker also makes the app work with no network at all after the first visit.
 
-Performance budget on a mid-range Windows laptop: under 3 seconds from paste to the count step for a 12-megapixel photo, under 10 seconds from Continue to a fully populated review grid for six checks. Progress is shown per check during the review-grid build so the page never looks stuck.
+Performance budget on a mid-range laptop: under 3 seconds from paste to the count step for a 12-megapixel photo, under 10 seconds from Continue to a fully populated review grid for six checks. Progress is shown per check during the review-grid build so the page never looks stuck.
 
 ## 6. Edge cases
 
@@ -174,7 +174,7 @@ Performance budget on a mid-range Windows laptop: under 3 seconds from paste to 
 ## 8. Build, hosting and testing
 
 - Plain HTML, CSS and JavaScript, no framework and no build step, so the repo on GitHub Pages is the deployed artifact and stays runnable indefinitely. Modules split by responsibility: input, detection, rectification, OCR, field gating, review UI, lightbox, clipboard, local history, settings.
-- Public GitHub repo under Owen's account, GitHub Pages from `main`. The repo contains no the nonprofit data of any kind.
+- Public GitHub repo under Owen's account, GitHub Pages from `main`. The repo contains no real check data of any kind.
 - Mock check set for development: print a dozen fake checks (fictional names, addresses, banks, the standard layout, a printed MICR-style line of made-up digits), lay them on a bedsheet in the ways a property manager would (grid, rotated, upside down, overlapping, one out of frame), photograph with a phone under a few lighting conditions. This set is the regression suite: detection count, orientation, and field reads are checked against a hand-written answer key.
 - Real-photo test: the operator tries it on a real batch on the operator's own laptop and reports what went blank and what read wrong. We never receive the photo; we receive the operator's description or, at most, a redacted screenshot the operator chooses to send.
 - Browser test on Windows Chrome and Edge, including a laptop without a discrete GPU.

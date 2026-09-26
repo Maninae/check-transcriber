@@ -1,14 +1,12 @@
 # Check Transcriber
 
-Paste a phone photo of rent checks and get each check straightened, its fields read, and rows ready to paste into your spreadsheet, without the photo ever leaving your computer.
+Paste a phone photo of several checks and get each check straightened, its fields read, and rows ready to paste into your spreadsheet, without the photo ever leaving your computer.
 
 <p align="center">
   <a href="https://maninae.github.io/check-transcriber/"><img src="docs/images/count-step.png" width="820" alt="A phone photo of five checks on a wooden table, each check outlined in green with a numbered badge, under the heading &quot;Found 5 checks&quot; and a Continue button"></a>
 </p>
 
 <p align="center"><b><a href="https://maninae.github.io/check-transcriber/">Open Check Transcriber</a></b></p>
-
-Built for a small housing nonprofit whose rent checks arrive as one emailed photo of several checks laid on a bedsheet. The operator used to read each check off the photo by eye and type it into a tracker; this page does the reading and leaves the confirming to her.
 
 ---
 
@@ -56,7 +54,7 @@ There is no server: the page is a set of files your browser downloads once, and 
 The repo has three parts:
 
 - **[`app/`](app/CLAUDE.md)**: the page itself, plain HTML, CSS and JavaScript with no build step, served from GitHub Pages. A small on-device detector finds the checks and on-device readers read the fields.
-- **The synthetic-data packages**: real rent checks carry bank numbers, so every training and test photo is invented. [`synthetic_checks`](synthetic_checks/README.md) draws one fake check, [`synthetic_backgrounds`](synthetic_backgrounds/README.md) supplies the surfaces, [`scene_composer`](scene_composer/README.md) lays checks out as a phone photo, and [`dataset_builder`](dataset_builder/README.md) builds fixed held-out sets.
+- **The synthetic-data packages**: real checks carry bank numbers, so every training and test photo is invented. [`synthetic_checks`](synthetic_checks/README.md) draws one fake check, [`synthetic_backgrounds`](synthetic_backgrounds/README.md) supplies the surfaces, [`scene_composer`](scene_composer/README.md) lays checks out as a phone photo, and [`dataset_builder`](dataset_builder/README.md) builds fixed held-out sets.
 - **[`experiments/`](experiments/README.md)**: training and evaluation for the [check detector](experiments/detection/README.md) and the [field readers](experiments/field_reading/README.md), with their results.
 
 Run the page locally:

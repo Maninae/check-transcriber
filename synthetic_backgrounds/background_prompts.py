@@ -26,7 +26,7 @@ STYLE_SENTENCE = (
 NEGATIVES = "Nothing else in the frame, just the surface. No text, no words, no watermark."
 
 # (slug, description, weight). Bedding carries about half the weight: that is what the
-# property managers actually photograph checks on.
+# checks are actually photographed on.
 SURFACES: list[tuple[str, str, float]] = [
     ("white-bedsheet", "a plain white cotton bedsheet with soft wrinkles", 4.0),
     ("white-bedsheet-creased", "a white bedsheet with deep creases and fold lines", 2.5),

@@ -41,7 +41,7 @@ Priors grab printed labels ("DATE", "PAY TO THE ORDER OF"), the payee address an
 ## 4. Gating: what can be filled safely
 
 - **Courtesy amount, agreement rule**: fill only when the courtesy box and the legal line parse to the same value. Eval: 54.5% of amounts filled at 100.00% accuracy (printed 73.5%, handwritten 33.7%). No tuned threshold, so it survives calibration shift. On real checks accuracy stays high by construction (two independent reads must fail identically); coverage is unmeasured (no real set pairs both lines).
-- **Payee, snap to the known list** (the nonprofit's co-ops in the app; a 4-name pool here, chance 25%): style router identifies 71.0% of payees at 95.4% precision (handwritten 62.5% / 95.7%); Tesseract 60.9% / 96.2%.
+- **Payee, snap to the known list** (the configured payee list in the app; a 4-name pool here, chance 25%): style router identifies 71.0% of payees at 95.4% precision (handwritten 62.5% / 95.7%); Tesseract 60.9% / 96.2%.
 - **Confidence thresholds do not transfer**: a threshold set for 95% accuracy on val gives 88-94% on eval (new templates and fonts only). Thresholds for the app must be set on real photos (the gold set), not synth.
 - Check number: CRNN fills 99.9% at 98.5% accuracy with a val-frozen threshold.
 
