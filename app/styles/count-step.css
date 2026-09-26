@@ -194,3 +194,85 @@
 .count-remove-button path {
   vector-effect: non-scaling-stroke;
 }
+
+/* ---------- Scanning (the checks are being found) and the reveal ---------- */
+
+/* The heading block and the progress panel that stands in for it are the same height,
+   so the heading replaces the panel with no jump. */
+.count-step-header,
+.count-step > .progress-panel {
+  min-height: 92px;
+}
+
+.count-step > .progress-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative; /* not sticky here: it sits exactly where the heading will be */
+  top: auto;
+}
+
+.count-step > .progress-panel .progress-panel-body {
+  flex: 1 1 auto;
+}
+
+.count-step--scanning .count-step-header {
+  display: none;
+}
+
+.count-step--scanning .count-photo-canvas {
+  opacity: 0.55;
+}
+
+.count-photo-canvas {
+  transition: opacity 450ms var(--ease-out);
+}
+
+/* A soft band of light sweeping across her photo while the checks are found. */
+.count-step--scanning .count-photo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.38) 50%, rgba(255, 255, 255, 0) 70%) 0 0 / 250% 100% no-repeat;
+  animation: photo-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes photo-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .count-step--scanning .count-photo-frame::after {
+    display: none;
+  }
+}
+
+/* The outlines and their numbers fade in one after another (120 ms apart). */
+.count-overlay--revealing .count-quad,
+.count-overlay--revealing .count-number-badge,
+.count-overlay--revealing .count-number-text {
+  animation: outline-reveal 380ms var(--ease-out) both;
+  animation-delay: calc(var(--quad-index, 0) * 120ms);
+}
+
+@keyframes outline-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.count-outline:focus {
+  outline: none;
+}
+
+.count-outline:focus-visible {
+  stroke: #ffffff;
+  stroke-width: 4;
+  stroke-dasharray: 6 4;
+}
+
+/* Nothing is running while the panel shows an error: stop the sweep so the page does not imply work. */
+.count-step:has(> .progress-panel[data-tone="error"]) .count-photo-frame::after {
+  display: none;
+}

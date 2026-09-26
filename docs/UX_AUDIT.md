@@ -92,3 +92,34 @@ Trust sentence placement and wording; the calm palette and serif display face; t
 ## Not covered
 
 Real Windows rendering (Segoe UI metrics, ClearType, Windows High Contrast mode); real Gmail drag and clipboard behaviour (simulated with synthetic events); touch screens; screen-reader walkthrough beyond aria attributes; the handwriting download failure in the before run (page-level route missed the worker's fetch; re-captured in the after run with the context offline).
+
+## After the polish pass (branch app/ux-polish)
+
+Screenshots: `/tmp/check-transcriber-ux/after/<size>/`, same driver and scene. Timeline and layout metrics in `timeline.json` beside them.
+
+| Gap | What closed it |
+|---|---|
+| 1. Silent processing | Progress panel (`js/progress_panel.js`): animated scan glyph, plain stage copy (`js/progress_copy.js`: "Looking for checks…", "Straightening check 3 of 5…", "Reading the printed fields…", "Reading handwriting… (this takes a moment)"), a determinate bar during Continue (checks straightened + read), a sliding bar when not countable, "Still working, large photo" after 4 s, "All 5 checks read" on completion. It moves to the top of the review step on Continue. Unread fields and crops shimmer; values fade in. |
+| 2. Count photo below the fold | `count_step.js fitPhotoFrameToWindow`: at 1366x768 the whole photo and every outline are visible after the step scrolls into view; Continue's bottom edge sits at 84 px. |
+| 3. "First time, 46 MB" on return visits | Readiness copy checks `navigator.serviceWorker.controller`; return and offline visits say "Getting ready…". |
+| 4. Photo acknowledgement | "Opening the photo…" the instant a file lands, then a fading-in thumbnail and "Photo received"; the photo itself appears at once, dimmed with a light sweeping across it, exactly where the outlines will land. A small-preview warning shows only when the long side is under 1500 px. |
+| 5. Page-wide drag target | Whole-page overlay "Drop the photo anywhere"; drops anywhere are taken in, so a near miss never navigates away. |
+| 6. Field-state meaning | "What the colours mean, and shortcuts" hint with miniature fields (plain / amber / empty amber), plus the review summary "21 fields need a look (amber)" and a tooltip on every amber field. |
+| 7. Contrast | Placeholder 5.2:1, amber outline 3.3:1, amber text 5.2:1, copy icon 4.1:1, step labels 5.0:1. |
+| 8. Rotate feedback | "Reading this check again…" and shimmering untouched fields until the re-read lands; an info toast if it fails. |
+| 9. Errors | Each says what to do: unsupported file (with the Gmail recipe), undecodable photo, zero checks ("I couldn't find any checks. Try a photo on a plainer background… or add them by hand"), engine failure card with a primary Retry, mid-batch failures with a Start over button, a photo waiting on failed tools says so. |
+| 10. First-run hints | Three `<details>` hints, auto-open for 3 sessions unless "Got it", then a one-line link (`js/first_run_hints.js`, stored through LocalStore). |
+| 11. Busy and disabled states | Continue becomes a spinner "Straightening…" and ignores a second press; disabled Continue says why on hover; the count note says what to do right now (drawing, a check selected). |
+| 12. Completion moments | "All N checks read" in the panel; a success card "N checks recorded. Ready for the next photo." after Finish. |
+| 13. Toast | One style, tick or info icon, bottom centre, time scales with length; Copy row adds "Check 2 copied. Paste it into your tracker with Ctrl+V." |
+| 14. Settings | Title row with Close (and Esc), one-line explanation per group, empty payee state, download bar, red failure text, fixed three columns. |
+| 15-17. Polish | `:focus-visible` rings, reduced motion honoured, badges on the check's top edge with a white ring, SVG copy icon with a tick flash, numbered step discs with ticks for finished steps. |
+
+Found while verifying: the count-step note changed height at pointer-down (the drawing instructions only appeared mid-drag), shifting the photo 21 px under the pointer; the milestone refit test caught it (18.7 px error vs 0.0 on main). The note now updates when the mode changes and reserves two lines.
+
+### Second round (fresh Opus reviewer, no P0)
+
+- P1: engines failing with a pasted photo is one panel message with Retry ("Your photo is kept"), and Retry continues that photo; HEIC and non-photos are refused before any question, as an info toast when a batch is open; the photo shows dimmed and scanning in the count step's place while the checks are found, then brightens and the outlines fade in 120 ms apart, with no layout or scroll jump (measured: photo top 220 px before and after).
+- P2: numbers sit just outside each check's top edge; window.confirm is replaced by an inline bar in the photo strip ("Replace these 4 checks with the new photo?" Keep working / Replace), holding the new file; settings lay out by the panel's own width (container query), Handwriting full width under 900 px; shorter count notes.
+- P3: one done message; toasts cleared on Finish and Start over; "Photo received" without pixel sizes; outlines keyboard-reachable.
+- Resolved ambiguity: the regression tests accepted window.confirm through dialog handlers. Their files and assertions are unchanged; the shared `paste_image_file` helper answers the inline bar instead, and a replaced batch's timing starts when she answers.

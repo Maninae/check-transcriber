@@ -17,7 +17,8 @@
 
 .settings-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  container-type: inline-size; /* the groups below lay out by the panel's own width */
   gap: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
   margin: calc(var(--spacing-unit) * -2) 0 calc(var(--spacing-unit) * 3);
   padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 2.5);
@@ -220,7 +221,6 @@
 
 /* The panel's own header row spans all three columns: title, "saved on this computer", Close. */
 .settings-panel-header {
-  grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
   gap: calc(var(--spacing-unit) * 1.5);
@@ -274,10 +274,31 @@
   color: var(--color-error);
 }
 
-@media (max-width: 640px) {
-  .settings-panel {
+/* Three columns on the wide page; under 900 px of panel, two, with Handwriting (the
+   longest group) across the full width underneath. */
+.settings-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
+}
+
+@container (max-width: 900px) {
+  .settings-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-group--handwriting {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 480px) {
+  .settings-groups {
     grid-template-columns: 1fr;
   }
+}
+
+.settings-danger-button {
+  white-space: nowrap;
 }
 
 .settings-status[data-tone="error"] {

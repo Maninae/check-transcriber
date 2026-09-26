@@ -35,6 +35,6 @@ export function describeCountHeader(quads, wasEdited) {
   }
   return {
     heading,
-    note: "Give the amber outlines a second look. Add a missed check, click an outline to remove it, or drag a corner to adjust. Then press Continue.",
+    note: "Give the amber outlines a second look, then press Continue.",
   };
 }

@@ -165,10 +165,11 @@ def main() -> None:
                 page, diagnostic_log, "#photo-preview-container:not([hidden])", SHORT_WAIT_TIMEOUT_MS,
                 reason="photo preview never appeared after uploading oriented.jpg",
             )
-            photo_received_text = page.locator("#photo-received-line").inner_text()
+            photo_received_line = page.locator("#photo-received-line")
+            decoded_size = (photo_received_line.get_attribute("data-photo-width"), photo_received_line.get_attribute("data-photo-height"))
             check.that(
-                "oriented JPEG (400x300 stored, EXIF orientation 6) reports rotated 300 x 400",
-                photo_received_text == "Photo received: 300 x 400",
+                f"oriented JPEG (400x300 stored, EXIF orientation 6) decodes rotated to 300 x 400 ({decoded_size})",
+                photo_received_line.inner_text() == "Photo received" and decoded_size == ("300", "400"),
             )
 
             page.screenshot(path=str(SCREENSHOT_DIR / "check-transcriber-post-upload.png"))
@@ -177,6 +178,8 @@ def main() -> None:
             # --- Start Over, then the HEIC path: paste-equivalent via file input, expect the hint ---
             page.on("dialog", lambda dialog: dialog.accept())
             page.click("#start-over-button")
+            if page.locator("#replace-confirm-yes").is_visible():  # the inline "start over?" bar, when there is work to lose
+                page.click("#replace-confirm-yes")
             wait_or_dump(
                 page, diagnostic_log, "#drop-zone-prompt:not([hidden])", SHORT_WAIT_TIMEOUT_MS,
                 reason="drop zone prompt never reappeared after Start Over",

@@ -22,7 +22,7 @@ import { HINT_KEYS } from "./first_run_hints.js";
 
 const DETECTION_FAILED_MESSAGE = "Something went wrong finding the checks. Start over and paste the photo again.";
 const STRAIGHTENING_FAILED_MESSAGE = "Something went wrong straightening the checks. Start over and paste the photo again.";
-const ENGINES_FAILED_WHILE_WAITING_MESSAGE = "Your photo is waiting, but the check-reading tools didn't load. Press Retry below.";
+const ENGINES_FAILED_WHILE_WAITING_MESSAGE = "Couldn't load the check-reading tools. Your photo is kept. Check the internet, then press Retry.";
 
 function scrollBehavior() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
@@ -47,6 +47,8 @@ export class BatchFlow {
     this.orientedQuads = [];
     this.batchToken = 0; // bumped per Continue and per clear; read-chain callbacks from older batches are dropped
     this.readsRunning = false; // Continue's crop-and-read chain is still going
+    this.retryEngines = null; // set while the engines have failed to load: Retry for a waiting photo
+    this.summaryHeld = false; // the panel's "All N checks read" is showing; the heading line waits
     this.reviewGrid.onFieldStatesChanged = () => this.updateReviewSummary();
     window.addEventListener("beforeunload", (event) => this.guardUnload(event));
   }
@@ -54,6 +56,7 @@ export class BatchFlow {
   /** Called once the engines are ready; runs any photo that arrived before that. */
   setPipelineClient(pipelineClient) {
     this.pipelineClient = pipelineClient;
+    this.retryEngines = null;
     const waiters = this.enginesWaiters;
     this.enginesWaiters = [];
     waiters.forEach((run) => run());
@@ -66,12 +69,34 @@ export class BatchFlow {
   setStep(step, checkCount = null) {
     this.step = step;
     this.stepIndicator.show(step, checkCount);
-    this.pageElement.classList.toggle("page--wide", step === "count" || step === "review");
+    // Wide from the moment a photo lands, so the photo appears at its final size (no jump at the count step).
+    this.pageElement.classList.toggle("page--wide", step !== null);
   }
 
-  /** The engines failed to load (main.js offers Retry); a photo waiting on them says so. */
-  onEnginesFailed() {
-    if (this.enginesWaiters.length > 0) this.progressPanel.showError(ENGINES_FAILED_WHILE_WAITING_MESSAGE);
+  /** How many checks a replace or Start over would throw away (0: nothing worth a question). */
+  countChecksAtStake() {
+    if (this.step === "review") return this.reviewGrid.getCheckCount();
+    if (this.step === "count") return this.countStep.quads.length;
+    return 0;
+  }
+
+  /**
+   * The engines failed to load. `retry()` loads them again (main.js). A photo waiting on
+   * them gets one message with its own Retry, and the kept photo continues once they load.
+   */
+  onEnginesFailed(retry) {
+    this.retryEngines = retry;
+    if (this.enginesWaiters.length > 0) this.showEnginesFailedInPanel();
+  }
+
+  showEnginesFailedInPanel() {
+    this.onEngineFailureShownInPanel?.();
+    this.progressPanel.showError(ENGINES_FAILED_WHILE_WAITING_MESSAGE, "Retry", () => {
+      const retry = this.retryEngines;
+      this.retryEngines = null;
+      this.progressPanel.showStage(STAGE_COPY.waitingForTools);
+      if (retry) retry();
+    });
   }
 
   showFailure(message) {
@@ -80,7 +105,8 @@ export class BatchFlow {
 
   /** The line beside the review heading: still reading, or what is left to look at. */
   updateReviewSummary() {
-    if (this.step !== "review") {
+    // One message at a time: while the progress panel speaks, the heading line stays quiet.
+    if (this.step !== "review" || this.readsRunning || this.summaryHeld) {
       this.reviewSummaryElement.textContent = "";
       return;
     }
@@ -102,9 +128,18 @@ export class BatchFlow {
     this.timings = { photoArrivedAt };
     this.detectedQuads = null;
     this.setStep("photo");
+    // Her photo, dimmed with a light sweeping over it, where the outlines will appear: the
+    // progress panel sits in the count heading's place, so nothing moves when they land.
+    this.hints.present(HINT_KEYS.FIX_OUTLINES);
+    this.countStep.showScanning(fullResCanvas);
+    this.progressPanel.placeAtStartOf(this.countStep.dom.sectionElement);
+    this.countStep.dom.sectionElement.scrollIntoView({ behavior: "auto", block: "start" });
     const run = () => this.detect(fullResCanvas);
     if (this.pipelineClient) {
       run();
+    } else if (this.retryEngines) {
+      this.enginesWaiters.push(run);
+      this.showEnginesFailedInPanel();
     } else {
       this.progressPanel.showStage(STAGE_COPY.waitingForTools);
       this.enginesWaiters.push(run);
@@ -121,11 +156,9 @@ export class BatchFlow {
         if (fullResCanvas !== this.fullResCanvas) return; // replaced while detecting
         this.detectedQuads = detections.map(({ corners }) => corners);
         this.progressPanel.hide();
+        this.progressPanel.returnHome();
         this.setStep("count", detections.length);
-        this.hints.present(HINT_KEYS.FIX_OUTLINES);
-        this.countStep.show(fullResCanvas, detections);
-        // Instant, not smooth: the photo must not slide under the pointer while she reaches for a corner.
-        this.countStep.dom.sectionElement.scrollIntoView({ behavior: "auto", block: "start" });
+        this.countStep.show(fullResCanvas, detections); // un-dims the photo; outlines fade in one by one
         this.timings.countStepShownAt = performance.now();
       })
       .catch((error) => {
@@ -188,8 +221,13 @@ export class BatchFlow {
       if (!isCurrent()) return;
       this.readsRunning = false;
       this.countStep.setBusy(false);
-      this.progressPanel.showDone(`All ${pluralizeChecks(checkCount)} read`);
-      this.updateReviewSummary();
+      const counts = this.reviewGrid.countFieldStates();
+      const doneSummary = describeReviewSummary({ checkCount, unreadFieldCount: 0, flaggedFieldCount: counts.flagged, handwritingPending: false });
+      this.summaryHeld = true;
+      this.progressPanel.showDone(doneSummary.text, () => {
+        this.summaryHeld = false;
+        this.updateReviewSummary();
+      });
       this.timings.gridCompleteAt = performance.now();
     }).catch((error) => {
       if (!isCurrent()) return;
@@ -215,6 +253,7 @@ export class BatchFlow {
     this.reviewGrid.clear();
     this.reviewSection.hidden = true;
     this.readsRunning = false;
+    this.summaryHeld = false;
     this.progressPanel.hide();
     this.progressPanel.returnHome();
     this.hints.withdraw(HINT_KEYS.FIX_OUTLINES);

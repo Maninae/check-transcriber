@@ -64,6 +64,7 @@ const APP_SHELL_PATHS = [
   "./js/image_decode.js",
   "./js/input_doors.js",
   "./js/main.js",
+  "./js/photo_intake.js",
   "./js/pipeline/check_pipeline_stage.js",
   "./js/pipeline/check_rectification.js",
   "./js/pipeline/classical/candidates/adjacent_cell_merging.js",

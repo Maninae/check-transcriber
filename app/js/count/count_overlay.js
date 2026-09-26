@@ -9,6 +9,7 @@
  * Every interactive element carries data attributes that count_step.js dispatches on.
  */
 
+import { computeQuadCentre } from "../pipeline/quadrilateral_math.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const HANDLE_RADIUS_SCREEN_PX = 6;
@@ -17,6 +18,7 @@ const BADGE_RADIUS_SCREEN_PX = 16;
 const BADGE_FONT_SCREEN_PX = 17;
 const REMOVE_BUTTON_RADIUS_SCREEN_PX = 12;
 const BADGE_ALONG_EDGE_RADII = 2.2; // badge centre's distance from the top-left corner, in badge radii
+const BADGE_GAP_SCREEN_PX = 3; // between the badge and the check's top edge
 
 function createSvgElement(tagName, attributes) {
   const element = document.createElementNS(SVG_NAMESPACE, tagName);
@@ -37,25 +39,44 @@ function findTopRightCorner(corners) {
   return corners.reduce((best, corner) => (corner[0] - corner[1] > best[0] - best[1] ? corner : best));
 }
 
-function drawNumberBadge(svgElement, quad, number, pixelsPerScreenPx, imageWidth, imageHeight) {
+/**
+ * The number sits just OUTSIDE the check, above its top edge (along the edge's outward
+ * normal, radius + a small gap), a little in from the top-left corner: it never covers
+ * the payer name printed top-left, nor the corner handle. When the photo frame would clip
+ * it (a check at the very top), it goes just inside the edge instead.
+ */
+function drawNumberBadge(svgElement, quad, number, index, pixelsPerScreenPx, imageWidth, imageHeight) {
   const [leftX, leftY] = findTopLeftCorner(quad.corners);
   const [rightX, rightY] = findTopRightCorner(quad.corners);
+  const [centreX, centreY] = computeQuadCentre(quad.corners);
   const radius = BADGE_RADIUS_SCREEN_PX * pixelsPerScreenPx;
-  // On the top edge, a little in from the top-left corner: over the check's blank top
-  // margin (not the payer name) and clear of the corner handle.
   const edgeLength = Math.hypot(rightX - leftX, rightY - leftY) || 1;
   const along = Math.min(radius * BADGE_ALONG_EDGE_RADII, edgeLength / 2);
   const edgeX = leftX + ((rightX - leftX) / edgeLength) * along;
   const edgeY = leftY + ((rightY - leftY) / edgeLength) * along;
-  // Kept fully inside the photo, so a check cut off by the frame edge still shows its number.
-  const badgeX = Math.min(Math.max(edgeX, radius), imageWidth - radius);
-  const badgeY = Math.min(Math.max(edgeY, radius), imageHeight - radius);
-  svgElement.append(
-    createSvgElement("circle", { class: "count-number-badge", cx: badgeX, cy: badgeY, r: radius, "pointer-events": "none" }),
-  );
+  // Unit normal of the top edge, flipped to point away from the check's centre.
+  let normalX = (rightY - leftY) / edgeLength;
+  let normalY = -(rightX - leftX) / edgeLength;
+  if (normalX * (centreX - edgeX) + normalY * (centreY - edgeY) > 0) {
+    normalX = -normalX;
+    normalY = -normalY;
+  }
+  const offset = radius + BADGE_GAP_SCREEN_PX * pixelsPerScreenPx;
+  const fitsInFrame = (x, y) => x - radius >= 0 && y - radius >= 0 && x + radius <= imageWidth && y + radius <= imageHeight;
+  let badgeX = edgeX + normalX * offset;
+  let badgeY = edgeY + normalY * offset;
+  if (!fitsInFrame(badgeX, badgeY)) {
+    badgeX = edgeX - normalX * offset;
+    badgeY = edgeY - normalY * offset;
+  }
+  // Still kept fully inside the photo, so a check cut off by the frame edge shows its number.
+  badgeX = Math.min(Math.max(badgeX, radius), imageWidth - radius);
+  badgeY = Math.min(Math.max(badgeY, radius), imageHeight - radius);
+  const badge = createSvgElement("circle", { class: "count-number-badge", cx: badgeX, cy: badgeY, r: radius, "pointer-events": "none" });
   const label = createSvgElement("text", { class: "count-number-text", x: badgeX, y: badgeY, "font-size": BADGE_FONT_SCREEN_PX * pixelsPerScreenPx });
   label.textContent = String(number);
-  svgElement.append(label);
+  for (const element of [badge, label]) element.style.setProperty("--quad-index", String(index));
+  svgElement.append(badge, label);
 }
 
 function drawRemoveButton(svgElement, quad, pixelsPerScreenPx) {
@@ -75,21 +96,30 @@ function drawRemoveButton(svgElement, quad, pixelsPerScreenPx) {
  * selectedQuadId, drawRectangle }`; each quad is `{ id, corners, confident, pending }`
  * and quads are already in reading order (number = position + 1).
  */
-export function renderCountOverlay(svgElement, { imageWidth, imageHeight, displayScale, quads, selectedQuadId, drawRectangle }) {
+export function renderCountOverlay(svgElement, { imageWidth, imageHeight, displayScale, quads, selectedQuadId, drawRectangle, isLocked = false }) {
   svgElement.setAttribute("viewBox", `0 0 ${imageWidth} ${imageHeight}`);
   svgElement.replaceChildren();
   const pixelsPerScreenPx = 1 / displayScale;
 
   // One group per quad (outline + its corner handles) so CSS can reveal the handles on
   // hover; transparent handles still take the pointer, so dragging a corner is one step.
-  quads.forEach((quad) => {
+  quads.forEach((quad, index) => {
     const isSelected = quad.id === selectedQuadId;
     const group = createSvgElement("g", { class: isSelected ? "count-quad count-quad--selected" : "count-quad" });
+    group.style.setProperty("--quad-index", String(index)); // staggers the fade-in when the outlines first appear
     const classNames = ["count-outline"];
     if (!quad.confident) classNames.push("count-outline--unsure");
     if (isSelected) classNames.push("count-outline--selected");
     if (quad.pending) classNames.push("count-outline--pending");
-    group.append(createSvgElement("polygon", { class: classNames.join(" "), points: pointsAttribute(quad.corners), "data-quad-id": quad.id }));
+    // A keyboard target too: Tab to it, Enter selects, Delete removes (count_step.js).
+    group.append(createSvgElement("polygon", {
+      class: classNames.join(" "),
+      points: pointsAttribute(quad.corners),
+      "data-quad-id": quad.id,
+      tabindex: isLocked ? -1 : 0,
+      role: "button",
+      "aria-label": `Check ${index + 1} outline${isSelected ? ", selected: press Delete to remove it" : ""}`,
+    }));
     if (!quad.pending) {
       const radius = (isSelected ? SELECTED_HANDLE_RADIUS_SCREEN_PX : HANDLE_RADIUS_SCREEN_PX) * pixelsPerScreenPx;
       quad.corners.forEach(([x, y], cornerIndex) => {
@@ -99,7 +129,7 @@ export function renderCountOverlay(svgElement, { imageWidth, imageHeight, displa
     svgElement.append(group);
   });
   // Numbers last, so no handle or neighbouring outline covers them.
-  quads.forEach((quad, index) => drawNumberBadge(svgElement, quad, index + 1, pixelsPerScreenPx, imageWidth, imageHeight));
+  quads.forEach((quad, index) => drawNumberBadge(svgElement, quad, index + 1, index, pixelsPerScreenPx, imageWidth, imageHeight));
   const selectedQuad = quads.find((quad) => quad.id === selectedQuadId);
   if (selectedQuad) drawRemoveButton(svgElement, selectedQuad, pixelsPerScreenPx);
   if (drawRectangle) {

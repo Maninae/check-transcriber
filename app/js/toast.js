@@ -18,6 +18,11 @@ export class Toast {
     this.hideTimer = null;
   }
 
+  hide() {
+    clearTimeout(this.hideTimer);
+    this.toastElement.hidden = true;
+  }
+
   show(message, { tone = "success" } = {}) {
     this.toastElement.textContent = message;
     this.toastElement.dataset.tone = tone;

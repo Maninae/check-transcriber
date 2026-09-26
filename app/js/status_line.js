@@ -18,6 +18,7 @@ export class EngineStatusLine {
 
   showLoading(message) {
     this.containerElement.hidden = false;
+    this.containerElement.classList.remove("engine-status--deferred");
     this.containerElement.classList.remove("engine-status--error");
     this.textElement.textContent = message;
     this.retryButtonElement.hidden = true;
@@ -26,6 +27,15 @@ export class EngineStatusLine {
   /** Ready means nothing left to report — the line goes away so the drop zone stays the one thing on the page. */
   showReady() {
     this.containerElement.hidden = true;
+  }
+
+  /**
+   * A waiting photo's progress panel is saying the same thing, with its own Retry: step
+   * aside so there is one message, not two. (A CSS class, not `hidden`: `[hidden]` on this
+   * element is what the tests read as "ready".)
+   */
+  deferToPanel() {
+    this.containerElement.classList.add("engine-status--deferred");
   }
 
   /** A plain card with a Retry button; the sliding readiness bar goes away (nothing is loading). */

@@ -15,6 +15,7 @@
 
 const SLOW_STAGE_MS = 4000;
 const SLOW_CHECK_INTERVAL_MS = 500;
+const DONE_VISIBLE_MS = 3000; // long enough to read "All 6 checks read. 3 fields need a look (amber)."
 
 export class ProgressPanel {
   /** `elements`: `{ panelElement, headlineElement, detailElement, barElement, trackElement, actionButton }`. */
@@ -101,7 +102,7 @@ export class ProgressPanel {
   }
 
   /** The work finished: a full bar and `message` for a moment, then the panel folds away. */
-  showDone(message, visibleMs = 1600) {
+  showDone(message, onFolded = null, visibleMs = DONE_VISIBLE_MS) {
     this.stopSlowTimer();
     this.clearAction();
     this.panelElement.hidden = false;
@@ -111,8 +112,13 @@ export class ProgressPanel {
     this.detailElement.hidden = true;
     this.setFraction(1);
     clearTimeout(this.doneTimer);
-    this.doneTimer = setTimeout(() => { if (this.panelElement.dataset.tone === "done") this.hide(); }, visibleMs);
+    this.doneTimer = setTimeout(() => {
+      if (this.panelElement.dataset.tone !== "done") return;
+      this.hide();
+      onFolded?.();
+    }, visibleMs);
   }
+
 
   /** A failure she can act on: `message` plus one button (`actionLabel`, `onAction`). */
   showError(message, actionLabel = null, onAction = null) {

@@ -92,6 +92,7 @@
       <p class="settings-panel-subtitle">Saved on this computer only.</p>
       <button id="settings-close-button" type="button" class="quiet-button settings-small-button">Close</button>
     </div>
+    <div class="settings-groups">
     <div class="settings-group">
       <h2 class="settings-heading">Show dates as</h2>
       <p class="settings-help">How dates look on this page.</p>
@@ -121,7 +122,7 @@
       </form>
     </div>
 
-    <div class="settings-group">
+    <div class="settings-group settings-group--handwriting">
       <h2 class="settings-heading">Handwriting</h2>
       <label class="settings-switch">
         <input id="handwriting-switch" type="checkbox" role="switch" />
@@ -140,6 +141,7 @@
       <h2 class="settings-heading">Remembered on this computer</h2>
       <p class="settings-help">Payer names, check numbers with their payer and date, and these settings. Never the photos.</p>
       <button id="clear-everything-button" type="button" class="quiet-button settings-small-button settings-danger-button">Clear everything this page remembers</button>
+    </div>
     </div>
   </section>
 
@@ -164,6 +166,12 @@
           <p id="photo-received-subline" class="photo-received-subline"></p>
         </div>
         <button id="start-over-button" type="button" class="start-over-button" title="Clear this photo and its checks, and start again">Start over</button>
+      </div>
+
+      <div id="replace-confirm" class="replace-confirm" role="group" aria-labelledby="replace-confirm-text" hidden>
+        <p id="replace-confirm-text" class="replace-confirm-text" role="status"></p>
+        <button id="replace-confirm-no" type="button" class="quiet-button">Keep working</button>
+        <button id="replace-confirm-yes" type="button" class="primary-button">Replace</button>
       </div>
     </div>
 
