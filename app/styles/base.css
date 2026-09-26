@@ -102,3 +102,74 @@ body {
   font-size: 0.9rem;
   text-align: center;
 }
+
+/* The count and review steps need room for a full-width photo and a 500 px crop
+   beside its fields; the empty drop zone keeps the narrow, calm column. */
+.page--wide {
+  max-width: 1180px;
+}
+
+.primary-button,
+.quiet-button {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primary-button {
+  color: #ffffff;
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+.primary-button:hover {
+  filter: brightness(1.08);
+}
+
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
+.quiet-button {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.quiet-button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.quiet-button[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.pipeline-progress-line,
+.batch-recorded-line {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--spacing-unit) * 4);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2.5);
+  background: var(--color-text);
+  color: var(--color-background);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  z-index: 30;
+}

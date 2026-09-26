@@ -1,9 +1,8 @@
 /**
- * Wires the page together: grabs the DOM elements, starts engine loading, hooks up
- * the three input doors, and handles the decode-and-preview flow. This is the only
- * module that touches multiple other modules — everything else is a leaf that only
- * knows its own piece (input doors don't know about HEIC, HEIC detection doesn't
- * know about canvases, and so on).
+ * Wires the page together: grabs the DOM, starts the engines, hooks up the three input
+ * doors, and hands each decoded photo to the batch flow (batch_flow.js), which drives
+ * the count step (count/) and the review grid (review/) through the pipeline worker
+ * (pipeline/). Everything else is a leaf that only knows its own piece.
  */
 
 import { initializeInputDoors } from "./input_doors.js";
@@ -11,6 +10,12 @@ import { isLikelyHeicImage } from "./heic_detect.js";
 import { decodeAndOrientImage } from "./image_decode.js";
 import { loadProcessingEngines, READINESS_MESSAGE, FAILURE_MESSAGE } from "./engine_loader.js";
 import { EngineStatusLine } from "./status_line.js";
+import { StepIndicator } from "./step_indicator.js";
+import { Toast } from "./toast.js";
+import { BatchFlow } from "./batch_flow.js";
+import { CountStep } from "./count/count_step.js";
+import { ReviewGrid } from "./review/review_grid.js";
+import { Lightbox } from "./review/lightbox.js";
 
 const ACCEPTED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -23,11 +28,6 @@ const URL_ONLY_DROP_HINT_MESSAGE =
   "photo and choose Copy image, then paste here (Ctrl+V) instead.";
 const START_OVER_CONFIRM_MESSAGE = "Start over with a new photo? The current batch will be cleared.";
 
-// Holds the two canvases produced by image_decode.js for the currently loaded photo.
-// Milestone 2 hook: the detection stage (contour finding on `workingCanvas`) attaches
-// here, reading `currentPhoto.workingCanvas` once the count step is built.
-const currentPhoto = { fullResCanvas: null, workingCanvas: null };
-
 function queryRequiredElement(id) {
   const element = document.getElementById(id);
   if (!element) {
@@ -38,11 +38,11 @@ function queryRequiredElement(id) {
 
 function initializeDom() {
   return {
+    pageElement: document.querySelector(".page"),
     dropZoneElement: queryRequiredElement("drop-zone"),
     dropZonePromptElement: queryRequiredElement("drop-zone-prompt"),
     fileInputElement: queryRequiredElement("file-input"),
     previewContainerElement: queryRequiredElement("photo-preview-container"),
-    previewCanvasElement: queryRequiredElement("photo-preview-canvas"),
     photoReceivedLineElement: queryRequiredElement("photo-received-line"),
     startOverButtonElement: queryRequiredElement("start-over-button"),
     hintLineElement: queryRequiredElement("input-hint-line"),
@@ -52,6 +52,57 @@ function initializeDom() {
       retryButtonElement: queryRequiredElement("engine-status-retry"),
     }),
   };
+}
+
+function createBatchFlow(dom) {
+  const toast = new Toast(queryRequiredElement("toast"));
+  let batchFlow = null;
+  const reviewGrid = new ReviewGrid({
+    rowsContainerElement: queryRequiredElement("review-rows"),
+    headingElement: queryRequiredElement("review-heading"),
+    toast,
+    onOpenLightbox: (index) => lightbox.open(index),
+    onRowsChanged: () => {},
+  });
+  const lightbox = new Lightbox({
+    lightboxElement: queryRequiredElement("lightbox"),
+    stageElement: queryRequiredElement("lightbox-stage"),
+    canvasElement: queryRequiredElement("lightbox-canvas"),
+    captionElement: queryRequiredElement("lightbox-caption"),
+    previousButton: queryRequiredElement("lightbox-previous"),
+    nextButton: queryRequiredElement("lightbox-next"),
+    rotateButton: queryRequiredElement("lightbox-rotate"),
+    closeButton: queryRequiredElement("lightbox-close"),
+  }, reviewGrid);
+  const countStep = new CountStep({
+    sectionElement: queryRequiredElement("count-step"),
+    headingElement: queryRequiredElement("count-step-heading"),
+    noteElement: queryRequiredElement("count-step-note"),
+    photoCanvas: queryRequiredElement("count-photo-canvas"),
+    overlayElement: queryRequiredElement("count-overlay"),
+    addCheckButton: queryRequiredElement("add-check-button"),
+    continueButton: queryRequiredElement("count-continue-button"),
+  }, {
+    refitDrawnRectangle: (drawnCorners, otherCornerSets) => batchFlow.pipelineClient.refitDrawnRectangle(drawnCorners, otherCornerSets),
+    onContinue: (cornerSets) => batchFlow.continueToReview(cornerSets),
+    onCountChanged: (count) => { if (batchFlow.step === "count") batchFlow.stepIndicator.show("count", count); },
+  });
+  batchFlow = new BatchFlow({
+    countStep,
+    reviewGrid,
+    stepIndicator: new StepIndicator(queryRequiredElement("step-indicator")),
+    progressLine: queryRequiredElement("pipeline-progress-line"),
+    recordedLine: queryRequiredElement("batch-recorded-line"),
+    reviewSection: queryRequiredElement("review-step"),
+    pageElement: dom.pageElement,
+  });
+  queryRequiredElement("copy-all-top-button").addEventListener("click", () => reviewGrid.copyAllRows());
+  queryRequiredElement("copy-all-bottom-button").addEventListener("click", () => reviewGrid.copyAllRows());
+  queryRequiredElement("finish-batch-button").addEventListener("click", () => {
+    batchFlow.finish();
+    resetToEmptyDropZone(dom, batchFlow);
+  });
+  return batchFlow;
 }
 
 function showHint(dom, message) {
@@ -64,41 +115,31 @@ function clearHint(dom) {
   dom.hintLineElement.textContent = "";
 }
 
-function hasPhotoLoaded() {
-  return currentPhoto.fullResCanvas !== null;
-}
-
-/** Draws the decoded photo, shows its dimensions, and reveals the Start Over control. */
-function showDecodedPhoto(dom, { fullResCanvas, workingCanvas, width, height }) {
-  currentPhoto.fullResCanvas = fullResCanvas;
-  currentPhoto.workingCanvas = workingCanvas;
-
-  const displayContext = dom.previewCanvasElement.getContext("2d");
-  dom.previewCanvasElement.width = width;
-  dom.previewCanvasElement.height = height;
-  displayContext.drawImage(fullResCanvas, 0, 0);
-
+/** Shrinks the drop zone to one line with the photo's size and Start over. */
+function showPhotoReceived(dom, { width, height }) {
   dom.photoReceivedLineElement.textContent = `Photo received: ${width} x ${height}`;
   dom.dropZonePromptElement.hidden = true;
   dom.previewContainerElement.hidden = false;
+  dom.dropZoneElement.classList.add("drop-zone--compact");
 }
 
-function resetToEmptyDropZone(dom) {
-  currentPhoto.fullResCanvas = null;
-  currentPhoto.workingCanvas = null;
+function resetToEmptyDropZone(dom, batchFlow) {
+  if (batchFlow.hasOpenBatch()) batchFlow.clear();
   dom.previewContainerElement.hidden = true;
   dom.dropZonePromptElement.hidden = false;
+  dom.dropZoneElement.classList.remove("drop-zone--compact");
   clearHint(dom);
 }
 
 /**
  * Handles a File from any of the three input doors: rejects HEIC and unsupported
- * types with an explanatory hint, otherwise decodes, orients, and previews it.
+ * types with an explanatory hint, otherwise decodes, orients, and starts a batch.
  * `file` is deliberately not retained past this function — see image_decode.js's
  * module docstring for why that matters.
  */
-async function handleImageFile(dom, file) {
-  if (hasPhotoLoaded() && !window.confirm(START_OVER_CONFIRM_MESSAGE)) {
+async function handleImageFile(dom, batchFlow, file) {
+  const photoArrivedAt = performance.now();
+  if (batchFlow.hasOpenBatch() && !window.confirm(START_OVER_CONFIRM_MESSAGE)) {
     return;
   }
   clearHint(dom);
@@ -112,8 +153,12 @@ async function handleImageFile(dom, file) {
     return;
   }
 
+  if (batchFlow.hasOpenBatch()) batchFlow.clear();
   const decoded = await decodeAndOrientImage(file);
-  showDecodedPhoto(dom, decoded);
+  // The working copy was milestone 1's detection placeholder; the detector makes its own.
+  decoded.workingCanvas.width = 0;
+  showPhotoReceived(dom, decoded);
+  batchFlow.startWithPhoto(decoded.fullResCanvas, photoArrivedAt);
 }
 
 function handleNoUsableImage(dom, reason) {
@@ -124,32 +169,30 @@ function handleNoUsableImage(dom, reason) {
   }
 }
 
-function initializeStartOverButton(dom) {
+function initializeStartOverButton(dom, batchFlow) {
   dom.startOverButtonElement.addEventListener("click", () => {
     if (window.confirm(START_OVER_CONFIRM_MESSAGE)) {
-      resetToEmptyDropZone(dom);
+      resetToEmptyDropZone(dom, batchFlow);
     }
   });
 }
 
 /**
- * Loads OpenCV and Tesseract, reporting state through `dom.engineStatusLine`. Retry
- * re-runs this.
- *
- * Deliberately callback-style, not `await`ed: see the "CALLBACK STYLE IS
- * LOAD-BEARING" note at the top of engine_loader.js. `await loadProcessingEngines()`
- * looks like the obvious way to write this and will silently hang the entire page.
+ * Starts the engines, reporting state through `dom.engineStatusLine`. Retry re-runs this.
+ * Deliberately callback-style, not `await`ed: see the "CALLBACK STYLE IS LOAD-BEARING"
+ * note at the top of engine_loader.js.
  */
-function startEngineLoading(dom) {
+function startEngineLoading(dom, batchFlow) {
   dom.engineStatusLine.showLoading(READINESS_MESSAGE);
   loadProcessingEngines(
     (engines) => {
       console.log("OpenCV build info:\n" + engines.openCvBuildInfo);
       dom.engineStatusLine.showReady();
+      batchFlow.setPipelineClient(engines.pipelineClient);
     },
     (error) => {
       console.error("engine loading failed:", error);
-      dom.engineStatusLine.showError(FAILURE_MESSAGE, () => startEngineLoading(dom));
+      dom.engineStatusLine.showError(FAILURE_MESSAGE, () => startEngineLoading(dom, batchFlow));
     },
   );
 }
@@ -167,17 +210,20 @@ function registerServiceWorker() {
 
 function main() {
   const dom = initializeDom();
+  const batchFlow = createBatchFlow(dom);
+  // Read-only view for the Playwright tests (quads, step, timings; never pixels).
+  window.__checkTranscriberDebug = { describe: () => batchFlow.describeForDebug() };
 
   initializeInputDoors({
     dropZoneElement: dom.dropZoneElement,
     dropZonePromptElement: dom.dropZonePromptElement,
     fileInputElement: dom.fileInputElement,
-    onImageFile: (file) => handleImageFile(dom, file),
+    onImageFile: (file) => handleImageFile(dom, batchFlow, file),
     onNoUsableImage: (reason) => handleNoUsableImage(dom, reason),
   });
-  initializeStartOverButton(dom);
+  initializeStartOverButton(dom, batchFlow);
   registerServiceWorker();
-  startEngineLoading(dom);
+  startEngineLoading(dom, batchFlow);
 }
 
 document.addEventListener("DOMContentLoaded", main);

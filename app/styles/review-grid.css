@@ -1,0 +1,181 @@
+/**
+ * The review grid (spec 4.3): one row per check. The upright crop, about 500 px wide, is
+ * the payload and gets the left of every row; the hand-typed fields sit in a compact
+ * column to its right. Buttons are small and gray; done rows dim.
+ */
+
+.review-step {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 2);
+  margin-top: calc(var(--spacing-unit) * 3);
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.review-toolbar--bottom {
+  justify-content: flex-start;
+}
+
+.review-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.review-rows {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.review-row {
+  display: grid;
+  grid-template-columns: 500px minmax(0, 1fr) auto;
+  gap: calc(var(--spacing-unit) * 3);
+  align-items: start;
+  padding: calc(var(--spacing-unit) * 2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  transition: opacity 150ms ease;
+}
+
+.review-row--done {
+  opacity: 0.55;
+}
+
+.review-crop-column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-unit);
+}
+
+.review-crop-canvas {
+  width: 500px;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+  background: #ece6da;
+  cursor: zoom-in;
+}
+
+.review-crop-placeholder {
+  width: 500px;
+  aspect-ratio: 2.3;
+  border-radius: 4px;
+  background: #ece6da;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.review-row-number {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.review-crop-actions {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--spacing-unit) * 1.5);
+}
+
+.small-link-button {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 3px;
+}
+
+.small-link-button:hover {
+  color: var(--color-accent);
+}
+
+.review-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  gap: 6px calc(var(--spacing-unit) * 1);
+  align-items: center;
+}
+
+.review-field-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.review-field-input {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.review-field-input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  border-color: var(--color-accent);
+}
+
+.copy-icon-button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #aaa092;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.copy-icon-button:hover {
+  border-color: var(--color-border);
+  color: var(--color-accent);
+}
+
+.copy-icon-button--copied {
+  color: var(--color-accent);
+}
+
+.review-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(var(--spacing-unit) * 1.5);
+}
+
+.review-done-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.review-done-label input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}

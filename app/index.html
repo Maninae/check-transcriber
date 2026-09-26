@@ -18,17 +18,22 @@
     Emscripten embind bindings, which use `new Function` to build dynamic-call
     trampolines at load time — confirmed by testing the exact pinned build
     under this CSP; 'wasm-unsafe-eval' alone is not enough for this build.
-  - connect-src 'self' <CDN> data:: fetches our own app shell, the CDN files
-    Tesseract's worker loads at runtime (core WASM, language data), and the
-    data: URI OpenCV.js's loader fetches for its own inlined WASM binary.
-  - worker-src 'self' blob:: 'self' for this app's own future Web Worker (the
-    processing pipeline in spec section 5 runs off the main thread); blob: is
-    how Tesseract.js instantiates its worker (fetched, then run from a blob
-    URL, since a classic Worker can't be constructed directly from a
-    cross-origin script URL).
+  - connect-src 'self' <CDN> data:: fetches our own app shell and
+    models/upside_down_classifier.onnx, the CDN files Tesseract's worker and
+    onnxruntime-web load at runtime (core WASM, language data, ORT's .mjs glue
+    and .wasm), and the data: URI OpenCV.js's loader fetches for its own
+    inlined WASM binary. onnxruntime-web lives on the same pinned CDN origin, so
+    adding it widened nothing here.
+  - worker-src 'self' blob:: blob: is how both workers start. Tesseract.js runs
+    its worker from a blob URL, and js/pipeline/pipeline_client.js starts the
+    pipeline worker from a blob bootstrap ON PURPOSE: a blob worker inherits
+    this policy, while a worker loaded from its own .js URL takes its policy
+    from HTTP headers, which GitHub Pages cannot send (verified: a URL-loaded
+    worker could fetch any origin; the blob-bootstrapped one is blocked).
   - style-src 'self': every style lives in styles/*.css, no inline styles.
-  - img-src 'self' data:: the favicon below is a data: URI; every photo is
-    drawn to <canvas>, never <img>, so no other image source is needed.
+  - img-src 'self' data:: the favicon below is a data: URI; every photo and
+    check crop is drawn to <canvas>, never <img>, so no other image source is
+    needed (and no blob:/object URL of a photo ever exists).
   - font-src 'self': no webfont network dependency (system font stack only).
   - base-uri 'none', form-action 'none', object-src 'none',
     frame-ancestors 'none': no injected <base>, no form ever submits anywhere
@@ -52,11 +57,20 @@
 <link rel="stylesheet" href="./styles/base.css" />
 <link rel="stylesheet" href="./styles/drop-zone.css" />
 <link rel="stylesheet" href="./styles/status-line.css" />
+<link rel="stylesheet" href="./styles/step-indicator.css" />
+<link rel="stylesheet" href="./styles/count-step.css" />
+<link rel="stylesheet" href="./styles/review-grid.css" />
+<link rel="stylesheet" href="./styles/lightbox.css" />
 </head>
 <body>
 <div class="page">
   <header class="page-header">
     <h1 class="app-title">Check Transcriber</h1>
+    <ol id="step-indicator" class="step-indicator" hidden>
+      <li class="step-indicator-step" data-step="photo">Photo</li>
+      <li class="step-indicator-step" data-step="count">Count</li>
+      <li class="step-indicator-step" data-step="review">Review</li>
+    </ol>
   </header>
 
   <main class="page-main">
@@ -67,7 +81,6 @@
       </div>
 
       <div id="photo-preview-container" class="photo-preview-container" hidden>
-        <canvas id="photo-preview-canvas" class="photo-preview-canvas"></canvas>
         <p id="photo-received-line" class="photo-received-line"></p>
         <button id="start-over-button" type="button" class="start-over-button">Start over</button>
       </div>
@@ -76,6 +89,37 @@
     <input type="file" id="file-input" accept="image/*" hidden />
 
     <p id="input-hint-line" class="input-hint-line" hidden></p>
+    <p id="pipeline-progress-line" class="pipeline-progress-line" role="status" aria-live="polite" hidden></p>
+    <p id="batch-recorded-line" class="batch-recorded-line" hidden></p>
+
+    <section id="count-step" class="count-step" hidden>
+      <div class="count-step-header">
+        <div class="count-step-heading-group">
+          <h2 id="count-step-heading" class="count-step-heading"></h2>
+          <p id="count-step-note" class="count-step-note"></p>
+        </div>
+        <div id="count-step-actions" class="count-step-actions">
+          <button id="add-check-button" type="button" class="quiet-button">Add a check</button>
+          <button id="count-continue-button" type="button" class="primary-button">Continue</button>
+        </div>
+      </div>
+      <div id="count-photo-frame" class="count-photo-frame">
+        <canvas id="count-photo-canvas" class="count-photo-canvas"></canvas>
+        <svg id="count-overlay" class="count-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </section>
+
+    <section id="review-step" class="review-step" hidden>
+      <div class="review-toolbar">
+        <h2 id="review-heading" class="review-heading"></h2>
+        <button id="copy-all-top-button" type="button" class="primary-button">Copy all rows</button>
+      </div>
+      <div id="review-rows" class="review-rows"></div>
+      <div class="review-toolbar review-toolbar--bottom">
+        <button id="copy-all-bottom-button" type="button" class="primary-button">Copy all rows</button>
+        <button id="finish-batch-button" type="button" class="quiet-button">Finish batch</button>
+      </div>
+    </section>
 
     <p class="trust-sentence">Photos stay on this computer. Nothing is uploaded.</p>
 
@@ -85,6 +129,20 @@
     </div>
   </main>
 </div>
+
+<div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Check" hidden>
+  <div id="lightbox-stage" class="lightbox-stage">
+    <canvas id="lightbox-canvas" class="lightbox-canvas"></canvas>
+  </div>
+  <p id="lightbox-caption" class="lightbox-caption"></p>
+  <div class="lightbox-controls">
+    <button id="lightbox-previous" type="button" class="lightbox-button" aria-label="Previous check">&larr;</button>
+    <button id="lightbox-rotate" type="button" class="lightbox-button">Rotate</button>
+    <button id="lightbox-next" type="button" class="lightbox-button" aria-label="Next check">&rarr;</button>
+  </div>
+  <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close">&times;</button>
+</div>
+<p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
 
 <script type="module" src="./js/main.js"></script>
 </body>
