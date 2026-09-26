@@ -69,7 +69,9 @@ Ultralytics (the training code and the `yolo26n-obb.pt` pretrained weights) is A
 - (b) an Ultralytics Enterprise licence.
 - (c) the permissively licensed CenterNet detector we built (`learned/centernet/`: MobileNetV3 with BSD-3 code, ordered corners, no NMS, 13.1 MB ONNX with verified parity).
   - It is tested and overfit-checked, but not yet trained: about 2.5 GPU hours.
-  - Train it only if Owen rules out (a) and (b), or if hidden-corner accuracy in overlaps turns out to matter; its ordered-corner regression can predict a hidden corner, and a box cannot.
+  - Its ordered-corner regression can also predict a corner hidden under another check, which a box cannot.
+
+Decision (2026-09-26): the app repo is now AGPL-3.0, so option (a) applies and the YOLO model may ship. The permissive CenterNet will also be trained, so the project owns a licence-free detector; its eval row will be added here.
 
 ## Reproduce
 
