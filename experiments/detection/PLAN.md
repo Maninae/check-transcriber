@@ -38,3 +38,8 @@ Goal: from a phone photo of several checks on a household surface, return every 
   - Relaxing classical's area/angle limits changes nothing for plain classical (its single-check problems are printed inner boxes and misses), so its defaults are kept.
   - YOLO fine-tuned 4 epochs from best.pt on v1 + close-up train. Alone it lifts single recall to 100% but not the corners (raw 82 px: a box is not a trapezoid). With the hybrid it is the best learned pipeline on val. Frozen: `runs/obb/y26n_1024_closeup_ft` + hybrid + refine + orient.
   - CenterNet training on v1 + close-up train (768, batch 8, 12 epochs, ~0.8 s/step).
+- 2026-09-26: final close-up round scored once on v1 eval and close-up eval (REPORT.md, "Close-up round").
+  - The hybrid closes the single-check corner gap (p90 153 → 27 px). The YOLO fine-tune is within noise on counting.
+  - CenterNet (12 epochs, 768 px) is the best counter (99.5-100% of photos all-correct, orientation 100%) but its corners are coarse; duplicate suppression at 0.5 is needed.
+  - Bug found and fixed: pooled validation over two datasets collided on scene ids.
+  - Artifacts: YOLO fine-tune ONNX 10.2 MB; CenterNet ONNX 13.1 MB.

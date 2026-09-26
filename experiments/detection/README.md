@@ -7,8 +7,8 @@ Finds every check in a photo of checks lying on a household surface. Each check 
 | Pipeline | Stages | Licence of what ships |
 |---|---|---|
 | Classical | `classical/` (OpenCV, no model) → `refinement/` → `orientation/` | ours |
-| Learned | `learned/` YOLO26n-OBB → `refinement/` → `orientation/` | AGPL-3.0 (Ultralytics) |
-| Learned, permissive (not yet trained) | `learned/centernet/` MobileNetV3 + ordered corner offsets | ours + BSD-3 |
+| Learned (ships in 2b) | `learned/` YOLO26n-OBB → `pipeline/` hybrid → `refinement/` → `orientation/` | AGPL-3.0 (Ultralytics) |
+| Learned, permissive | `learned/centernet/` MobileNetV3 + ordered corner offsets | ours + BSD-3 |
 
 ## Commands (run from the repo root with the vega venv)
 
