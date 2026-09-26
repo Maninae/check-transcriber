@@ -23,6 +23,12 @@ CRNN-CTC recognizers trained from scratch, and TrOCR-small (zero-shot + fine-tun
 | `confidence_kind_selection.py` | which CTC confidence statistic gates best per field |
 | `real_car_scoring.py` | ORAND-CAR-2014 real courtesy amounts (CC BY-NC-ND; eval only) |
 | `run_prediction_queue.sh`, `run_training_queue.sh` | the MPS job sequences actually run |
+
+## Shipped methods (prediction ids)
+- `crnn_general`, `crnn_amount_route` (amount CRNN on amount_numeric): printed reader; synth handwriting = font recall.
+- `trocr_small_handwritten_zs_grey`: zero-shot TrOCR-small-handwritten with grey+autocontrast input (RGB input fails on real crops).
+- `u4_router` (non-oracle): amount -> max-confidence(TrOCR-hw-grey, amount CRNN); other fields -> style route.
+- `trocr_hwgrey_crnn_route_oraclehw`: ceiling using the GT handwritten flag (not shippable).
 | `reading_methods.py` | method registry: which reader reads which row (`_oraclehw` = uses GT handwritten flag) |
 | `field_crop_sources.py` | oracle crops vs localizer boxes (`crop_field_from_check`) |
 | `prediction_rows.py` | contract row dataclass + JSONL writer |
@@ -30,11 +36,17 @@ CRNN-CTC recognizers trained from scratch, and TrOCR-small (zero-shot + fine-tun
 | `selection_scoring.py` | method x field x slice tables via the metrics harness (val selection) |
 | `real_ssbi_scoring.py` | sanity scores on 78 real handwritten SSBI crops (CC BY-NC; never copy off vega) |
 | `onnx_export.py`, `onnx_benchmark.py` | ONNX fp32/int8 export; equivalence, size, CPU latency |
-| `mps_lock.py` | the area MPS lock as a context manager |
+| `mps_lock.py` | the area MPS lock as a context manager (writes `owner.txt`) |
+| `recognizer_paths.py` | leaf module: checkpoint / ONNX locations (keeps imports acyclic) |
+| `onnx_trocr_reader.py` | onnxruntime TrOCR reader (the browser path) for ONNX/int8 accuracy checks |
+| `handwriting_style_classifier.py` | printed-vs-handwritten CNN (185k params): the non-oracle routing signal |
+| `real_set_router_analysis.py` | routers scored on real crops (SSBI, ORAND-CAR): TrOCR share, top-50%-confidence accuracy |
 
 ## Gotchas
 - Synthetic handwriting (24 fonts) measures font recall, not handwriting: the CRNN wins synth val but collapses on real SSBI crops, where zero-shot TrOCR-hw (grey input) reads well. Judge handwriting on real crops.
 - MPS recompiles kernels for every new input shape: batches are padded to widths that are multiples of 128 (`MPS_WIDTH_MULTIPLE`). Without it training stalls in shader compilation.
+- Xenova's merged past-KV decoder returns (0, 8, 1, 32) placeholder encoder KV on cache steps: keep the step-0 cross-attention KV (`trocr_onnx_decoding`).
+- TrOCR int8 damage comes from the encoder: ship fp32 encoder + int8 decoder (128 MB), not full int8.
 - MPS has no CTC kernel: the loss runs on CPU; the network on MPS.
 - TrOCR decoding starts at `</s>` (id 2) and emits pieces + `</s>` (no `<s>`); fine-tune targets follow that layout.
 - The machine is shared: <= 2 workers, check `vm_stat`, every MPS job goes through `hold_mps_lock`.
