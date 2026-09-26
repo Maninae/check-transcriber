@@ -56,6 +56,15 @@ flowchart LR
 - `sweep_v1` then `sweep_v2` (after chroma edges) on the tuning slice; results in `<vega>/classical/sweep_v{1,2}/sweep_results.jsonl`. Frozen values are the config defaults, marked `tuned (sweep_vN)`.
 - Working resolution 1600 beat 1400 and 2000; the refinement radius was flat.
 
+## Results (frozen config, commit in `<vega>/classical/final/frozen_commit.txt`)
+
+| Split | P@0.5 | R@0.5 | R@0.75 | R@0.9 | Corner err mean / median px | Count acc | s/image |
+|-------|-------|-------|--------|-------|-----------------------------|-----------|---------|
+| val (750) | 96.7 | 93.6 | 91.8 | 88.3 | 7.9 / 2.6 | 76.0% | 1.0 |
+| eval (750, scored once) | 95.7 | 96.1 | 94.8 | 91.3 | 6.9 / 2.2 | 80.0% | 1.3 |
+
+Known failure modes: occluded checks in stacks (eval recall 82% when overlapped); smooth, neutral background blocks bounded by stripes (tartan, tile) read as paper; a hard hand-shadow edge can split a check and return only its lit piece; slivers mostly out of frame. `orientation_known` is always False and the start corner is the top-most-left one, so "axis accuracy" (~86%) is arbitrary; starting on a long side would fix it.
+
 ## Commands
 
 ```
