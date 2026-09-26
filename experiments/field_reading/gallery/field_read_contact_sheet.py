@@ -38,6 +38,7 @@ MONO_FONT_PATH = "/System/Library/Fonts/Menlo.ttc"
 CORRECT_COLOR = (20, 130, 60)
 WRONG_COLOR = (190, 40, 30)
 LABEL_COLOR = (130, 130, 130)
+MAX_SHOWN_READ_CHARACTERS = 46   # runaway hallucinations are cut with an ellipsis so they stay on the sheet
 METHOD_LABEL_WIDTH_PX = 190   # short method name column left of each read, so long reads never collide
 TEXT_COLOR = (20, 20, 20)
 JPEG_QUALITY = 82
@@ -78,14 +79,18 @@ def draw_tile(row: pd.Series, method_labels: list[str], fonts: dict) -> Image.Im
     scale = min(CROP_HEIGHT_PX / crop.height, CROP_MAX_WIDTH_PX / crop.width)
     tile.paste(crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))), Image.LANCZOS), (0, 0))
     draw = ImageDraw.Draw(tile)
-    header = f"{row.field_name}  {'handwritten' if row.handwritten else 'printed'}  {row.text_height_in_photo_px:.0f}px  {row.layout_family}"
+    header = row.get("tile_header") or f"{row.field_name}  {'handwritten' if row.handwritten else 'printed'}  {row.text_height_in_photo_px:.0f}px  {row.layout_family}"
     draw.text((TEXT_COLUMN_X_PX, 0), header, fill=LABEL_COLOR, font=fonts["label"])
     draw.text((TEXT_COLUMN_X_PX, LINE_HEIGHT_PX + 4), "truth", fill=LABEL_COLOR, font=fonts["label"])
     draw.text((TEXT_COLUMN_X_PX + METHOD_LABEL_WIDTH_PX, LINE_HEIGHT_PX), f"      {row.text}", fill=TEXT_COLOR, font=fonts["mono"])
     for index, label in enumerate(method_labels, start=2):
         text, confidence = row[f"{label}__text"] or "", row[f"{label}__confidence"]
-        color = CORRECT_COLOR if is_read_correct(row.field_name, text, row.text) else WRONG_COLOR
+        precomputed_flag = row.get(f"{label}__correct")
+        correct = bool(precomputed_flag) if precomputed_flag is not None and pd.notna(precomputed_flag) else is_read_correct(row.field_name, text, row.text)
+        color = CORRECT_COLOR if correct else WRONG_COLOR
         shown_text = text if text else "(blank)"
+        if len(shown_text) > MAX_SHOWN_READ_CHARACTERS:
+            shown_text = shown_text[:MAX_SHOWN_READ_CHARACTERS - 1] + "…"
         confidence_text = f"{confidence:.2f}" if pd.notna(confidence) else "  - "
         draw.text((TEXT_COLUMN_X_PX, index * LINE_HEIGHT_PX + 4), short_method_name(label), fill=LABEL_COLOR, font=fonts["label"])
         draw.text((TEXT_COLUMN_X_PX + METHOD_LABEL_WIDTH_PX, index * LINE_HEIGHT_PX), f"{confidence_text}  {shown_text}", fill=color, font=fonts["mono"])

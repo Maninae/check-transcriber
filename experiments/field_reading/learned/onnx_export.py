@@ -4,11 +4,13 @@ Outputs under ONNX_ROOT = RECOGNIZER_ROOT / "onnx":
 - `<crnn run>.onnx` / `<crnn run>.int8.onnx`: input `line_images` (B, 1, H, W) float in [-1, 1]
   (recipe: line_image_preprocessing), output `log_probabilities` (B, W // 4, C). B and W dynamic.
   A sidecar `<crnn run>.json` carries the charset, input height and width limits for the app.
+- `style_classifier_h32[.int8].onnx`: (line_images (B, 1, 32, W), valid_width_fraction (B,)) ->
+  handwritten logit (B,); same input recipe as the CRNN.
 - TrOCR as two graphs, no KV cache (greedy loop re-runs the decoder, fine for <= 48 tokens):
   `<id>.encoder.onnx`: pixel_values (B, 3, 384, 384) -> encoder_hidden_states;
   `<id>.decoder.onnx`: (input_ids (B, L), encoder_hidden_states) -> logits (B, L, V).
 
-Run: python -m experiments.field_reading.learned.onnx_export --crnn crnn_general_h32 crnn_amount_h32 [--trocr trocr_small_handwritten_ft]
+Run: python -m experiments.field_reading.learned.onnx_export --crnn crnn_general_h32 crnn_amount_h32 --style [--trocr trocr_small_handwritten]
 """
 
 import argparse
@@ -21,6 +23,7 @@ from onnxruntime.quantization import QuantType, quantize_dynamic
 from torch import nn
 
 from experiments.field_reading.learned.crnn_reader import CrnnCropReader
+from experiments.field_reading.learned.handwriting_style_classifier import STYLE_CHECKPOINT_PATH, HandwritingStyleClassifier
 from experiments.field_reading.learned.recognizer_paths import ONNX_ROOT, RECOGNIZER_ROOT
 from experiments.field_reading.learned.trocr_reader import TROCR_INPUT_SIZE, TrocrCropReader
 
@@ -49,6 +52,18 @@ def export_crnn(run_name: str) -> list[Path]:
                "min_width": reader.variant.min_width, "max_width": reader.variant.max_width, "width_downsample": 4,
                "preprocessing": "luma grey, bilinear resize to input_height keeping aspect, clamp width, (x/255-0.5)/0.5, right-pad 1.0"}
     (ONNX_ROOT / f"{run_name}.json").write_text(json.dumps(sidecar, indent=1))
+    return [fp32_path, quantize_to_int8(fp32_path)]
+
+
+def export_style_classifier() -> list[Path]:
+    """Handwriting style classifier -> fp32 + int8 ONNX."""
+    model = HandwritingStyleClassifier().eval()
+    model.load_state_dict(torch.load(STYLE_CHECKPOINT_PATH, map_location="cpu"))
+    fp32_path = ONNX_ROOT / "style_classifier_h32.onnx"
+    torch.onnx.export(model, (torch.zeros(1, 1, 32, EXAMPLE_WIDTH), torch.ones(1)), str(fp32_path),
+                      input_names=["line_images", "valid_width_fraction"], output_names=["handwritten_logit"],
+                      dynamic_axes={"line_images": {0: "batch", 3: "width"}, "valid_width_fraction": {0: "batch"},
+                                    "handwritten_logit": {0: "batch"}}, opset_version=ONNX_OPSET, dynamo=False)
     return [fp32_path, quantize_to_int8(fp32_path)]
 
 
@@ -99,11 +114,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--crnn", nargs="*", default=[])
     parser.add_argument("--trocr", nargs="*", default=[])
+    parser.add_argument("--style", action="store_true", help="also export the handwriting style classifier")
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ONNX_ROOT.mkdir(parents=True, exist_ok=True)
     written = [path for run in arguments.crnn for path in export_crnn(run)]
     written += [path for model_id in arguments.trocr for path in export_trocr(model_id)]
+    written += export_style_classifier() if arguments.style else []
     for path in written:
         logger.info("%s %.2f MB", path.name, path.stat().st_size / 1e6)
 
