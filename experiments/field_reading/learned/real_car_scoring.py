@@ -11,6 +11,7 @@ Run: python -m experiments.field_reading.learned.real_car_scoring --methods crnn
 """
 
 import argparse
+import contextlib
 import logging
 import re
 
@@ -61,14 +62,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--methods", nargs="+", required=True, choices=sorted(READING_METHOD_REGISTRY))
     parser.add_argument("--maxconf-pairs", nargs="*", default=[], help="pairs as <method_a>+<method_b>")
+    parser.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu",
+                        help="torch readers' device; cpu skips the MPS lock (ONNX readers are always CPU)")
+    parser.add_argument("--output-name", default="real_car__per_row.csv")
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     rows = load_car_rows()
     crops = [pad_tight_crop(read_rgb_image(path)) for path in rows.crop_path]
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
     outputs = {}
-    with hold_mps_lock("real CAR scoring"):
-        pool = ReaderPool(device)
+    lock = hold_mps_lock("real CAR scoring") if arguments.device == "mps" else contextlib.nullcontext()
+    with lock:
+        pool = ReaderPool(arguments.device)
         for method_id in arguments.methods:
             results = READING_METHOD_REGISTRY[method_id](rows, crops, pool)
             outputs[method_id] = ([text for text, _, _ in results], [confidence for _, confidence, _ in results])
@@ -81,7 +85,7 @@ def main() -> None:
     table = scored_rows.groupby(["method", "subset"]).agg(n=("exact", "size"), exact=("exact", "mean"), cer=("cer", "mean")).round(3)
     print("real courtesy amounts (ORAND-CAR-2014 test sample)")
     print(table.unstack("subset").to_string())
-    output_path = REPORTS_ROOT / "learned" / "real_car__per_row.csv"
+    output_path = REPORTS_ROOT / "learned" / arguments.output_name
     output_path.parent.mkdir(parents=True, exist_ok=True)
     scored_rows.to_csv(output_path, index=False)
 

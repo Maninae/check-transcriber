@@ -24,8 +24,7 @@ from experiments.field_reading.learned.crnn_model import timesteps_for_width
 from experiments.field_reading.learned.crnn_reader import CrnnCropReader
 from experiments.field_reading.learned.ctc_decoding import decode_ctc_batch
 from experiments.field_reading.learned.line_crop_dataset import read_rgb_image
-from experiments.field_reading.learned.onnx_export import ONNX_ROOT
-from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
+from experiments.field_reading.learned.recognizer_paths import ONNX_ROOT, RECOGNIZER_ROOT
 
 logger = logging.getLogger(__name__)
 

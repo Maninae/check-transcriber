@@ -21,12 +21,11 @@ from onnxruntime.quantization import QuantType, quantize_dynamic
 from torch import nn
 
 from experiments.field_reading.learned.crnn_reader import CrnnCropReader
-from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
+from experiments.field_reading.learned.recognizer_paths import ONNX_ROOT, RECOGNIZER_ROOT
 from experiments.field_reading.learned.trocr_reader import TROCR_INPUT_SIZE, TrocrCropReader
 
 logger = logging.getLogger(__name__)
 
-ONNX_ROOT = RECOGNIZER_ROOT / "onnx"
 ONNX_OPSET = 17
 EXAMPLE_WIDTH = 256
 

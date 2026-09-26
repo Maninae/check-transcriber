@@ -26,7 +26,7 @@ from experiments.field_reading.metrics.field_value_parsing import normalize_fiel
 
 logger = logging.getLogger(__name__)
 
-SHEET_WIDTH_PX = 1800
+SHEET_WIDTH_PX = 2000
 CROP_HEIGHT_PX = 110
 CROP_MAX_WIDTH_PX = 900
 TEXT_COLUMN_X_PX = CROP_MAX_WIDTH_PX + 40
@@ -38,6 +38,7 @@ MONO_FONT_PATH = "/System/Library/Fonts/Menlo.ttc"
 CORRECT_COLOR = (20, 130, 60)
 WRONG_COLOR = (190, 40, 30)
 LABEL_COLOR = (130, 130, 130)
+METHOD_LABEL_WIDTH_PX = 190   # short method name column left of each read, so long reads never collide
 TEXT_COLOR = (20, 20, 20)
 JPEG_QUALITY = 82
 
@@ -58,6 +59,16 @@ def load_method_predictions(split_name: str, method_labels: list[str]) -> pd.Dat
     return pd.concat(tables, axis=1, join="inner")
 
 
+def short_method_name(method_label: str) -> str:
+    """Readable short name for a prediction-file stem (localization suffix dropped)."""
+    stem = method_label.split("__loc=")[0]
+    for prefix, short in (("tesseract", "Tesseract"), ("trocr_small_handwritten", "TrOCR-hw"), ("trocr_small_printed", "TrOCR-printed"),
+                          ("crnn_amount", "CRNN-amount"), ("crnn_general", "CRNN")):
+        if stem.startswith(prefix):
+            return short + ("+xcheck" if "+xcheck" in stem else "")
+    return stem[:22]
+
+
 def draw_tile(row: pd.Series, method_labels: list[str], fonts: dict) -> Image.Image:
     """One tile: crop left, ground truth and each method's read right."""
     line_count = 1 + len(method_labels)
@@ -69,14 +80,15 @@ def draw_tile(row: pd.Series, method_labels: list[str], fonts: dict) -> Image.Im
     draw = ImageDraw.Draw(tile)
     header = f"{row.field_name}  {'handwritten' if row.handwritten else 'printed'}  {row.text_height_in_photo_px:.0f}px  {row.layout_family}"
     draw.text((TEXT_COLUMN_X_PX, 0), header, fill=LABEL_COLOR, font=fonts["label"])
-    draw.text((TEXT_COLUMN_X_PX, LINE_HEIGHT_PX), f"truth  {row.text}", fill=TEXT_COLOR, font=fonts["mono"])
+    draw.text((TEXT_COLUMN_X_PX, LINE_HEIGHT_PX + 4), "truth", fill=LABEL_COLOR, font=fonts["label"])
+    draw.text((TEXT_COLUMN_X_PX + METHOD_LABEL_WIDTH_PX, LINE_HEIGHT_PX), f"      {row.text}", fill=TEXT_COLOR, font=fonts["mono"])
     for index, label in enumerate(method_labels, start=2):
         text, confidence = row[f"{label}__text"] or "", row[f"{label}__confidence"]
         color = CORRECT_COLOR if is_read_correct(row.field_name, text, row.text) else WRONG_COLOR
         shown_text = text if text else "(blank)"
         confidence_text = f"{confidence:.2f}" if pd.notna(confidence) else "  - "
-        draw.text((TEXT_COLUMN_X_PX, index * LINE_HEIGHT_PX), f"{confidence_text}  {shown_text}", fill=color, font=fonts["mono"])
-        draw.text((SHEET_WIDTH_PX - 260, index * LINE_HEIGHT_PX + 4), label.split("__loc=")[0][:32], fill=LABEL_COLOR, font=fonts["label"])
+        draw.text((TEXT_COLUMN_X_PX, index * LINE_HEIGHT_PX + 4), short_method_name(label), fill=LABEL_COLOR, font=fonts["label"])
+        draw.text((TEXT_COLUMN_X_PX + METHOD_LABEL_WIDTH_PX, index * LINE_HEIGHT_PX), f"{confidence_text}  {shown_text}", fill=color, font=fonts["mono"])
     return tile
 
 

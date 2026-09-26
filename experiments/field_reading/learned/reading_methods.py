@@ -19,18 +19,14 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from experiments.field_reading.config import FIELD_READING_MODEL_ROOT
 from experiments.field_reading.learned.crnn_reader import CrnnCropReader
+from experiments.field_reading.learned.onnx_trocr_reader import OnnxTrocrCropReader
+from experiments.field_reading.learned.recognizer_paths import CRNN_CHECKPOINTS
 from experiments.field_reading.learned.text_charset import AMOUNT_CHARSET
 from experiments.field_reading.learned.trocr_reader import TrocrCropReader
 
 logger = logging.getLogger(__name__)
 
-RECOGNIZER_ROOT = FIELD_READING_MODEL_ROOT / "recognizers"
-CRNN_CHECKPOINTS = {
-    "crnn_general": RECOGNIZER_ROOT / "crnn_general_h32" / "best.pt",
-    "crnn_amount": RECOGNIZER_ROOT / "crnn_amount_h32" / "best.pt",
-}
 AMOUNT_FIELD_NAME = "amount_numeric"
 # CRNN confidence below which the cascade asks TrOCR-hw instead (not tuned: synth val would mis-tune it, see report).
 CASCADE_CRNN_CONFIDENCE_THRESHOLD = 0.9
@@ -53,9 +49,16 @@ class ReaderPool:
         self.readers: dict[str, object] = {}
 
     def get(self, reader_id: str):
-        """Build or reuse a reader. Ids: crnn_general[_amountmask], crnn_amount, trocr ids [+ `:grey`]."""
+        """Build or reuse a reader.
+
+        Ids: crnn_general[_amountmask], crnn_amount, `<trocr id>[:grey]`, `onnx:<variant label>[:grey]`
+        (onnxruntime CPU, variant labels from trocr_onnx_benchmark.variant_paths()).
+        """
         if reader_id not in self.readers:
-            if reader_id.startswith("crnn_"):
+            if reader_id.startswith("onnx:"):
+                _, variant_label, *option = reader_id.split(":")
+                self.readers[reader_id] = OnnxTrocrCropReader(variant_label, grey_input=option == ["grey"])
+            elif reader_id.startswith("crnn_"):
                 base_id = reader_id.removesuffix("_amountmask")
                 allowed = AMOUNT_CHARSET if reader_id.endswith("_amountmask") else None
                 self.readers[reader_id] = CrnnCropReader(CRNN_CHECKPOINTS[base_id], self.device, allowed_characters=allowed)
@@ -156,5 +159,8 @@ READING_METHOD_REGISTRY: dict[str, MethodRunner] = {
     "crnn_amount_route": route_by_mask(is_amount_field, "crnn_amount", "crnn_general"),
     "trocr_hwgrey_crnn_route_oraclehw": route_by_mask(is_handwritten, "trocr_small_handwritten:grey", "crnn_general"),
     "trocr_hwgrey_crnn_maxconf": higher_confidence("trocr_small_handwritten:grey", "crnn_general"),
+    **{f"trocr_hwgrey_onnx_{label}": single_reader(f"onnx:{label}:grey")
+       for label in ("xenova_past_fp32", "xenova_past_int8", "xenova_past_int8enc_fp32dec", "xenova_past_fp32enc_int8dec",
+                     "ours_no_cache_int8")},
     "crnn_trocr_hwgrey_cascade": confidence_cascade("crnn_general", "trocr_small_handwritten:grey", CASCADE_CRNN_CONFIDENCE_THRESHOLD),
 }

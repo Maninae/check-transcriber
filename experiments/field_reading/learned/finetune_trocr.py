@@ -34,7 +34,7 @@ from experiments.field_reading.learned.context_crop_export import CONTEXT_MANIFE
 from experiments.field_reading.learned.line_crop_dataset import read_rgb_image
 from experiments.field_reading.learned.mps_lock import hold_mps_lock
 from experiments.field_reading.learned.real_ssbi_scoring import comparable_text, load_ssbi_rows, pad_tight_crop
-from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
+from experiments.field_reading.learned.recognizer_paths import RECOGNIZER_ROOT
 from experiments.field_reading.learned.trocr_finetune_data import (IGNORED_TARGET_ID, TrocrFinetuneDataset,
                                                                    collate_trocr_batch, select_finetune_rows)
 from experiments.field_reading.learned.trocr_reader import TrocrCropReader, resolve_trocr_directory

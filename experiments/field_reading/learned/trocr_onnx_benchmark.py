@@ -2,8 +2,10 @@
 
 Variants compared (all TrOCR-small-handwritten, grey+autocontrast input as shipped):
 - ours_no_cache_{fp32,int8}: our onnx_export (decoder re-runs the prefix each step);
-- xenova_past_{fp32,int8}: Xenova/trocr-small-handwritten (transformers.js) encoder +
-  decoder_model_merged with KV cache; the files the browser would actually load.
+- xenova_past_{fp32,int8} and the mixed int8enc_fp32dec / fp32enc_int8dec (Xenova's fp16 files,
+  124 MB, do not load in onnxruntime CPU 1.30; they target WebGPU):
+  Xenova/trocr-small-handwritten (transformers.js) encoder + decoder_model_merged with KV cache,
+  the files the browser would actually load.
 Per variant: identical greedy text on EQUIVALENCE_CROP_COUNT val crops, max abs diff of encoder
 states and first-step logits, total MB, and median full-greedy latency per crop over
 LATENCY_CROP_COUNT crops with 1 intra-op thread and onnxruntime's default.
@@ -21,7 +23,7 @@ from huggingface_hub import snapshot_download
 
 from experiments.field_reading.learned.onnx_benchmark import (EQUIVALENCE_CROP_COUNT, LATENCY_CROP_COUNT, median_latency_ms,
                                                               merge_into_benchmark_report, ort_session, sample_val_crops)
-from experiments.field_reading.learned.onnx_export import ONNX_ROOT
+from experiments.field_reading.learned.recognizer_paths import ONNX_ROOT
 from experiments.field_reading.learned.trocr_onnx_decoding import onnx_trocr_greedy
 from experiments.field_reading.learned.trocr_reader import TrocrCropReader, trocr_pixel_values
 from experiments.field_reading.learned.trocr_tokenizer import EOS_ID
@@ -36,11 +38,15 @@ def variant_paths() -> dict[str, tuple[Path, Path]]:
     """label -> (encoder, decoder) ONNX files."""
     xenova = Path(snapshot_download(XENOVA_REPOSITORY, allow_patterns=["*.json", "onnx/encoder_model*.onnx",
                                                                      "onnx/decoder_model_merged*.onnx"])) / "onnx"
+    encoder_fp32, encoder_int8 = (xenova / f"encoder_model{suffix}.onnx" for suffix in ("", "_quantized"))
+    decoder_fp32, decoder_int8 = (xenova / f"decoder_model_merged{suffix}.onnx" for suffix in ("", "_quantized"))
     return {
         "ours_no_cache_fp32": (ONNX_ROOT / f"{MODEL_ID}.encoder.onnx", ONNX_ROOT / f"{MODEL_ID}.decoder.onnx"),
         "ours_no_cache_int8": (ONNX_ROOT / f"{MODEL_ID}.encoder.int8.onnx", ONNX_ROOT / f"{MODEL_ID}.decoder.int8.onnx"),
-        "xenova_past_fp32": (xenova / "encoder_model.onnx", xenova / "decoder_model_merged.onnx"),
-        "xenova_past_int8": (xenova / "encoder_model_quantized.onnx", xenova / "decoder_model_merged_quantized.onnx"),
+        "xenova_past_fp32": (encoder_fp32, decoder_fp32),
+        "xenova_past_int8": (encoder_int8, decoder_int8),
+        "xenova_past_int8enc_fp32dec": (encoder_int8, decoder_fp32),
+        "xenova_past_fp32enc_int8dec": (encoder_fp32, decoder_int8),
     }
 
 
@@ -65,7 +71,7 @@ def main() -> None:
         encoder, decoder = ort_session(encoder_path, None), ort_session(decoder_path, None)
         identical, encoder_difference, logit_difference = 0, 0.0, 0.0
         for pixels, text, hidden, first_logits in zip(equivalence_pixels, torch_texts, torch_hidden, torch_first_logits):
-            tokens, onnx_hidden, onnx_first_logits = onnx_trocr_greedy(encoder, decoder, pixels)
+            tokens, onnx_hidden, onnx_first_logits, _ = onnx_trocr_greedy(encoder, decoder, pixels)
             identical += reader.codec.decode(tokens) == text
             encoder_difference = max(encoder_difference, float(np.abs(onnx_hidden - hidden).max()))
             logit_difference = max(logit_difference, float(np.abs(onnx_first_logits - first_logits).max()))

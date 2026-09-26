@@ -20,7 +20,7 @@ from experiments.field_reading.learned.ctc_decoding import CtcConfidenceKind
 from experiments.field_reading.learned.line_crop_dataset import read_rgb_image
 from experiments.field_reading.learned.mps_lock import hold_mps_lock
 from experiments.field_reading.learned.predict import select_scored_rows
-from experiments.field_reading.learned.reading_methods import RECOGNIZER_ROOT
+from experiments.field_reading.learned.recognizer_paths import RECOGNIZER_ROOT
 from experiments.field_reading.learned.selection_scoring import max_coverage_at_accuracy
 from experiments.field_reading.metrics.row_scoring import score_joined_rows
 
