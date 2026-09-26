@@ -9,12 +9,14 @@ Goal: scenes a person would mistake for phone photos of rent checks on household
 
 ## Contracts (fixed before fan-out; change only with the owner)
 
-- C1 Writer (`synth/render/handwriting_writer.py`): `sample_writer(rng, ink_rgb, handwriting_font_ids, signature_font_ids) -> Writer`; `draw_handwritten_field(canvas, text, writer, em_px, baseline_left, max_width_px, rng, is_signature=False) -> box | None`. The handwriting engine may add fields to `Writer`; the renderer only calls these two.
+- C1 Writer (`synthetic_checks/handwriting/handwriting_writer.py`): `sample_writer(rng, ink_rgb, handwriting_font_ids, signature_font_ids) -> Writer`; `draw_handwritten_field(canvas, text, writer, em_px, baseline_left, max_width_px, rng, is_signature=False) -> box | None`. The handwriting engine may add fields to `Writer`; the renderer only calls these two.
 - C2 Render output: `render_check(template, content, rng, dpi, handwriting_font_ids, signature_font_ids) -> (PIL image, CheckLabel)`. The image becomes RGBA: alpha is paper coverage (1 on paper, 0 outside a torn perforation nub or worn corner). Compose must use the alpha when the image is RGBA and treat RGB as fully opaque. `CheckLabel` keeps every current field; `canonical` gains `layout_family`.
 - C3 Scene label: `SceneCheckLabel.corners` stays the 4 physical corners (check's own TL, TR, BR, BL). New `outline` (N >= 4 points, photo pixels, the paper's edge after curl or fold, starting at TL, in the check's own clockwise order) is what YOLO-seg and COCO polygons export. New `deformation` dict records what was applied.
 - C4 Split pools: a split owns template ids, background ids, handwriting and signature font ids, payee names and bank names. `render_check` receives the split's font pools; `sample_check_content` its payee and bank pools.
 
 ## Units
+
+File paths in this table and in the log are the pre-split `synth/` layout they were written in; the module map now lives in each package's CLAUDE.md. `synth/v1/`-style paths are folders on the data drive, which did not move.
 
 | Unit | Owner | Files | Verified means |
 |---|---|---|---|
@@ -45,3 +47,4 @@ Backgrounds run all day in the background: FLUX schnell 4-bit, one process, ~100
 - Background mix (Sep 25): background_traits.py tags each background lit-photo vs flat swatch and soft vs hard (web SOURCES.jsonl, FLUX slugs); scenes pick lit photos 60% of the time when the split has any, soft surfaces x2; surface_relief.py gives flat soft swatches soft folds + wrinkles (Lambert, tanh-squashed gain). Pool: 13 FLUX + 271 CC0 web.
 - Pre-v1 fixes (Sep 25): paper tint from coloured surfaces capped at +-6% per channel (a purple rug dyed the checks); paper formation 1.6%->0.6% and tint drift 1.2%->0.5% (stock read as parchment); security-pattern patchiness halved. v0.5.0.
 - U7 v1 built (Sep 25): /Volumes/vega/datasets/check-transcriber/synth/v1, 5,000 scenes / 25,303 checks (train 3,500 / val 750 / eval 750), 0 failed, 6,353 s on 8 workers, 14 GB; OCR rows val 40,740 (26,422 usable) and eval 40,166 (25,473 usable). Gold-eval print run: synth/print/gold-eval-v1 (12 pages, 33 checks, eval pools, seed 1). Showcase: synth/v1/showcase/.
+- Package split (Sep 25, Owen): `synth/` became four top-level packages (`synthetic_checks/`, `synthetic_backgrounds/`, `scene_composer/`, `dataset_builder/`) plus `synthetic_data_paths.py`; `scene_composer.on_demand` is now the one composition path (`compose_scene_on_demand`, `SyntheticSceneStream`, `generate_one` CLI) and the dataset worker only writes its output. A 6-scene build is byte-identical before and after.
