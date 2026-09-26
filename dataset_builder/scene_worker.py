@@ -33,6 +33,7 @@ class SceneTask:
     split_directory: str
     template_count: int
     scene_config: SceneConfig
+    framing_regime: str = "wide"
 
 
 def scene_id_for_task(task: SceneTask) -> str:
@@ -52,7 +53,8 @@ def worker_initializer(harmonize: bool) -> None:
 def generate_scene(task: SceneTask) -> dict:
     """Compose one scene and write its photo, YOLO labels and annotation. Returns a summary for progress and the manifest."""
     composed = compose_scene_on_demand(task.seed, task.split_name, task.scene_index, pools=task.pools,
-                                       template_count=task.template_count, scene_config=task.scene_config)
+                                       template_count=task.template_count, scene_config=task.scene_config,
+                                       framing_regime=task.framing_regime)
     label_dict = composed.label_record()
     split_directory = Path(task.split_directory)
     composed.write_jpeg(split_directory / "images" / composed.label.image_file)
@@ -62,5 +64,6 @@ def generate_scene(task: SceneTask) -> dict:
     partial_path.write_text(json.dumps(label_dict))
     partial_path.replace(annotation_path)
     return {"split": task.split_name, "scene_id": composed.label.scene_id, "check_count": len(composed.label.checks),
+            "framing_regime": task.framing_regime,
             "template_ids": sorted({check.template_id for check in composed.label.checks}),
             "background_id": composed.label.background_id}

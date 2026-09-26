@@ -24,6 +24,17 @@ python -m scene_composer.generate_one --seed 7 --out /tmp/x.jpg --labels /tmp/x.
 python -m scene_composer.generate_one --seed 7 --split eval --scene-index 3 --out /tmp/x.jpg --labels /tmp/x.json
 ```
 
+## Framing regimes
+
+How close the phone is. `wide` is v1 (1-8 checks, sometimes 12, at 70-95% fill); `close` is 2-6 checks (mostly 5-6) filling 85-98% of the frame with small or zero gaps, slight overlaps and a check cut by the frame edge 40% of the time; `single` is one check filling 70-100% at any rotation, sometimes with an edge or corner cut off, cropped so only a thin band of surface shows, or shot steeply so the far edge is clearly shorter.
+
+```python
+compose_scene_on_demand(7, "eval", 3, framing_regime="single")          # one regime, explicitly
+SyntheticSceneStream(7, split="train", framing_regime_mix={"close": 1})  # per scene from a mix (default 40/45/15, as builds)
+```
+
+Labels record the regime in `effects.framing.framing_regime` (absent means wide, as in every v1 label).
+
 ## Harmonization (optional)
 
 `harmonize=True` (or `--harmonize` on the CLIs) runs PCT-Net on each pasted check's albedo, ~1 s extra per scene. It needs torch and PCT-Net cloned to `/Volumes/vega/ai-models/harmonizer/pctnet` (`git clone https://github.com/rakutentech/PCT-Net-Image-Harmonization.git pctnet`); its CNN weights ship inside that repo.

@@ -7,7 +7,9 @@ from dataclasses import dataclass
 class SceneConfig:
     """Defaults aim at typical phone photos of checks laid out on a sheet."""
 
-    photo_long_side_range: tuple[int, int] = (2000, 3200)
+    framing_regime: str = "wide"          # wide | close | single (geometry/framing_regimes.py); a build's mix overrides it per scene
+    photo_long_side_range: tuple[int, int] = (2000, 3200)          # the wide regime's photo sizes
+    closeup_photo_long_side_range: tuple[int, int] = (2800, 4032)  # close and single: a 12 MP phone photo, sometimes downscaled
     photo_aspect: float = 4 / 3
     loose_probability: float = 0.3        # loose overlap or fanned row instead of a gapped grid
     deformation_strength: float = 1.0     # scales curl / fold / wave frequencies; 0 keeps paper flat

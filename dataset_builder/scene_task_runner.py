@@ -20,6 +20,7 @@ def summary_from_existing_annotation(task: SceneTask, annotation_path: Path) -> 
     """The same summary `generate_scene` returns, rebuilt from a finished scene's annotation."""
     scene_label = json.loads(annotation_path.read_text())
     return {"split": task.split_name, "scene_id": scene_label["scene_id"], "check_count": len(scene_label["checks"]),
+            "framing_regime": task.framing_regime,
             "template_ids": sorted({check["template_id"] for check in scene_label["checks"]}),
             "background_id": scene_label["background_id"]}
 
@@ -35,6 +36,7 @@ def run_scene_task(task: SceneTask) -> dict:
         summary = generate_scene(task)
     except Exception as error:  # noqa: BLE001 - per-scene boundary, recorded by the coordinator
         return {"split": task.split_name, "scene_id": scene_id, "status": "failed", "check_count": 0,
+                "framing_regime": task.framing_regime,
                 "error": f"{type(error).__name__}: {error}", "traceback": traceback.format_exc(),
                 "seconds": time.perf_counter() - start_time}
     return {**summary, "status": "built", "seconds": time.perf_counter() - start_time}

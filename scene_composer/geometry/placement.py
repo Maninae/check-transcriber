@@ -80,14 +80,15 @@ def clipped_normal(rng: np.random.Generator, sigma: float, limit: float) -> floa
     return float(np.clip(rng.normal(0, sigma), -limit, limit))
 
 
-def sample_rotations(count: int, rng: np.random.Generator, jitter_sigma: float, jitter_max: float) -> list[float]:
+def sample_rotations(count: int, rng: np.random.Generator, jitter_sigma: float, jitter_max: float,
+                     quarter_turn_probability: float = QUARTER_TURN_PROBABILITY) -> list[float]:
     """Mostly one shared orientation; some flipped 180 or quarter-turned; small angle jitter."""
     base = 90.0 * rng.choice([1, 3]) if rng.random() < PORTRAIT_CHECKS_PROBABILITY else 0.0
     rotations = []
     for _ in range(count):
         roll = rng.random()
         angle = base + (180 if roll < FLIP_180_PROBABILITY else 0)
-        if FLIP_180_PROBABILITY <= roll < FLIP_180_PROBABILITY + QUARTER_TURN_PROBABILITY:
+        if FLIP_180_PROBABILITY <= roll < FLIP_180_PROBABILITY + quarter_turn_probability:
             angle += 90 * rng.choice([1, 3])
         rotations.append(float(angle + clipped_normal(rng, jitter_sigma, jitter_max)))
     return rotations
@@ -189,9 +190,9 @@ def visible_fractions(sizes_inches: list[tuple[float, float]], placements: list[
     return fractions
 
 
-def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement],
-                         order: list[int]) -> list[CheckPlacement]:
-    """Push checks apart from the group center until each keeps >= 70% visible; returns them in paste order.
+def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: list[CheckPlacement], order: list[int],
+                         min_visible_fraction: float = LOOSE_MIN_VISIBLE_FRACTION) -> list[CheckPlacement]:
+    """Push checks apart from the group center until each keeps `min_visible_fraction` visible; returns them in paste order.
 
     `placements[k]` belongs to check `order[k]`; the result is re-indexed so result[i] is check i,
     and paste order is the caller's check order, so the visibility check uses that order.
@@ -201,7 +202,7 @@ def spread_until_visible(sizes_inches: list[tuple[float, float]], placements: li
         by_check[check_index] = placement
     identity = list(range(len(by_check)))
     for _ in range(SPREAD_MAX_STEPS):
-        if len(by_check) < 2 or min(visible_fractions(sizes_inches, by_check, identity)) >= LOOSE_MIN_VISIBLE_FRACTION:
+        if len(by_check) < 2 or min(visible_fractions(sizes_inches, by_check, identity)) >= min_visible_fraction:
             break
         center_x = np.mean([p.center_x_inches for p in by_check]); center_y = np.mean([p.center_y_inches for p in by_check])
         for placement in by_check:

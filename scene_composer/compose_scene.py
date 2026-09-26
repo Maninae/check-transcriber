@@ -1,9 +1,10 @@
 """Stage 2: composite several rendered checks onto a background as a phone photo would show them.
 
 Pipeline for one scene (every geometric step has a matching point transform for labels):
-1. Layout: lay the checks out on the sheet in inches (placement.py).
-2. Framing: choose the photo, the camera, and the sheet scale so the group fills the frame;
-   maybe push one check partly out (scene_framing.py).
+1. Layout: lay the checks out on the sheet in inches (placement.py for the wide regime,
+   closeup_placement.py for close and single; `config.framing_regime` picks, framing_regimes.py).
+2. Framing: choose the photo, the camera, and the sheet scale so the group fills the frame as the
+   regime asks; maybe push one check partly out (scene_framing.py).
 3. Background: cover-crop onto the sheet-plane canvas; read its baked light field and colour
    cast; sample the one scene light (scene_light.py), aimed from the background's bright side.
 4. Paper: sample each check's deformation (paper_deformation.py) and build its exact
@@ -28,6 +29,8 @@ from scene_composer.camera.camera_effects import apply_camera_effects
 from scene_composer.camera.camera_pipeline import jpeg_roundtrip
 from scene_composer.geometry.check_paste import paste_deformed_check
 from scene_composer.geometry.check_plane_map import CheckPlaneMap
+from scene_composer.geometry.closeup_placement import plan_close_layout, plan_single_layout
+from scene_composer.geometry.framing_regimes import FramingRegime, parse_framing_regime, sample_close_check_count
 from scene_composer.geometry.paper_deformation import sample_paper_deformation
 from scene_composer.geometry.perspective import radial_distortion_maps
 from scene_composer.geometry.placement import plan_layout
@@ -49,9 +52,24 @@ MAX_PLANE_PIXELS_PER_RENDER_PIXEL = 1.0  # never upsample the rendered paper
 TWELVE_CHECK_PROBABILITY = 0.08
 
 
-def sample_check_count(rng: np.random.Generator) -> int:
-    """1 to 8 checks, occasionally 12."""
+def sample_check_count(rng: np.random.Generator, framing_regime: str = FramingRegime.WIDE) -> int:
+    """wide: 1 to 8 checks, occasionally 12. close: 2 to 6, mostly 5-6. single: 1 (no draw)."""
+    regime = parse_framing_regime(framing_regime)
+    if regime == FramingRegime.SINGLE:
+        return 1
+    if regime == FramingRegime.CLOSE:
+        return sample_close_check_count(rng)
     return 12 if rng.random() < TWELVE_CHECK_PROBABILITY else int(rng.integers(1, 9))
+
+
+def plan_layout_for_regime(sizes_inches: list[tuple[float, float]], framing_regime: FramingRegime, config: SceneConfig,
+                           rng: np.random.Generator) -> tuple[str, list]:
+    """The regime's layout planner; wide is v1's `plan_layout`, untouched."""
+    if framing_regime == FramingRegime.SINGLE:
+        return plan_single_layout(sizes_inches, rng)
+    if framing_regime == FramingRegime.CLOSE:
+        return plan_close_layout(sizes_inches, rng)
+    return plan_layout(sizes_inches, config.loose_probability, rng)
 
 
 def check_image_as_float(image: Image.Image) -> np.ndarray:
@@ -72,9 +90,11 @@ def compose_scene(
     """Build one scene. Returns (uint8 RGB photo, label). Deterministic given `rng`'s state."""
     check_labels = [label for _, label in rendered_checks]
     sizes_inches = [(label.width_px / label.dpi, label.height_px / label.dpi) for label in check_labels]
-    layout_mode, placements = plan_layout(sizes_inches, config.loose_probability, rng)
+    framing_regime = parse_framing_regime(config.framing_regime)
+    layout_mode, placements = plan_layout_for_regime(sizes_inches, framing_regime, config, rng)
     max_ppi = min(label.dpi for label in check_labels) * MAX_PLANE_PIXELS_PER_RENDER_PIXEL
-    framing = frame_scene(sizes_inches, placements, config.photo_long_side_range, config.photo_aspect, max_ppi, rng)
+    long_side_range = config.photo_long_side_range if framing_regime == FramingRegime.WIDE else config.closeup_photo_long_side_range
+    framing = frame_scene(sizes_inches, placements, long_side_range, config.photo_aspect, max_ppi, rng, framing_regime)
     view = framing.view
 
     canvas = cover_crop(background, view.canvas_width, view.canvas_height, rng).astype(np.float32)

@@ -8,4 +8,4 @@ Entry points: `on_demand.compose_scene_on_demand` (one scene from a seed, in mem
 whenever the same seed would produce different scenes. Dataset manifests and on-demand labels record it.
 """
 
-GENERATOR_VERSION = "0.5.0"
+GENERATOR_VERSION = "0.6.0"

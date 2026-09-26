@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
+from scene_composer.framing_regime_mix import DEFAULT_FRAMING_REGIME_MIX, framing_regime_for_scene
 from scene_composer.generate_one import main as generate_one_main
 from scene_composer.on_demand import SyntheticSceneStream, compose_scene_on_demand
 from scene_composer.scene_ingredient_pools import library_ingredient_pools
@@ -82,5 +83,7 @@ def test_generate_one_writes_a_valid_jpeg_and_label_json(background_root, tmp_pa
     assert label["provenance"] == {**label["provenance"], "seed": 7, "split": "train", "scene_index": 0}
     assert label["provenance"]["generator_version"]
     assert label["checks"] and all(len(check["corners"]) == 4 for check in label["checks"])
-    expected = json.loads(json.dumps(compose_scene_on_demand(7, backgrounds=background_root).label_record()))
+    regime = framing_regime_for_scene(7, "train", 0, DEFAULT_FRAMING_REGIME_MIX)
+    assert label["provenance"]["framing_regime"] == regime
+    expected = json.loads(json.dumps(compose_scene_on_demand(7, backgrounds=background_root, framing_regime=regime).label_record()))
     assert {key: value for key, value in label.items() if key != "provenance"} == expected

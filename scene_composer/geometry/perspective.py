@@ -52,14 +52,16 @@ def rotate_points(points: np.ndarray, center: np.ndarray, degrees: float) -> np.
     return (points - center) @ rotation.T + center
 
 
-def sample_camera_view(photo_width: int, photo_height: int, rng: np.random.Generator) -> CameraView:
+def sample_camera_view(photo_width: int, photo_height: int, rng: np.random.Generator,
+                       tilt_range: tuple[float, float] = (0.0, MAX_TILT_FRACTION)) -> CameraView:
     """Pick a camera tilt: the far edge of the sheet looks narrower, so its plane quad is wider.
 
     The tilted edge is random (top most often). Corners are jittered and the quad is rolled
-    slightly, as a hand-held phone would be.
+    slightly, as a hand-held phone would be. `tilt_range` is the far edge's plane-quad widening as a
+    fraction of the photo side; 0.8 makes the far edge ~0.55x the near one (a steep, close shot).
     """
     rect = np.array([[0, 0], [photo_width, 0], [photo_width, photo_height], [0, photo_height]], np.float64)
-    tilt = rng.uniform(0.0, MAX_TILT_FRACTION)
+    tilt = rng.uniform(*tilt_range)
     far_edge = rng.choice(["top", "top", "top", "bottom", "left", "right"])
     quad = rect.copy()
     widen_x, widen_y = tilt * photo_width / 2, tilt * photo_height / 2

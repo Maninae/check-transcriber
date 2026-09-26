@@ -6,7 +6,7 @@ Plans a split build, generates scenes in parallel through `scene_composer.on_dem
 
 - Top level:
   - `build_dataset.py` CLI coordinator (plan -> scene stage -> OCR stage -> exports -> manifest; `--print-sheets` delegates to `synthetic_checks.print_sheets`).
-  - `build_plan.py` pools + counts, `--plan-only`, the `build_plan.json` resume guard, procedural backgrounds on request.
+  - `build_plan.py` pools + counts + framing-regime mix, `--plan-only`, the `build_plan.json` resume guard, procedural backgrounds on request, `--pools-from` (reuse an earlier plan's pools, e.g. v1's eval pools) and `--only-split`.
   - `scene_worker.py` one scene: `compose_scene_on_demand` + photo, YOLO labels, annotation (written last, by rename). `scene_task_runner.py` resume skip + per-scene failure capture. `build_progress.py` ETA + `failures.jsonl`.
   - `manifest.py` the `manifest.json` record (generator version, git commit, command, pools, timings).
   - `showcase_images.py` the five presentation images (contact sheet, full scene, 3x crop vs a real photo, flat check, print page).
@@ -17,6 +17,7 @@ Plans a split build, generates scenes in parallel through `scene_composer.on_dem
 
 ## Invariants
 
+- Each scene's framing regime is `plan.framing_regime_for(split, index)` (scene_composer/framing_regime_mix.py); the manifest records scenes and OCR rows (`ok` / `too_small`) per regime. `--framing-regime-mix wide=1` reproduces a pre-regime build's files byte for byte.
 - The builder never composes a scene itself: every scene is `compose_scene_on_demand(seed, split, index, pools=...)`, so builds and on-demand streams cannot drift (`test_stream_reproduces_the_dataset_builders_scenes`).
 - Same arguments, same bytes: a rebuild reproduces every photo, label and export exactly; only `manifest.json`'s run metadata (command, time, commit, timings) changes.
 - A scene's annotation JSON exists only when the scene is complete (written last, by rename); `--resume` relies on it, and refuses a plan that differs from `build_plan.json`.
