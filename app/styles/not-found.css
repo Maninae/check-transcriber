@@ -1,0 +1,48 @@
+/**
+ * 404.html only: one centred card telling the visitor the path is wrong and pointing
+ * back to the app. Tokens, the underline and the black pill come from base.css.
+ */
+
+.not-found {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--spacing-unit) * 3);
+  padding: calc(var(--spacing-unit) * 4);
+  text-align: center;
+}
+
+.not-found-icon {
+  width: 88px;
+  height: 88px;
+}
+
+.not-found-heading {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 2rem;
+  line-height: 1.2;
+  margin: 0;
+  width: fit-content;
+  background: var(--underline-hand-drawn) left bottom 0.02em / 100% 0.32em no-repeat;
+  padding-bottom: 0.08em;
+}
+
+.not-found-note {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.not-found-link {
+  display: inline-block;
+  font-size: 1rem;
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
+  text-decoration: none;
+}
+
+.not-found-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

@@ -5,7 +5,9 @@
 
 The service worker precaches this list so the app works with no network after the
 first visit; a module missing from it would load online and 404 offline. Shipped files
-are index.html plus everything under js/, styles/, fonts/ and models/ (tests/ is not shipped).
+are index.html, the other root-level pages/icons/manifest/link previews, and everything under
+js/, styles/, fonts/, icons/ and models/ (tests/, sw.js itself, CLAUDE.md and the
+link-preview images preview.png / preview-square.png are not precached).
 """
 
 import argparse
@@ -14,14 +16,27 @@ import sys
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parent.parent
-SHIPPED_DIRECTORIES = ("styles", "fonts", "js", "models")
-SHIPPED_SUFFIXES = {".js", ".css", ".woff2", ".onnx"}
+SHIPPED_DIRECTORIES = ("styles", "fonts", "icons", "js", "models")
+SHIPPED_SUFFIXES = {".js", ".css", ".woff2", ".onnx", ".png"}
+# Root-level files by suffix: 404.html, favicon.svg/.ico, manifest.webmanifest, preview*.png.
+ROOT_LEVEL_SHIPPED_SUFFIXES = {".html", ".svg", ".ico", ".webmanifest", ".png"}
+# Shipped but never precached: link-preview cards the app never displays (unfurlers fetch them
+# from the network), so precaching would only add ~480 KB to every first visit.
+NOT_PRECACHED_FILE_NAMES = {"preview.png", "preview-square.png"}
 LIST_PATTERN = re.compile(r"const APP_SHELL_PATHS = \[\n(.*?)\n\];", re.DOTALL)
 
 
 def list_shipped_paths() -> list[str]:
     """`./`-relative paths of every shipped file, in a stable order."""
     shipped_paths = ["./", "./index.html"]
+    for file_path in sorted(APP_ROOT.iterdir()):
+        if (
+            file_path.is_file()
+            and file_path.suffix in ROOT_LEVEL_SHIPPED_SUFFIXES
+            and file_path.name != "index.html"
+            and file_path.name not in NOT_PRECACHED_FILE_NAMES
+        ):
+            shipped_paths.append("./" + file_path.name)
     for directory_name in SHIPPED_DIRECTORIES:
         for file_path in sorted((APP_ROOT / directory_name).rglob("*")):
             if file_path.is_file() and file_path.suffix in SHIPPED_SUFFIXES:
