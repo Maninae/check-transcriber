@@ -13,8 +13,8 @@ val only; eval is for the final number.
 import argparse
 import json
 import logging
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
-from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -101,8 +101,10 @@ def main() -> None:
         work_items = [(scene, None) for scene in scenes]
 
     worker = partial(evaluate_scene_with_arguments, perturbation_kind=arguments.perturbation, perturbation_amount=amount, config=config)
-    with Pool(min(arguments.workers, MAXIMUM_WORKER_PROCESSES)) as pool:
-        records = [record for scene_records in pool.imap(worker, work_items, chunksize=4) for record in scene_records]
+    # ProcessPoolExecutor raises BrokenProcessPool if a worker is killed (memory pressure)
+    # instead of hanging forever like multiprocessing.Pool.
+    with ProcessPoolExecutor(max_workers=min(arguments.workers, MAXIMUM_WORKER_PROCESSES)) as executor:
+        records = [record for scene_records in executor.map(worker, work_items, chunksize=4) for record in scene_records]
 
     output_directory = REFINEMENT_RESULTS_ROOT / f"{arguments.split}__{input_name}__n={len(scenes)}__{arguments.tag}"
     output_directory.mkdir(parents=True, exist_ok=True)

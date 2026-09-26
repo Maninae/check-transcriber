@@ -86,7 +86,8 @@ def extract_edge_points_near_centre(
     right = windowed_scores[sample_rows, np.clip(best_indices + 1, 0, last_index)]
     interior_peak = (best_indices > 0) & (best_indices < last_index) & np.isfinite(left) & np.isfinite(right)
     keep = interior_peak & np.isfinite(best_scores) & (best_scores >= minimum_score)
-    denominator = left - 2 * best_scores + right
+    with np.errstate(invalid="ignore"):  # -inf neighbours are masked out by `keep`
+        denominator = left - 2 * best_scores + right
     with np.errstate(invalid="ignore", divide="ignore"):
         sub_pixel_shift = np.where(keep & (denominator < 0), 0.5 * (left - right) / denominator, 0.0)
     sub_pixel_shift = np.clip(np.nan_to_num(sub_pixel_shift), -0.5, 0.5)

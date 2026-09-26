@@ -35,12 +35,25 @@ class CornerRefinementConfig:
     # Curve degree per pass (1 straight, 2 captures curl), and grow iterations.
     curve_degree_per_pass: tuple[int, ...] = (1, 2)
     curve_grow_iterations: int = 3
+    # Last pass: "curve" grows a polynomial per side; "track" also follows the edge with a
+    # Viterbi path (bends near a corner included) and, where that path bends away from the
+    # curve near a corner, takes the corner from local straight fits to the
+    # `corner_local_fraction` of each side nearest it.
+    final_pass_mode: str = "curve"
+    track_maximum_step_offsets: int = 1
+    track_step_cost: float = 0.05
+    track_centre_cost_per_pixel: float = 0.01
+    corner_local_fraction: float = 0.2
+    # A corner switches to the local fit only if the tracked points near it deviate from
+    # the side curve by at least this median offset (straight sides keep the curve fit).
+    corner_bend_threshold_pixels: float = 1.5
     point_tolerance_pixels: float = 3.0
 
     # Samples along each side: one every `sample_spacing_pixels`, clamped to this range.
     sample_spacing_pixels: float = 6.0
     minimum_samples_per_side: int = 16
-    maximum_samples_per_side: int = 128
+    # Per pass: pass 1 only has to lock onto the right edge, pass 2 does the sub-pixel work.
+    maximum_samples_per_side_per_pass: tuple[int, ...] = (64, 128)
     # Samples closer to a corner than this fraction of the side are skipped.
     corner_margin_fraction: float = 0.03
     minimum_corner_margin_pixels: float = 4.0

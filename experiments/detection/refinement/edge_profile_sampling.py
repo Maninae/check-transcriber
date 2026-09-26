@@ -1,7 +1,7 @@
 """Score every candidate edge offset along one side of an approximate quad.
 
 For each sample position along the side we read a colour profile along the side's
-outward normal with one `cv2.remap` call (bilinear, float32) and average a few profiles
+outward normal with one `cv2.remap` call (bilinear, straight from the uint8 image) and average a few profiles
 offset along the tangent to suppress texture. Each normal offset is then scored as a
 paper boundary: mean colour distance to the paper colour just OUTSIDE the offset minus
 the same just INSIDE it (box windows, the centre pixel excluded), optionally taking the
@@ -82,9 +82,7 @@ def compute_two_class_paperness(
 
 
 def score_side_edge_profiles(
-    image_crop_float: np.ndarray,
-    crop_origin_xy: np.ndarray,
-    image_width_height: tuple[int, int],
+    image: np.ndarray,
     side_start: np.ndarray,
     side_end: np.ndarray,
     quad_centroid: np.ndarray,
@@ -105,9 +103,8 @@ def score_side_edge_profiles(
     """Paper-boundary score for offsets in [-inward_band, +outward_band] at each sample.
 
     Args:
-        image_crop_float: (H, W, C) float32 crop of the full-resolution image.
-        crop_origin_xy: full-image (x, y) of the crop's pixel (0, 0).
-        image_width_height: full image size, to reject profiles that leave the frame.
+        image: full-resolution (H, W) or (H, W, C) uint8 image; bilinear remap of uint8
+            rounds to whole grey levels, negligible after the window averaging.
         corner_margin_pixels: samples start and end this far from the side's corners.
         far_outer_gap_pixels / far_outer_window_pixels: optional second outside window
             (see module docstring); window 0 disables it.
@@ -129,15 +126,11 @@ def score_side_edge_profiles(
     base_points = side_start[None, :] + along[:, None] * unit_tangent[None, :]
     map_x = base_points[:, 0:1] + sampled_offsets[None, :] * unit_normal[0]
     map_y = base_points[:, 1:2] + sampled_offsets[None, :] * unit_normal[1]
-    image_width, image_height = image_width_height
+    image_height, image_width = image.shape[:2]
     inside_image = (map_x >= 0) & (map_x <= image_width - 1) & (map_y >= 0) & (map_y <= image_height - 1)
     profiles = cv2.remap(
-        image_crop_float,
-        (map_x - crop_origin_xy[0]).astype(np.float32),
-        (map_y - crop_origin_xy[1]).astype(np.float32),
-        interpolation=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
+        image, map_x.astype(np.float32), map_y.astype(np.float32), interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
+    ).astype(np.float32)
     if profiles.ndim == 2:
         profiles = profiles[:, :, None]
     number_of_tangential = len(tangential_offsets)

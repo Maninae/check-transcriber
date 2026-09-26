@@ -1,6 +1,7 @@
 """Refine an approximate check quadrilateral to sub-pixel corners using the paper's edges.
 
-Per check, on a full-resolution float crop around the quad:
+Per check, sampling the full-resolution uint8 image directly with bilinear remap (only
+the profile grids are touched, so there is no crop to copy):
 
 1. Paper colour = median of a grid inside the input quad.
 2. Each pass, for each side: score a (position x normal offset) grid
@@ -26,12 +27,12 @@ from experiments.detection.refinement.robust_side_curve_fitting import (
     fit_robust_side_curve,
     intersect_side_curves,
 )
+from experiments.detection.refinement.side_edge_tracking import track_edge_path
 from experiments.detection.refinement.side_line_search import (
     extract_edge_points_near_centre,
     search_outermost_strong_line,
 )
 
-CROP_PADDING_PIXELS = 8
 PAPER_COLOUR_GRID_SIZE = 24
 
 
@@ -55,30 +56,18 @@ def is_convex_with_orientation(corners: np.ndarray, expected_sign: float) -> boo
     return bool(np.all(turn_cross_products * expected_sign > 0))
 
 
-def extract_float_crop(image: np.ndarray, corners: np.ndarray, padding: float) -> tuple[np.ndarray, np.ndarray]:
-    """Float32 (H, W, C) crop covering the quad plus `padding`, and its full-image origin."""
-    image_height, image_width = image.shape[:2]
-    x_min, y_min = np.floor(corners.min(axis=0) - padding).astype(int)
-    x_max, y_max = np.ceil(corners.max(axis=0) + padding).astype(int)
-    x_min, y_min = min(max(x_min, 0), image_width - 1), min(max(y_min, 0), image_height - 1)
-    x_max, y_max = max(min(x_max, image_width - 1), x_min), max(min(y_max, image_height - 1), y_min)
-    crop = image[y_min : y_max + 1, x_min : x_max + 1].astype(np.float32)
-    if crop.ndim == 2:
-        crop = crop[:, :, None]
-    return crop, np.array([x_min, y_min], dtype=np.float64)
-
-
-def estimate_paper_colour(crop: np.ndarray, crop_origin: np.ndarray, corners: np.ndarray, inset_fraction: float) -> np.ndarray:
+def estimate_paper_colour(image: np.ndarray, corners: np.ndarray, inset_fraction: float) -> np.ndarray:
     """Median colour over a bilinear grid spanning the quad's central region (ink is a minority)."""
     grid_values = np.linspace(inset_fraction, 1 - inset_fraction, PAPER_COLOUR_GRID_SIZE)
     along_top, along_left = np.meshgrid(grid_values, grid_values)
     top = corners[0] * (1 - along_top[..., None]) + corners[1] * along_top[..., None]
     bottom = corners[3] * (1 - along_top[..., None]) + corners[2] * along_top[..., None]
-    grid_points = top * (1 - along_left[..., None]) + bottom * along_left[..., None] - crop_origin
+    grid_points = top * (1 - along_left[..., None]) + bottom * along_left[..., None]
     sampled = cv2.remap(
-        crop, grid_points[..., 0].astype(np.float32), grid_points[..., 1].astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
+        image, grid_points[..., 0].astype(np.float32), grid_points[..., 1].astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
     )
-    return np.median(sampled.reshape(-1, crop.shape[2]), axis=0)
+    number_of_channels = image.shape[2] if image.ndim == 3 else 1
+    return np.median(sampled.reshape(-1, number_of_channels).astype(np.float64), axis=0)
 
 
 def band_pixels(fraction: float, short_side: float, config: CornerRefinementConfig) -> float:
@@ -86,19 +75,25 @@ def band_pixels(fraction: float, short_side: float, config: CornerRefinementConf
     return float(np.clip(fraction * short_side, config.minimum_band_pixels, config.maximum_band_pixels))
 
 
-def refine_one_side(crop, crop_origin, image_size, corners, side_index, pass_settings, paper_colour, config, random_generator) -> SideCurve:
-    """Line search then curve growing for one side; returns a zero-offset curve on failure."""
+def score_side(image, corners, side_index, pass_settings, paper_colour, config):
+    """Score grid for one side of the current quad; returns (profiles, number of samples)."""
     side_start, side_end = corners[side_index], corners[(side_index + 1) % 4]
     side_length = float(np.hypot(*(side_end - side_start)))
-    number_of_samples = int(np.clip(side_length / config.sample_spacing_pixels, config.minimum_samples_per_side, config.maximum_samples_per_side))
+    number_of_samples = int(np.clip(side_length / config.sample_spacing_pixels, config.minimum_samples_per_side, pass_settings["maximum_samples"]))
     corner_margin = max(config.corner_margin_fraction * side_length, config.minimum_corner_margin_pixels)
     profiles = score_side_edge_profiles(
-        crop, crop_origin, image_size, side_start, side_end, corners.mean(axis=0),
+        image, side_start, side_end, corners.mean(axis=0),
         pass_settings["inward_band"], pass_settings["outward_band"], number_of_samples, corner_margin,
         config.tangential_offsets_pixels, config.inner_window_pixels, config.outer_window_pixels,
         config.far_outer_gap_pixels, config.far_outer_window_pixels, paper_colour,
         config.edge_score_mode, config.background_window_pixels, config.minimum_paper_background_contrast,
     )
+    return profiles, number_of_samples
+
+
+def refine_one_side(profiles, number_of_samples: int, pass_settings: dict, config, random_generator) -> SideCurve:
+    """Line search (pass 1) then curve growing for one side; a zero-offset curve on failure."""
+    side_length = profiles.side_length
     current_curve = SideCurve(profiles.side_start, profiles.unit_tangent, profiles.unit_normal, side_length, np.zeros(2))
     if pass_settings["search_line"]:
         maximum_angle = float(np.clip(
@@ -130,6 +125,37 @@ def refine_one_side(crop, crop_origin, image_size, corners, side_index, pass_set
     return fitted_curve or current_curve
 
 
+def track_side_points(profiles, config) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Viterbi-tracked edge points of one side (positions, offsets, strengths), weak ones dropped."""
+    positions, offsets, strengths = track_edge_path(
+        profiles, config.line_score_clip, config.track_maximum_step_offsets, config.track_step_cost, config.track_centre_cost_per_pixel
+    )
+    strong = strengths >= config.minimum_edge_score
+    return positions[strong], offsets[strong], strengths[strong]
+
+
+def fit_corner_local_line(side_curve: SideCurve, points, near_start: bool, fraction: float, config, random_generator) -> SideCurve | None:
+    """Straight fit to the tracked points near one corner, IF they bend away from the side curve.
+
+    Returns None (keep the side curve) when there are too few points or when their median
+    deviation from `side_curve` is below `corner_bend_threshold_pixels`.
+    """
+    positions, offsets, strengths = points
+    if len(positions) == 0:
+        return None
+    relative = positions / max(side_curve.side_length, 1e-9)
+    keep = relative <= fraction if near_start else relative >= 1 - fraction
+    if keep.sum() < config.minimum_inlier_count:
+        return None
+    if abs(float(np.median(offsets[keep] - side_curve.offsets_at(positions[keep])))) < config.corner_bend_threshold_pixels:
+        return None
+    frame = side_curve
+    local = fit_robust_side_curve(frame, positions[keep], offsets[keep], strengths[keep], 1, config.ransac_inlier_distance_pixels, config.ransac_iterations, random_generator)
+    if local is None or local.inlier_count < max(config.minimum_inlier_count, int(0.5 * keep.sum())):
+        return None
+    return local
+
+
 def refine_check_quadrilateral(
     image: np.ndarray, approximate_corners: np.ndarray, config: CornerRefinementConfig | None = None
 ) -> tuple[np.ndarray, dict]:
@@ -153,30 +179,37 @@ def refine_check_quadrilateral(
             "outward_band": band_pixels(outward_fraction, short_side, config),
             "search_line": pass_index == 0,
             "degree": degree,
+            "maximum_samples": maximum_samples,
         }
-        for pass_index, (inward_fraction, outward_fraction, degree) in enumerate(zip(
+        for pass_index, (inward_fraction, outward_fraction, degree, maximum_samples) in enumerate(zip(
             config.inward_band_fraction_per_pass, config.outward_band_fraction_per_pass, config.curve_degree_per_pass,
+            config.maximum_samples_per_side_per_pass,
         ))
     ]
-    largest_band = max(max(settings["inward_band"], settings["outward_band"]) for settings in pass_settings_list)
-    window_reach = max(config.inner_window_pixels, config.outer_window_pixels + config.far_outer_gap_pixels + config.far_outer_window_pixels) + max(abs(offset) for offset in config.tangential_offsets_pixels)
-    crop, crop_origin = extract_float_crop(image, input_corners, 2 * largest_band + window_reach + CROP_PADDING_PIXELS)
-    image_size = (image.shape[1], image.shape[0])
-    paper_colour = estimate_paper_colour(crop, crop_origin, input_corners, config.paper_sample_inset_fraction)
+    paper_colour = estimate_paper_colour(image, input_corners, config.paper_sample_inset_fraction)
     diagnostics: dict = {"paper_colour": paper_colour.tolist(), "passes": []}
 
     current_corners = input_corners.copy()
-    for pass_settings in pass_settings_list:
-        side_curves = [
-            refine_one_side(crop, crop_origin, image_size, current_corners, side_index, pass_settings, paper_colour, config, random_generator)
-            for side_index in range(4)
-        ]
+    for pass_index, pass_settings in enumerate(pass_settings_list):
+        tracking_pass = config.final_pass_mode == "track" and pass_index == len(pass_settings_list) - 1 and pass_index > 0
         new_corners = current_corners.copy()
-        for corner_index in range(4):
-            intersection = intersect_side_curves(side_curves[(corner_index - 1) % 4], side_curves[corner_index])
+        scored_sides = [score_side(image, current_corners, side_index, pass_settings, paper_colour, config) for side_index in range(4)]
+        side_curves = [refine_one_side(profiles, count, pass_settings, config, random_generator) for profiles, count in scored_sides]
+        corner_curve_pairs = [(side_curves[(corner_index - 1) % 4], side_curves[corner_index]) for corner_index in range(4)]
+        local_corner_fits = [False] * 4
+        if tracking_pass:
+            tracked_points = [track_side_points(profiles, config) for profiles, _ in scored_sides]
+            for corner_index in range(4):
+                incoming_side, outgoing_side = (corner_index - 1) % 4, corner_index
+                incoming_local = fit_corner_local_line(side_curves[incoming_side], tracked_points[incoming_side], False, config.corner_local_fraction, config, random_generator)
+                outgoing_local = fit_corner_local_line(side_curves[outgoing_side], tracked_points[outgoing_side], True, config.corner_local_fraction, config, random_generator)
+                local_corner_fits[corner_index] = incoming_local is not None or outgoing_local is not None
+                corner_curve_pairs[corner_index] = (incoming_local or side_curves[incoming_side], outgoing_local or side_curves[outgoing_side])
+        for corner_index, (incoming_curve, outgoing_curve) in enumerate(corner_curve_pairs):
+            intersection = intersect_side_curves(incoming_curve, outgoing_curve)
             if intersection is not None:
                 new_corners[corner_index] = intersection
-        diagnostics["passes"].append({**pass_settings, "sides_without_support": [curve.inlier_count == 0 for curve in side_curves]})
+        diagnostics["passes"].append({**pass_settings, "local_corner_fits": local_corner_fits, "sides_without_support": [curve.inlier_count == 0 for curve in side_curves]})
         current_corners = new_corners
     refined_corners = apply_guard_rails(input_corners, current_corners, pass_settings_list[0]["inward_band"], config, diagnostics)
     return refined_corners, diagnostics
