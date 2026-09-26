@@ -20,6 +20,7 @@ from pathlib import Path
 import cv2
 
 from experiments.detection.dataset.scene_annotations import load_split_scene_annotations
+from experiments.detection.pipeline.duplicate_suppression import suppress_duplicate_detections
 from experiments.detection.pipeline.hybrid_close_up_fitting import HybridCloseUpConfig, apply_hybrid_close_up_fitting
 from experiments.detection.orientation.assign_check_orientation import CheckOrientationAssigner
 from experiments.detection.orientation.train_upside_down_classifier import CLASSIFIER_WEIGHTS_PATH
@@ -38,11 +39,12 @@ def main() -> None:
     parser.add_argument("--refine", action="store_true")
     parser.add_argument("--orient", action="store_true")
     parser.add_argument("--hybrid", action="store_true")
+    parser.add_argument("--suppress-duplicates", action="store_true", help="quad-IoU suppression first")
     parser.add_argument("--hybrid-config", default="{}", help="JSON overrides for HybridCloseUpConfig")
     parser.add_argument("--dataset", default=None, help="synth/<name> the predictions belong to (default: active)")
     parser.add_argument("--classifier-weights", type=Path, default=CLASSIFIER_WEIGHTS_PATH)
     arguments = parser.parse_args()
-    if not (arguments.refine or arguments.orient or arguments.hybrid):
+    if not (arguments.refine or arguments.orient or arguments.hybrid or arguments.suppress_duplicates):
         raise SystemExit("nothing to do: pass --hybrid, --refine and/or --orient")
     hybrid_config = HybridCloseUpConfig(**json.loads(arguments.hybrid_config))
 
@@ -59,6 +61,8 @@ def main() -> None:
         image_bgr = cv2.imread(str(scene.image_path), cv2.IMREAD_COLOR)
         start_time = time.perf_counter()
         detections = predictions_by_scene_id[scene.scene_id]
+        if arguments.suppress_duplicates:
+            detections = suppress_duplicate_detections(detections)
         if arguments.hybrid:
             detections = apply_hybrid_close_up_fitting(image_bgr, detections, hybrid_config)
         if arguments.refine:
@@ -70,7 +74,7 @@ def main() -> None:
         if scene_number % 100 == 0:
             logger.info("%d/%d scenes", scene_number, len(scenes))
 
-    stage_suffix = ("+hybrid" if arguments.hybrid else "") + ("+refine" if arguments.refine else "") + ("+orient" if arguments.orient else "")
+    stage_suffix = ("+dedup" if arguments.suppress_duplicates else "") + ("+hybrid" if arguments.hybrid else "") + ("+refine" if arguments.refine else "") + ("+orient" if arguments.orient else "")
     detector_config = dict(header.get("config", {}))
     postprocess_seconds_per_image = total_postprocess_seconds / max(len(scenes), 1)
     detector_config["postprocess_seconds_per_image"] = postprocess_seconds_per_image
