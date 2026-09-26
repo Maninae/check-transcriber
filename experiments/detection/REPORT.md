@@ -58,7 +58,7 @@ Failure modes, from the galleries (`showcase/failures__*.jpg`):
    - It gets 98.5% of photos entirely right, including overlaps and out-of-frame checks.
    - It is a 10.2 MB ONNX that needs onnxruntime-web (WASM, no WebGPU).
    - Blocked only on licensing (next section).
-3. **Before trusting either on Angie's photos, shoot the spec's printed mock-check set (spec section 8).**
+3. **Before trusting either on the operator's real photos, shoot the spec's printed mock-check set (spec section 8).**
    - Everything here is synthetic.
    - A look at a handful of public real phone photos (close crops of single Algerian cheques, out of our setting) showed both detectors struggling when the check fills the frame with no surface around it. That case is not in v1.
 
