@@ -30,3 +30,9 @@ Goal: from a rectified 1600 px check crop, locate and read payer name, payee, co
 
 ## Log
 - 2026-09-25 21:05 U0: data layer written; export parity verified; full train export launched (4 workers).
+- 21:25 U1 metrics harness landed (81 tests; GT parsers reproduce canonical values on 100% of rows, all splits). Hard set narrowed at 21:45 to handwritten_degraded OR printed_degraded (50% of ok rows); handwritten slice and its gating table reported separately.
+- 21:30 U3 Tesseract: tesserocr 5.5.1 with the app's eng 4.0.0_best_int. Field text cleanup (edge artifacts, money-token extraction) lifted printed amount 0.41 -> 0.74 and printed date 0.47 -> 0.75 on val. Config search re-run with the harness's correctness rule on 240 rows/field.
+- 21:50 Tesseract.js 7 parity vs tesserocr on 20 val crops: 15/20 identical text; all 5 differences are low-confidence handwritten misreads; confidences within a few points.
+- 22:05 Tesseract eval (oracle crops): tuned 41.6% all fields; payer 74.0, check number 89.5; handwritten coverage at 95% accuracy ~0 on every field. Real SSBI handwriting: 0/78 exact.
+- 22:05 Machine thrashing (swap ~17 GB): all our jobs capped at 2 workers; GPU yielded to the detection owner until ~23:30 on the coordinator's request; segnet checkpointed and paused, CRNN queued.
+- Real handwriting mini-set: 78 SSBI crops transcribed by eye (`field-reading/real_ssbi/`, LABELS.md), 5 excluded as ambiguous/illegible.
